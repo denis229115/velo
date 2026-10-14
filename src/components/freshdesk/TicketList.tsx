@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { ListChecks, MessageCircleWarning, RefreshCw, UserRound } from "lucide-react";
+import { Columns3, List, ListChecks, MessageCircleWarning, RefreshCw, UserRound } from "lucide-react";
 import { ListHeader } from "@/components/list/ListHeader";
 import { ListRow } from "@/components/list/ListRow";
 import { DateGroupHeader } from "@/components/list/DateGroupHeader";
@@ -13,6 +13,7 @@ import { navigateToTicket } from "@/router/navigate";
 import type { TicketListItem } from "@/services/freshdesk/ticketSync";
 import { LinkedWorkBadge, TicketPriorityBadge, TicketStatusBadge } from "./TicketBadges";
 import { TicketSyncBar } from "./TicketSyncBar";
+import { TicketBoard } from "./TicketBoard";
 import { ActivityValue, activityText } from "./TicketActivity";
 import { useDisplayTimeZone } from "@/components/ui/Timestamp";
 
@@ -123,7 +124,37 @@ function TicketRowDetails({ ticket: t, columns }: { ticket: TicketListItem; colu
   );
 }
 
-export function TicketList({ selectedTicketId, width }: { selectedTicketId: string | null; width: number }) {
+/** List or board: one switch, the same view, filters and sort either way (A04) */
+function PresentationSwitch() {
+  const views = useTicketStore((s) => s.views);
+  const selectedViewId = useTicketStore((s) => s.selectedViewId);
+  const updateView = useTicketStore((s) => s.updateView);
+  const view = selectCurrentView({ views, selectedViewId });
+  const options = [
+    { value: "list", label: "List", icon: List },
+    { value: "board", label: "Board", icon: Columns3 },
+  ] as const;
+  return (
+    <div role="group" aria-label="Presentation" className="flex rounded-md border border-border-primary p-px">
+      {options.map(({ value, label, icon: Icon }) => (
+        <button
+          key={value}
+          type="button"
+          aria-pressed={view.presentation === value}
+          aria-label={label}
+          title={`Show as ${label.toLowerCase()}`}
+          onClick={() => view.presentation !== value && void updateView(view.id, { presentation: value })}
+          className={`rounded-[5px] p-1 ${view.presentation === value ? "bg-bg-selected text-text-primary" : "text-text-secondary hover:text-text-primary hover:bg-bg-hover"}`}
+        >
+          <Icon size={13} aria-hidden />
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** The ticket view: header, filters, sync and coverage, then the list rows or the board. Without a width it fills the row. */
+export function TicketList({ selectedTicketId, width }: { selectedTicketId: string | null; width?: number }) {
   const data = useTicketStore((s) => s.data);
   const views = useTicketStore((s) => s.views);
   const selectedViewId = useTicketStore((s) => s.selectedViewId);
@@ -159,13 +190,15 @@ export function TicketList({ selectedTicketId, width }: { selectedTicketId: stri
   const mineUnavailable = !!filter.assignees?.includes("me") && data !== null && data.meAgentId === null;
 
   return (
-    <div className="flex flex-col bg-surface-list min-w-[240px] shrink-0" style={{ width }}>
+    <div className={`flex flex-col bg-surface-list min-w-[240px] ${width === undefined ? "flex-1 min-w-0" : "shrink-0"}`} style={{ width }}>
       <ListHeader
         breadcrumb={["Freshdesk", "Tickets"]}
         title={view.name}
         tabRow={<TicketViewToolbar data={data} filtersOpen={filtersOpen} onToggleFilters={() => setFiltersOpen((o) => !o)} />}
         actions={
-          data && !data.isSample ? (
+          <>
+            <PresentationSwitch />
+            {data && !data.isSample && (
             <>
               <button
                 type="button"
@@ -189,7 +222,8 @@ export function TicketList({ selectedTicketId, width }: { selectedTicketId: stri
                 <RefreshCw size={14} className={refreshing ? "animate-spin" : ""} />
               </button>
             </>
-          ) : undefined
+            )}
+          </>
         }
       />
       {filtersOpen && <TicketFilterPanel data={data} onClose={() => setFiltersOpen(false)} />}
@@ -214,6 +248,9 @@ export function TicketList({ selectedTicketId, width }: { selectedTicketId: stri
         </div>
       )}
 
+      {view.presentation === "board" ? (
+        <TicketBoard tickets={tickets} view={view} selectedTicketId={selectedTicketId} />
+      ) : (
       <div className="@container flex-1 overflow-y-auto">
         {data && tickets.length === 0 && (
           <p className="px-4 py-8 text-center text-meta text-text-tertiary">
@@ -254,6 +291,7 @@ export function TicketList({ selectedTicketId, width }: { selectedTicketId: stri
           </div>
         ))}
       </div>
+      )}
     </div>
   );
 }
