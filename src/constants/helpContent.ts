@@ -309,7 +309,7 @@ export const HELP_CATEGORIES: HelpCategory[] = [
           "The composer uses a full rich text editor powered by TipTap. You can format text (bold, italic, lists, links, code blocks), add file attachments, insert a signature, and pick a template — all from one place. The composer opens as a panel at the bottom of the screen. Add recipients with autocomplete (ranked by how often you email them), set a subject, and compose your message.",
         tips: [
           { text: "Open the composer", shortcut: "c" },
-          { text: "Send the email", shortcut: "Ctrl+Enter" },
+          { text: "Send now", shortcut: "Ctrl+Enter" },
           { text: "Recipient autocomplete is ranked by contact frequency." },
           { text: "Use the toolbar or markdown-style shortcuts for formatting." },
           { text: "Close the composer with Escape (draft is auto-saved)." },
@@ -351,13 +351,14 @@ export const HELP_CATEGORIES: HelpCategory[] = [
         title: "Schedule send",
         summary: "Write now, send later at a chosen time.",
         description:
-          "Compose an email and schedule it to be sent at a specific date and time. This is useful for writing emails after hours, on weekends, or in different time zones without sending them immediately. Choose from quick presets (tomorrow morning, Monday morning) or pick a custom date and time. Scheduled emails appear in your Drafts until they're sent. You can cancel or reschedule them before the send time.",
+          "Compose an email and schedule it to be sent at a specific date and time. Send later works for every email account, Gmail and IMAP/SMTP. Choose from quick presets (tomorrow morning, Monday morning) or pick a custom date and time. Scheduled emails send when Velo is next open at or after the chosen time: nothing sends while your Mac sleeps or Velo is closed, and emails that fall due while you're offline wait until you're back online. A failed send is retried a few times with increasing delays; if it still fails you get a notification. If Velo closes in the middle of sending, it never resends automatically: it checks your Sent mail and, if it can't find the email, tells you to check Sent before sending it again.",
         tips: [
-          { text: "Click the dropdown arrow next to the Send button to schedule." },
+          { text: "Open the send-later picker from the composer, even while typing", shortcut: "Ctrl+Shift+L" },
+          { text: "Or click the clock button next to Send." },
           { text: "Quick presets: Tomorrow Morning (9am), Tomorrow Afternoon (1pm), Monday Morning." },
-          { text: "View and manage scheduled emails in Settings > Composing." },
-          { text: "Cancel a scheduled email any time before it sends." },
+          { text: "Rebind send now and send later in Settings > Shortcuts." },
         ],
+        relatedSettingsTab: "shortcuts",
       },
       {
         id: "send-archive",
@@ -479,7 +480,7 @@ export const HELP_CATEGORIES: HelpCategory[] = [
         title: "Keyboard shortcuts",
         summary: "Navigate and act on email without the mouse.",
         description:
-          "Almost every action has a keyboard shortcut, inspired by Superhuman's keyboard-first design. Shortcuts are disabled when you're typing in an input field, text area, or rich text editor to avoid conflicts. The app supports two-key sequences (press g then another key within 1 second) for navigation commands. All shortcuts are fully customizable — rebind any key in Settings.",
+          "Almost every action has a keyboard shortcut, inspired by Superhuman's keyboard-first design. Shortcuts are disabled when you're typing in an input field, text area, or rich text editor to avoid conflicts, except send now and send later, which work from inside the composer. The app supports two-key sequences (press g then another key within 1 second) for navigation commands. All shortcuts are fully customizable — rebind any key in Settings.",
         tips: [
           { text: "View all shortcuts", shortcut: "?" },
           { text: "Navigation: j/k (up/down), o (open), Escape (back)" },
@@ -489,6 +490,7 @@ export const HELP_CATEGORIES: HelpCategory[] = [
           { text: "Ask Inbox (AI)", shortcut: "i" },
           { text: "Sync current folder", shortcut: "F5" },
           { text: "Customize all shortcuts in Settings > Shortcuts." },
+          { text: "Settings warns you when two actions share the same key." },
           { text: "Shortcuts are disabled in text inputs to prevent conflicts." },
         ],
         relatedSettingsTab: "shortcuts",
@@ -561,7 +563,7 @@ export const HELP_CATEGORIES: HelpCategory[] = [
           { text: "Optional: add traditional criteria (from, subject) for instant matching without AI." },
           { text: "Click 'Apply to existing emails' to label your current inbox retroactively." },
           { text: "Smart labels run automatically on every new email during sync." },
-          { text: "Requires an active AI provider (Claude, GPT, or Gemini)." },
+          { text: "Requires the Claude API, approved in Settings > AI." },
         ],
         relatedSettingsTab: "mail-rules",
       },
@@ -762,18 +764,16 @@ export const HELP_CATEGORIES: HelpCategory[] = [
         id: "ai-overview",
         icon: Brain,
         title: "AI overview",
-        summary: "Choose your AI provider and bring your own key.",
+        summary: "Every AI request goes through one gateway, to the Claude API only.",
         description:
-          "The app supports three AI providers: Anthropic Claude, OpenAI GPT, and Google Gemini. You bring your own API key, which means your email data is sent directly to the provider's API — there's no middleman or third-party server involved. API keys are stored securely in your local database. AI features include thread summaries, smart replies, compose assistance, text transformation, and natural language inbox queries. You can enable or disable AI features globally, and choose which provider to use.",
+          "Every AI request in Velo goes through one AI gateway. It sends only allowlisted fields (subject, message text, status and priority): sender and recipient addresses, custom fields, internal notes and attachments never leave Velo. Only the Claude API (Anthropic) may receive email, ticket or task content, and AI stays off until you approve it in Settings > AI. Other providers can still be configured but are refused for this content, with the reason shown. The AI gets no tools and its output is only shown to you. Every request is recorded in a local AI audit log. AI features include thread summaries, smart replies, compose assistance, text transformation, categorisation, smart labels, task extraction, auto-drafts and natural language inbox queries. Reading, replying and composing keep working when AI is off or failing.",
         tips: [
-          { text: "Add your API key in Settings > AI." },
-          { text: "Supported providers: Claude, OpenAI, and Gemini." },
-          {
-            text: "Choose which model to use for each provider in Settings (e.g., Claude Haiku 4.5, GPT-4o Mini, Gemini 2.5 Flash).",
-          },
-          { text: "Your data goes directly to the provider API — no middleman." },
+          { text: "Add your Anthropic API key in Settings > AI, then tick the approval box." },
+          { text: "Only the Claude API may receive email, ticket or task content." },
+          { text: "Sender and recipient addresses are never sent to the AI." },
+          { text: "Every AI request is logged locally: when, which feature, which model." },
+          { text: "AI results are cached per message content, model and prompt version." },
           { text: "API keys are stored securely in your local database." },
-          { text: "AI results are cached locally to reduce API calls." },
           { text: "Disable AI globally with one toggle in Settings." },
         ],
         relatedSettingsTab: "ai",
@@ -1057,7 +1057,7 @@ export const HELP_CATEGORIES: HelpCategory[] = [
           { text: "Also available in the command palette (Ctrl+K → 'Create Task from Email')." },
           { text: "Edit the extracted fields before creating the task." },
           { text: "The task links back to the original email thread." },
-          { text: "Requires an active AI provider (Claude, GPT, or Gemini)." },
+          { text: "Requires the Claude API, approved in Settings > AI." },
         ],
         relatedSettingsTab: "ai",
       },
@@ -1302,7 +1302,7 @@ export const CONTEXTUAL_TIPS: Record<string, ContextualTip> = {
   },
   "ai-provider": {
     title: "AI provider",
-    body: "Choose between Claude, OpenAI, or Gemini. Bring your own API key — your data is sent directly to the provider, never through a middleman.",
+    body: "Only the Claude API (Anthropic) may receive email, ticket or task content, and only after you approve it here. Other providers are refused for this content.",
     helpTopic: "ai-features",
   },
   "search-operators": {

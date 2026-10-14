@@ -1,4 +1,4 @@
-import { isAiAvailable } from "./providerManager";
+import { isAiAvailable } from "./gateway";
 import { categorizeThreads } from "./aiService";
 import { getSetting } from "@/services/db/settings";
 import {

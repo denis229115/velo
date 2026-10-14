@@ -46,15 +46,24 @@ export const SHORTCUTS: ShortcutCategory[] = [
     { id: "action.selectAll", keys: "Ctrl+A", desc: "Select all" },
     { id: "action.selectFromHere", keys: "Ctrl+Shift+A", desc: "Select all from here" },
   ]},
+  { category: "Composer", items: [
+    { id: "app.send", keys: "Ctrl+Enter", desc: "Send now" },
+    { id: "app.sendLater", keys: "Ctrl+Shift+L", desc: "Send later" },
+  ]},
   { category: "App", items: [
     { id: "app.commandPalette", keys: "/", desc: "Command palette" },
     { id: "app.toggleSidebar", keys: "Ctrl+Shift+E", desc: "Toggle sidebar" },
-    { id: "app.send", keys: "Ctrl+Enter", desc: "Send email" },
     { id: "app.askInbox", keys: "i", desc: "Ask AI about your inbox" },
     { id: "app.help", keys: "?", desc: "Show keyboard shortcuts" },
     { id: "app.syncFolder", keys: "F5", desc: "Sync current folder" },
   ]},
 ];
+
+/**
+ * Actions handled by the open composer (or inline reply) rather than the
+ * global shortcut handler. They also fire while typing in the editor.
+ */
+export const COMPOSER_SHORTCUT_IDS = ["app.send", "app.sendLater"] as const;
 
 /**
  * Build a flat map of shortcut ID -> default key binding.

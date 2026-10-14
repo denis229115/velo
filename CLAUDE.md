@@ -132,7 +132,8 @@ Custom window events: `velo-sync-done`, `velo-toggle-command-palette`, `velo-tog
 | `?` | Shortcuts help |
 | `Escape` | Close composer → clear multi-select → deselect thread (hierarchical) |
 | `Ctrl+Shift+E` | Toggle sidebar |
-| `Ctrl+Enter` | Send email (in composer) |
+| `Ctrl+Enter` | Send now (in composer, works while typing) |
+| `Ctrl+Shift+L` | Send later: open the schedule picker (in composer, works while typing) |
 | `Ctrl+A` | Select all threads |
 | `Ctrl+Shift+A` | Select all threads from current position |
 | `g` then `i` | Go to Inbox |
@@ -205,6 +206,9 @@ Key tables (37 total): `accounts` (with `provider` "gmail_api"|"imap", IMAP/SMTP
 - **Thread deletion**: Two-stage — first trash, then permanent delete from DB if already in trash
 - **Snooze**: Removes INBOX label and adds SNOOZED label (not just a flag)
 - **Draft auto-save**: 3-second debounce, not configurable
+- **Send later**: `scheduledSendManager.ts` sends through `getEmailProvider` (Gmail and IMAP/SMTP), only while Velo runs and is online. Attachments are stored in the same INSERT as the row. Up to 5 attempts with 1m/5m/15m/1h backoff, then `failed` with `last_error` and an OS notification. Each scheduled email has a fixed Message-ID (`<scheduled.{id}@domain>`); rows left in `sending` are reconciled on startup against the local synced copy and never resent automatically
+- **Composer shortcuts**: `app.send` / `app.sendLater` are dispatched by `useComposerShortcuts` (capture phase, reads the registry at keypress time) in Composer and InlineReply, not by `useKeyboardShortcuts`. Settings > Shortcuts warns on duplicate bindings (`findShortcutConflicts`, Cmd = Ctrl)
+- **Service tests on real SQLite**: `src/test/sqliteTestDb.ts` (Node's built-in `node:sqlite`) runs the real migrations in memory; mock `@tauri-apps/plugin-sql` so `getDb()` returns it
 - **Gmail History API**: Expires after ~30 days, triggers automatic full sync fallback
 - **Vite HMR**: Uses port 1421 when `TAURI_DEV_HOST` is set
 - **Vite build**: Multi-page — `index.html` (main app) + `splashscreen.html`

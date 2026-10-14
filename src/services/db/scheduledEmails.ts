@@ -1,5 +1,6 @@
 import { getDb } from "./connection";
 import { getCurrentUnixTimestamp } from "@/utils/timestamp";
+import type { EmailAttachment } from "@/utils/emailBuilder";
 
 export interface DbScheduledEmail {
   id: string;
@@ -16,13 +17,19 @@ export interface DbScheduledEmail {
   attachment_paths: string | null;
   status: string;
   created_at: number;
+  attempts: number;
+  next_attempt_at: number | null;
+  last_error: string | null;
 }
 
 export async function getPendingScheduledEmails(): Promise<DbScheduledEmail[]> {
   const db = await getDb();
   const now = getCurrentUnixTimestamp();
   return db.select<DbScheduledEmail[]>(
-    "SELECT * FROM scheduled_emails WHERE status = 'pending' AND scheduled_at <= $1 ORDER BY scheduled_at ASC",
+    `SELECT * FROM scheduled_emails
+     WHERE status = 'pending' AND scheduled_at <= $1
+       AND (next_attempt_at IS NULL OR next_attempt_at <= $1)
+     ORDER BY scheduled_at ASC`,
     [now],
   );
 }
@@ -48,12 +55,18 @@ export async function insertScheduledEmail(email: {
   threadId: string | null;
   scheduledAt: number;
   signatureId: string | null;
+  /** Stored in the same INSERT as the row so concurrent schedules can't mix them up */
+  attachments?: EmailAttachment[];
 }): Promise<string> {
   const db = await getDb();
   const id = crypto.randomUUID();
+  const attachmentData =
+    email.attachments && email.attachments.length > 0
+      ? JSON.stringify(email.attachments)
+      : null;
   await db.execute(
-    `INSERT INTO scheduled_emails (id, account_id, to_addresses, cc_addresses, bcc_addresses, subject, body_html, reply_to_message_id, thread_id, scheduled_at, signature_id)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+    `INSERT INTO scheduled_emails (id, account_id, to_addresses, cc_addresses, bcc_addresses, subject, body_html, reply_to_message_id, thread_id, scheduled_at, signature_id, attachment_paths)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
     [
       id,
       email.accountId,
@@ -66,9 +79,49 @@ export async function insertScheduledEmail(email: {
       email.threadId,
       email.scheduledAt,
       email.signatureId,
+      attachmentData,
     ],
   );
   return id;
+}
+
+export async function getScheduledEmailsInStatus(
+  status: "pending" | "sending" | "sent" | "failed" | "cancelled",
+): Promise<DbScheduledEmail[]> {
+  const db = await getDb();
+  return db.select<DbScheduledEmail[]>(
+    "SELECT * FROM scheduled_emails WHERE status = $1 ORDER BY scheduled_at ASC",
+    [status],
+  );
+}
+
+/**
+ * Atomically move a pending row to "sending". Returns false if another
+ * run already claimed it, so the same row is never sent twice concurrently.
+ */
+export async function claimScheduledEmail(id: string): Promise<boolean> {
+  const db = await getDb();
+  const result = await db.execute(
+    "UPDATE scheduled_emails SET status = 'sending', attempts = attempts + 1 WHERE id = $1 AND status = 'pending'",
+    [id],
+  );
+  return result.rowsAffected === 1;
+}
+
+/**
+ * Record a failed send: back to "pending" with a retry time, or terminal
+ * "failed" when nextAttemptAt is null.
+ */
+export async function recordScheduledEmailFailure(
+  id: string,
+  error: string,
+  nextAttemptAt: number | null,
+): Promise<void> {
+  const db = await getDb();
+  await db.execute(
+    "UPDATE scheduled_emails SET status = $1, next_attempt_at = $2, last_error = $3 WHERE id = $4",
+    [nextAttemptAt === null ? "failed" : "pending", nextAttemptAt, error, id],
+  );
 }
 
 export async function updateScheduledEmailStatus(

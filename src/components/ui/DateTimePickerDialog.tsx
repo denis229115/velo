@@ -19,6 +19,8 @@ interface DateTimePickerDialogProps {
   onSelect: (timestamp: number) => void;
   submitLabel: string;
   zIndex?: string;
+  /** Optional explanatory line shown under the picker */
+  note?: string;
 }
 
 export function DateTimePickerDialog({
@@ -29,6 +31,7 @@ export function DateTimePickerDialog({
   onSelect,
   submitLabel,
   zIndex,
+  note,
 }: DateTimePickerDialogProps) {
   const [customDate, setCustomDate] = useState("");
   const [customTime, setCustomTime] = useState("09:00");
@@ -90,6 +93,9 @@ export function DateTimePickerDialog({
         >
           {submitLabel}
         </Button>
+        {note && (
+          <p className="text-xs text-text-tertiary pt-1">{note}</p>
+        )}
       </div>
     </Modal>
   );

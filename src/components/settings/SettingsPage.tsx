@@ -5,6 +5,8 @@ import { navigateToLabel, navigateToSettings } from "@/router/navigate";
 import { useAccountStore } from "@/stores/accountStore";
 import { getSetting, setSetting, getSecureSetting, setSecureSetting } from "@/services/db/settings";
 import { PROVIDER_MODELS } from "@/services/ai/types";
+import { AI_APPROVAL_SETTING, APPROVED_PROVIDER } from "@/services/ai/gateway";
+import { AiProviderApproval } from "./AiProviderApproval";
 import { deleteAccount } from "@/services/db/accounts";
 import { removeClient, reauthorizeAccount } from "@/services/gmail/tokenManager";
 import { triggerSync, forceFullSync, resyncAccount } from "@/services/gmail/syncManager";
@@ -35,6 +37,7 @@ import {
   ChevronUp,
   ChevronDown,
   RotateCcw,
+  AlertTriangle,
   type LucideIcon,
 } from "lucide-react";
 import { SignatureEditor } from "./SignatureEditor";
@@ -48,6 +51,7 @@ import { QuickStepEditor } from "./QuickStepEditor";
 import { SmartLabelEditor } from "./SmartLabelEditor";
 import { SHORTCUTS, getDefaultKeyMap } from "@/constants/shortcuts";
 import { useShortcutStore } from "@/stores/shortcutStore";
+import { findShortcutConflicts } from "@/utils/shortcutKeys";
 import { COLOR_THEMES } from "@/constants/themes";
 import {
   getAliasesForAccount,
@@ -124,6 +128,7 @@ export function SettingsPage() {
   const [geminiModel, setGeminiModel] = useState("gemini-2.5-flash-preview-05-20");
   const [copilotModel, setCopilotModel] = useState("openai/gpt-4o-mini");
   const [aiEnabled, setAiEnabled] = useState(true);
+  const [aiProviderApproved, setAiProviderApproved] = useState(false);
   const [aiAutoCategorize, setAiAutoCategorize] = useState(true);
   const [aiAutoSummarize, setAiAutoSummarize] = useState(true);
   const [aiKeySaved, setAiKeySaved] = useState(false);
@@ -197,6 +202,7 @@ export function SettingsPage() {
       if (copilotModelVal) setCopilotModel(copilotModelVal);
       const aiEn = await getSetting("ai_enabled");
       setAiEnabled(aiEn !== "false");
+      setAiProviderApproved((await getSetting(AI_APPROVAL_SETTING)) === APPROVED_PROVIDER);
       const aiCat = await getSetting("ai_auto_categorize");
       setAiAutoCategorize(aiCat !== "false");
       const aiSum = await getSetting("ai_auto_summarize");
@@ -1069,6 +1075,14 @@ export function SettingsPage() {
                       {aiProvider === "ollama" && "Connect to a local Ollama or LMStudio server. No API key required."}
                       {aiProvider === "copilot" && `Uses ${PROVIDER_MODELS.copilot.find((m) => m.id === copilotModel)?.label ?? copilotModel}. Requires a GitHub PAT with models:read permission.`}
                     </p>
+                    <AiProviderApproval
+                      provider={aiProvider}
+                      approved={aiProviderApproved}
+                      onApprovedChange={async (approved) => {
+                        setAiProviderApproved(approved);
+                        await setSetting(AI_APPROVAL_SETTING, approved ? APPROVED_PROVIDER : "");
+                      }}
+                    />
                   </Section>
 
                   {aiProvider === "ollama" ? (
@@ -1829,7 +1843,7 @@ function InfoRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-function ShortcutsTab() {
+export function ShortcutsTab() {
   const keyMap = useShortcutStore((s) => s.keyMap);
   const setKey = useShortcutStore((s) => s.setKey);
   const resetKey = useShortcutStore((s) => s.resetKey);
@@ -1890,6 +1904,8 @@ function ShortcutsTab() {
   }, [setKey]);
 
   const hasCustom = Object.entries(keyMap).some(([id, keys]) => defaults[id] !== keys);
+  const conflicts = findShortcutConflicts(keyMap);
+  const descById = new Map(SHORTCUTS.flatMap((c) => c.items.map((i) => [i.id, i.desc] as const)));
 
   return (
     <>
@@ -1942,15 +1958,25 @@ function ShortcutsTab() {
               const currentKey = keyMap[item.id] ?? item.keys;
               const isDefault = currentKey === defaults[item.id];
               const isRecording = recordingId === item.id;
+              const clashesWith = conflicts.get(item.id);
 
               return (
                 <div
                   key={item.id}
+                  data-shortcut-row
                   className="flex items-center justify-between py-2 px-1"
                 >
-                  <span className="text-sm text-text-secondary">
-                    {item.desc}
-                  </span>
+                  <div className="min-w-0">
+                    <span className="text-sm text-text-secondary">
+                      {item.desc}
+                    </span>
+                    {clashesWith && (
+                      <p role="alert" className="flex items-center gap-1 text-xs text-warning mt-0.5">
+                        <AlertTriangle size={12} className="shrink-0" />
+                        Also used by {clashesWith.map((id) => descById.get(id) ?? id).join(", ")}
+                      </p>
+                    )}
+                  </div>
                   <div className="flex items-center gap-2 ml-4 shrink-0">
                     <button
                       onClick={() => setRecordingId(isRecording ? null : item.id)}
