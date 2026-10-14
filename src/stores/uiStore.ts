@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { setSetting } from "@/services/db/settings";
-import type { ColorThemeId } from "@/constants/themes";
+import { DEFAULT_COLOR_THEME, type ColorThemeId } from "@/constants/themes";
 
 type Theme = "light" | "dark" | "system";
 type ReadingPanePosition = "right" | "bottom" | "hidden";
@@ -72,7 +72,7 @@ export const useUIStore = create<UIState>((set) => ({
   defaultReplyMode: "reply",
   markAsReadBehavior: "instant",
   fontScale: "default",
-  colorTheme: "indigo",
+  colorTheme: DEFAULT_COLOR_THEME,
   sendAndArchive: false,
   inboxViewMode: "unified",
   taskSidebarVisible: false,
