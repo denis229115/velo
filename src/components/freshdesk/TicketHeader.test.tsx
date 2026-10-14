@@ -14,7 +14,7 @@ import { createClickUpFetchStub } from "@/test/clickupFetchStub";
 import { ALPHA_HOST, type FixtureConversation, type FreshdeskFixtureTenant } from "@/services/freshdesk/__fixtures__/freshdeskFixtures";
 import { FIXTURE_NOW, ME_ID } from "@/services/freshdesk/__fixtures__/freshdeskTicketFixtures";
 import { alphaTenantWithHistory } from "@/services/freshdesk/__fixtures__/freshdeskConversationFixtures";
-import { ALPHA_TOKEN, clickupTokens } from "@/services/clickup/__fixtures__/clickupFixtures";
+import { ALPHA_TOKEN, alphaExportBugDone, clickupTokens } from "@/services/clickup/__fixtures__/clickupFixtures";
 
 let db: SqliteTestDb;
 vi.mock("@tauri-apps/plugin-sql", () => ({
@@ -56,7 +56,7 @@ import { classifyStatus, connectHelpdesk } from "@/services/freshdesk/connection
 import { syncTickets } from "@/services/freshdesk/ticketSync";
 import { hydrateTicketHistories, resetHydrationState } from "@/services/freshdesk/ticketHistory";
 import { connectWorkspace } from "@/services/clickup/connection";
-import { linkTask } from "@/services/clickup/links";
+import { linkTask, refreshRelatedTasks } from "@/services/clickup/links";
 import { useUIStore } from "@/stores/uiStore";
 import { useTicketStore } from "@/stores/ticketStore";
 import { FreshdeskPage } from "./FreshdeskPage";
@@ -364,5 +364,19 @@ describe("ticket header: linked work", () => {
     const panel = within(await reader().findByRole("region", { name: "Related tasks" }));
     expect(await panel.findByText("Fixture: export fails for large accounts")).toBeInTheDocument();
     expect(linked().getByRole("button", { name: "Hide tasks" })).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("keeps the Follow-up cue in view when a linked task is done, with the list closed", async () => {
+    await connectAndSync();
+    await connectWorkspace({ token: ALPHA_TOKEN });
+    const item = { kind: "ticket" as const, ticketId: "1002" };
+    await linkTask(item, "86a0exp01");
+    clickup.replaceTask(alphaExportBugDone);
+    await refreshRelatedTasks(item, { trigger: "manual" });
+    renderFreshdesk("/freshdesk/ticket/1002");
+
+    await waitFor(() => expect(text(linked().getByTestId("linked-work-count"))).toBe("1 task · 1 done"));
+    expect(linked().getByText("Follow up with customer")).toBeInTheDocument();
+    expect(freshdesk.requests.filter((r) => r.method !== "GET")).toHaveLength(0);
   });
 });

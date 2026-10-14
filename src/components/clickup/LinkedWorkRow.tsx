@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useState } from "react";
-import { ChevronDown, ChevronRight, Link2, ListChecks } from "lucide-react";
+import { ChevronDown, ChevronRight, CircleCheck, Link2, ListChecks } from "lucide-react";
 import { navigateToSettings } from "@/router/navigate";
 import { getRelatedTasks, refreshRelatedTasks, type LinkedItem, type RelatedTasksView } from "@/services/clickup/links";
 import { LinkTaskDialog } from "./LinkTaskDialog";
@@ -50,7 +50,7 @@ export function LinkedWorkRow({ item }: { item: Extract<LinkedItem, { kind: "tic
     return (
       <section aria-label="Linked work" className={`${ROW} text-text-tertiary`}>
         <ListChecks size={13} aria-hidden className="shrink-0" />
-        <span className="min-w-0 flex-1 truncate">Link ClickUp tasks to this ticket once a workspace is connected.</span>
+        <span className="min-w-0 flex-1">No ClickUp workspace connected.</span>
         <button type="button" onClick={() => navigateToSettings("clickup")} className={ACTION}>
           Connect ClickUp
         </button>
@@ -62,7 +62,7 @@ export function LinkedWorkRow({ item }: { item: Extract<LinkedItem, { kind: "tic
     return (
       <section aria-label="Linked work" className={`${ROW} text-text-tertiary`}>
         <ListChecks size={13} aria-hidden className="shrink-0" />
-        <span className="min-w-0 flex-1 truncate">Sample ticket: tasks can be linked once a helpdesk is connected.</span>
+        <span className="min-w-0 flex-1">Sample ticket: tasks can be linked once a helpdesk is connected.</span>
       </section>
     );
   }
@@ -71,14 +71,25 @@ export function LinkedWorkRow({ item }: { item: Extract<LinkedItem, { kind: "tic
   const done = view.tasks.filter((t) => t.done).length;
   return (
     <section aria-label="Linked work">
-      <div className={ROW}>
+      {/* A narrow reader wraps the actions under the count rather than squeezing it out */}
+      <div className={`${ROW} flex-wrap`}>
         <ListChecks size={13} aria-hidden className="shrink-0 text-text-tertiary" />
         <span className="shrink-0 text-text-tertiary">ClickUp</span>
         {count === 0 ? (
-          <span className="min-w-0 flex-1 truncate text-text-secondary">No linked tasks</span>
+          <span className="flex-1 whitespace-nowrap text-text-secondary">No linked tasks</span>
         ) : (
-          <span data-testid="linked-work-count" className="min-w-0 flex-1 truncate text-text-primary tabular-nums">
+          <span data-testid="linked-work-count" className="flex-1 whitespace-nowrap text-text-primary tabular-nums">
             {count} task{count === 1 ? "" : "s"} · {done} done
+          </span>
+        )}
+        {done > 0 && !expanded && (
+          // The Follow-up cue stays visible with the list closed; it never changes the ticket
+          <span
+            title="A linked task is done in ClickUp. The ticket is unchanged."
+            className="inline-flex items-center gap-1 shrink-0 text-status-success"
+          >
+            <CircleCheck size={12} aria-hidden />
+            Follow up with customer
           </span>
         )}
         {!expanded && (
@@ -101,7 +112,7 @@ export function LinkedWorkRow({ item }: { item: Extract<LinkedItem, { kind: "tic
         )}
       </div>
       {expanded && (
-        <div id={panelId} className="mt-2">
+        <div id={panelId} className="mt-2 [&>section]:mb-0">
           <RelatedTasksPanel item={item} />
         </div>
       )}

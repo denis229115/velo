@@ -31,10 +31,10 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
   const id = fieldId(label);
   return (
     <div className="min-w-0">
-      <dt id={id} title={hint} className="text-meta text-text-tertiary mb-0.5 truncate">
+      <dt id={id} title={hint} className="text-meta leading-tight text-text-tertiary mb-0.5">
         {label}
       </dt>
-      <dd aria-labelledby={id} className="text-row text-text-primary min-w-0 truncate">
+      <dd aria-labelledby={id} className="text-row text-text-primary min-w-0 break-words">
         {children}
       </dd>
     </div>
@@ -183,23 +183,29 @@ function MoreMenu({ ticket }: { ticket: TicketListItem }) {
 function AttentionLine({ ticket }: { ticket: TicketListItem }) {
   if (!ticket.outstanding) return null;
   const a = ticket.activity;
-  const base = "flex items-center gap-2 min-w-0 rounded-md border px-3 py-1.5 text-preview";
+  const base = "flex items-start gap-2 min-w-0 rounded-md border px-3 py-1.5 text-preview";
+  const icon = "shrink-0 mt-px";
   if (a.needsReply === true) {
     return (
       <div role="status" aria-label="Attention" className={`${base} border-status-warning/40 bg-status-warning/10 text-status-warning`}>
-        <CircleAlert size={14} aria-hidden className="shrink-0" />
-        <p className="min-w-0 truncate">
-          <span className="font-semibold">Needs reply</span>
+        <CircleAlert size={14} aria-hidden className={icon} />
+        {/* A narrow reader wraps between the parts, never inside one */}
+        <p className="min-w-0">
+          <span className="font-semibold whitespace-nowrap">Needs reply</span>
           <Sep />
-          Customer wrote <ActivityValue time={a.lastCustomerMessage} history={a.history} never="None" />
+          <span className="whitespace-nowrap">
+            Customer wrote <ActivityValue time={a.lastCustomerMessage} history={a.history} never="None" />
+          </span>
           <Sep />
-          {a.lastAnswered.state === "never" ? (
-            "Never answered"
-          ) : (
-            <>
-              Last answered <ActivityValue time={a.lastAnswered} history={a.history} never="Never answered" />
-            </>
-          )}
+          <span className="whitespace-nowrap">
+            {a.lastAnswered.state === "never" ? (
+              "Never answered"
+            ) : (
+              <>
+                Last answered <ActivityValue time={a.lastAnswered} history={a.history} never="Never answered" />
+              </>
+            )}
+          </span>
         </p>
       </div>
     );
@@ -208,7 +214,7 @@ function AttentionLine({ ticket }: { ticket: TicketListItem }) {
   if (a.needsReply === null) {
     return (
       <div role="status" aria-label="Attention" className={quiet}>
-        <p className="min-w-0 truncate">
+        <p className="min-w-0">
           Needs reply: <NeedsReplyValue value={null} history={a.history} />
         </p>
       </div>
@@ -216,8 +222,8 @@ function AttentionLine({ ticket }: { ticket: TicketListItem }) {
   }
   return (
     <div role="status" aria-label="Attention" className={quiet}>
-      <CircleCheck size={14} aria-hidden className="shrink-0 text-status-success" />
-      <p className="min-w-0 truncate">
+      <CircleCheck size={14} aria-hidden className={`${icon} text-status-success`} />
+      <p className="min-w-0">
         {a.lastAnswered.state === "known" ? (
           <>
             Answered <ActivityValue time={a.lastAnswered} history={a.history} never="Never answered" />
@@ -241,15 +247,15 @@ function EditPill({ field, appearance, edit }: { field: "Status" | "Priority" | 
   return (
     <span
       title={title}
-      className={`relative inline-flex items-center gap-1.5 min-w-0 max-w-full rounded-full border pl-2 pr-1.5 py-0.5 text-preview font-medium transition-[filter] hover:brightness-110 focus-within:outline-2 focus-within:outline-offset-1 focus-within:outline-accent has-[select:disabled]:opacity-70 ${TONES[tone]}`}
+      className={`group relative inline-flex items-center gap-1.5 min-w-0 max-w-full rounded-full border pl-2 pr-1.5 py-0.5 text-preview font-medium transition-[filter] hover:brightness-110 focus-within:outline-2 focus-within:outline-offset-1 focus-within:outline-accent has-[select:disabled]:opacity-70 ${TONES[tone]}`}
     >
       <span id={labelId} className="sr-only">
         {field}
       </span>
       <Icon size={12} aria-hidden className="shrink-0" />
       <span className="truncate">{label}</span>
-      <ChevronDown size={12} aria-hidden className="shrink-0 opacity-70" />
-      <span className="absolute inset-0 [&>span]:size-full [&_select]:size-full [&_select]:cursor-pointer [&_select]:opacity-0 [&_select:disabled]:cursor-not-allowed [&_svg]:hidden">
+      <ChevronDown size={12} aria-hidden className="shrink-0 opacity-70 group-has-[select:disabled]:hidden" />
+      <span className="absolute inset-0 [&>span]:size-full [&_select]:size-full [&_select]:cursor-pointer [&_select]:opacity-0! [&_select:disabled]:cursor-not-allowed [&_svg]:hidden">
         {edit.render(field, labelId)}
       </span>
     </span>
@@ -273,7 +279,7 @@ function Customer({ ticket, channel }: { ticket: TicketListItem; channel: string
       </span>
       <div className="min-w-0">
         <p className="text-row font-medium text-text-primary truncate">{ticket.customer ?? "Customer not loaded yet"}</p>
-        <p className="text-meta text-text-tertiary truncate">
+        <p className="text-meta text-text-tertiary break-words">
           {ticket.customerEmail && (
             <>
               <span className="text-text-secondary">{ticket.customerEmail}</span>
@@ -282,11 +288,13 @@ function Customer({ ticket, channel }: { ticket: TicketListItem; channel: string
           )}
           {channel && (
             <>
-              <span>{channel}</span>
+              <span className="whitespace-nowrap">{channel}</span>
               <Sep />
             </>
           )}
-          Created <Timestamp at={ticket.createdAt} />
+          <span className="whitespace-nowrap">
+            Created <Timestamp at={ticket.createdAt} />
+          </span>
         </p>
       </div>
     </div>
@@ -353,8 +361,8 @@ export function TicketHeader({
   return (
     <div role="group" aria-label="Ticket header" className="@container max-w-4xl mb-6 space-y-4">
       <div>
-        <div className="flex items-center gap-2 min-w-0 text-meta text-text-tertiary">
-          <nav aria-label="Breadcrumb" className="truncate">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 min-w-0 text-meta text-text-tertiary">
+          <nav aria-label="Breadcrumb" className="hidden @md:block truncate">
             <span>Freshdesk</span> <span aria-hidden>›</span> <span>Tickets</span>
           </nav>
           <span className="shrink-0 rounded border border-border-primary px-1.5 py-px tabular-nums text-text-secondary">#{ticket.id}</span>
@@ -407,7 +415,7 @@ export function TicketHeader({
       <div className="grid gap-x-8 gap-y-3 @2xl:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)] items-start border-t border-border-primary pt-4">
         <Customer ticket={ticket} channel={channel} />
         <div className="min-w-0 space-y-2">
-          <dl className="grid grid-cols-3 gap-x-4">
+          <dl className="grid grid-cols-3 items-end gap-x-4">
             <Field label="Customer wrote" hint="Last customer message: when the customer last wrote, including the original request">
               <ActivityValue time={a.lastCustomerMessage} history={a.history} never="None" />
             </Field>
