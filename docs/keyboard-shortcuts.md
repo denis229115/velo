@@ -20,6 +20,7 @@ Velo is designed to be used entirely from the keyboard. All shortcuts are custom
 | `g` then `n` | Go to Newsletters |
 | `g` then `k` | Go to Tasks |
 | `g` then `a` | Go to Attachments |
+| `g` then `l` | Go to Scheduled emails |
 
 ## Actions
 

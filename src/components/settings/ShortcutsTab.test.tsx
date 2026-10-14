@@ -15,6 +15,7 @@ vi.mock("@/services/globalShortcut", () => ({
 import { ShortcutsTab } from "./SettingsPage";
 import { useShortcutStore } from "@/stores/shortcutStore";
 import { getDefaultKeyMap } from "@/constants/shortcuts";
+import { pretendPlatform, restoreUserAgent } from "@/test/platform";
 
 /** The settings row for an action, found by its description. */
 function row(desc: string): HTMLElement {
@@ -26,6 +27,8 @@ function rebind(desc: string, init: KeyboardEventInit) {
   fireEvent.click(button);
   fireEvent.keyDown(button, init);
 }
+
+afterEach(restoreUserAgent);
 
 beforeEach(() => {
   useShortcutStore.setState({ keyMap: getDefaultKeyMap() });
@@ -61,5 +64,26 @@ describe("Shortcuts settings", () => {
     rebind("Archive", { key: "y" });
 
     expect(screen.queryByText(/also used by/i)).not.toBeInTheDocument();
+  });
+});
+
+describe("Shortcuts settings labels", () => {
+  it("shows Cmd/Option wording on macOS, including the global shortcut and reset hint", () => {
+    pretendPlatform("mac");
+    useShortcutStore.setState({ keyMap: { ...getDefaultKeyMap(), "app.send": "Alt+Shift+K" } });
+    render(<ShortcutsTab />);
+
+    expect(within(row("Send later")).getByRole("button")).toHaveTextContent("Cmd+Shift+L");
+    expect(within(row("Send now")).getByRole("button", { name: "Option+Shift+K" })).toBeInTheDocument();
+    expect(within(row("Send now")).getByTitle("Reset to Cmd+Enter")).toBeInTheDocument();
+    expect(screen.getByText("Cmd+Shift+M")).toBeInTheDocument();
+    expect(screen.queryByText(/ctrl/i)).not.toBeInTheDocument();
+  });
+
+  it("keeps Ctrl wording on Windows", () => {
+    pretendPlatform("windows");
+    render(<ShortcutsTab />);
+
+    expect(within(row("Send later")).getByRole("button")).toHaveTextContent("Ctrl+Shift+L");
   });
 });

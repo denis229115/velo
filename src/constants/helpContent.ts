@@ -62,6 +62,7 @@ import {
   Paperclip,
   Tags,
   FolderInput,
+  LifeBuoy,
 } from "lucide-react";
 
 // ---------- Types ----------
@@ -98,7 +99,7 @@ export interface ContextualTip {
 
 const VALID_SETTINGS_TABS = [
   "general", "notifications", "composing", "mail-rules", "people",
-  "accounts", "shortcuts", "ai", "about",
+  "accounts", "shortcuts", "freshdesk", "ai", "about",
 ] as const;
 
 export type SettingsTabId = (typeof VALID_SETTINGS_TABS)[number];
@@ -351,11 +352,13 @@ export const HELP_CATEGORIES: HelpCategory[] = [
         title: "Schedule send",
         summary: "Write now, send later at a chosen time.",
         description:
-          "Compose an email and schedule it to be sent at a specific date and time. Send later works for every email account, Gmail and IMAP/SMTP. Choose from quick presets (tomorrow morning, Monday morning) or pick a custom date and time. Scheduled emails send when Velo is next open at or after the chosen time: nothing sends while your Mac sleeps or Velo is closed, and emails that fall due while you're offline wait until you're back online. A failed send is retried a few times with increasing delays; if it still fails you get a notification. If Velo closes in the middle of sending, it never resends automatically: it checks your Sent mail and, if it can't find the email, tells you to check Sent before sending it again.",
+          "Compose an email and schedule it to be sent at a specific date and time. Send later works for every email account, Gmail and IMAP/SMTP, and sends from the address you picked in From, including send-as aliases. Choose from quick presets (tomorrow morning, Monday morning) or pick a custom date and time. Scheduled emails send when Velo is next open at or after the chosen time: nothing sends while your Mac sleeps or Velo is closed, and emails that fall due while you're offline wait until you're back online. The Scheduled screen lists every scheduled email with its status (scheduled, sending, sent or failed), send time, email account and any error; cancel a scheduled one there before it goes out, or retry a failed one. A failed send is retried a few times with increasing delays; if it still fails you get a notification and it stays on the Scheduled screen. If Velo closes in the middle of sending, it never resends automatically: it checks your Sent mail and, if it can't find the email, tells you to check Sent before you retry it.",
         tips: [
           { text: "Open the send-later picker from the composer, even while typing", shortcut: "Ctrl+Shift+L" },
           { text: "Or click the clock button next to Send." },
           { text: "Quick presets: Tomorrow Morning (9am), Tomorrow Afternoon (1pm), Monday Morning." },
+          { text: "See, cancel and retry scheduled emails on the Scheduled screen", shortcut: "g then l" },
+          { text: "A retry sends the same email once; if a copy already reached Sent, it is marked sent instead." },
           { text: "Rebind send now and send later in Settings > Shortcuts." },
         ],
         relatedSettingsTab: "shortcuts",
@@ -1054,7 +1057,7 @@ export const HELP_CATEGORIES: HelpCategory[] = [
           "When viewing an email thread, press t to have AI analyze the conversation and extract an actionable task. The AI identifies the task title, description, suggested due date, and priority from the email content. A dialog shows the extracted task with editable fields — adjust the title, description, priority, or due date before creating. The task is linked to the email thread so you can always jump back to the original context. Also available from the command palette as 'Create Task from Email (AI)'.",
         tips: [
           { text: "Extract task from email", shortcut: "t" },
-          { text: "Also available in the command palette (Ctrl+K → 'Create Task from Email')." },
+          { text: "Also available in the command palette ('Create Task from Email')." },
           { text: "Edit the extracted fields before creating the task." },
           { text: "The task links back to the original email thread." },
           { text: "Requires the Claude API, approved in Settings > AI." },
@@ -1115,12 +1118,12 @@ export const HELP_CATEGORIES: HelpCategory[] = [
         id: "accent-colors",
         icon: Palette,
         title: "Accent colors",
-        summary: "8 color presets to personalize the app.",
+        summary: "9 color presets to personalize the app.",
         description:
-          "Choose from 8 accent color presets to personalize the look of the app: Indigo (default), Rose, Emerald, Amber, Sky, Violet, Orange, or Slate. Each preset has separate light and dark mode variants that are optimized for readability. The accent color is used for buttons, active states, links, badges, and highlights throughout the app. Accent colors are independent of the light/dark theme.",
+          "Choose from 9 accent color presets to personalize the look of the app: Blue (default), Indigo, Rose, Emerald, Amber, Sky, Violet, Orange, or Slate. Each preset has separate light and dark mode variants that are optimized for readability. The accent color is used for buttons, active states, links, badges, and highlights throughout the app. Accent colors are independent of the light/dark theme.",
         tips: [
           { text: "Change accent color in Settings > General." },
-          { text: "8 presets: Indigo, Rose, Emerald, Amber, Sky, Violet, Orange, Slate." },
+          { text: "9 presets: Blue (default), Indigo, Rose, Emerald, Amber, Sky, Violet, Orange, Slate." },
           { text: "Each color has optimized light and dark variants." },
           { text: "Accent color is independent of light/dark theme." },
         ],
@@ -1267,6 +1270,20 @@ export const HELP_CATEGORIES: HelpCategory[] = [
           { text: "Failed operations can be retried or cleared from Settings." },
         ],
         relatedSettingsTab: "accounts",
+      },
+      {
+        id: "freshdesk-connection",
+        icon: LifeBuoy,
+        title: "Connect your helpdesk",
+        summary: "Connect one Freshdesk helpdesk and classify its statuses.",
+        description:
+          "In Settings > Freshdesk, enter your helpdesk address and the API key from your Freshdesk profile settings. The key is stored encrypted on this Mac. Velo reads your helpdesk's exact statuses, priorities, agents, groups and ticket fields, and recognises you from the agent Freshdesk signs you in as. Classify each status as Open (we are expected to act), Waiting (the ball is in someone else's court) or Done (no further work expected). Classes are kept by status ID, so a status renamed in Freshdesk keeps its class. Until you connect, Velo shows sample statuses and tickets, each marked Sample. Connecting a different helpdesk clears everything from the previous one.",
+        tips: [
+          { text: "Metadata is read again on connect, every few hours, and when Freshdesk rejects a value." },
+          { text: "Use Refresh metadata after renaming or adding statuses in Freshdesk." },
+          { text: "Disconnect forgets the API key and returns to sample data." },
+        ],
+        relatedSettingsTab: "freshdesk",
       },
     ],
   },

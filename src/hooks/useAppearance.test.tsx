@@ -2,6 +2,7 @@ import { act, render } from "@testing-library/react";
 import { useUIStore } from "@/stores/uiStore";
 import { setSetting } from "@/services/db/settings";
 import { useAppearance } from "./useAppearance";
+import { getThemeById } from "@/constants/themes";
 import {
   contrastRatio,
   injectThemeCss,
@@ -41,7 +42,7 @@ describe("useAppearance", () => {
   beforeEach(() => {
     document.documentElement.className = "";
     document.documentElement.removeAttribute("style");
-    useUIStore.setState({ theme: "system", colorTheme: "indigo", reduceMotion: false });
+    useUIStore.setState({ theme: "system", colorTheme: useUIStore.getInitialState().colorTheme, reduceMotion: false });
   });
 
   it("follows macOS appearance by default, including live changes", () => {
@@ -69,6 +70,40 @@ describe("useAppearance", () => {
     render(<AppearanceRoot />);
     act(() => useUIStore.getState().setTheme("dark"));
     expect(setSetting).toHaveBeenCalledWith("theme", "dark");
+  });
+
+  describe("accent colour", () => {
+    const accent = () => readToken("color-accent");
+    const blue = getThemeById("blue");
+    const indigo = getThemeById("indigo");
+
+    it.each([
+      ["light", false, blue.light.accent],
+      ["dark", true, blue.dark.accent],
+    ])("uses the neutral blue in the %s theme when no accent was ever saved", (_n, dark, expected) => {
+      mockSystemPreferences({ dark });
+      render(<AppearanceRoot />);
+      expect(accent()).toBe(expected);
+      expect(accent()).not.toBe(indigo.light.accent);
+      expect(accent()).not.toBe(indigo.dark.accent);
+    });
+
+    it.each([
+      ["light", false, indigo.light.accent],
+      ["dark", true, indigo.dark.accent],
+    ])("keeps a saved Indigo choice in the %s theme", (_n, dark, expected) => {
+      mockSystemPreferences({ dark });
+      act(() => useUIStore.getState().setColorTheme("indigo"));
+      render(<AppearanceRoot />);
+      expect(accent()).toBe(expected);
+    });
+
+    it("keeps another saved preset such as Rose", () => {
+      mockSystemPreferences({ dark: false });
+      act(() => useUIStore.getState().setColorTheme("rose"));
+      render(<AppearanceRoot />);
+      expect(accent()).toBe(getThemeById("rose").light.accent);
+    });
   });
 
   describe("reduced motion", () => {

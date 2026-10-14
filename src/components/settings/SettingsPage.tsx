@@ -5,6 +5,7 @@ import { navigateToLabel, navigateToSettings } from "@/router/navigate";
 import { useAccountStore } from "@/stores/accountStore";
 import { getSetting, setSetting, getSecureSetting, setSecureSetting } from "@/services/db/settings";
 import { AiProviderSettings } from "./AiProviderSettings";
+import { FreshdeskSettings } from "./FreshdeskSettings";
 import { deleteAccount } from "@/services/db/accounts";
 import { removeClient, reauthorizeAccount } from "@/services/gmail/tokenManager";
 import { triggerSync, forceFullSync, resyncAccount } from "@/services/gmail/syncManager";
@@ -24,6 +25,7 @@ import {
   UserCircle,
   Keyboard,
   Sparkles,
+  LifeBuoy,
   Check,
   Mail,
   Info,
@@ -50,6 +52,7 @@ import { SmartLabelEditor } from "./SmartLabelEditor";
 import { SHORTCUTS, getDefaultKeyMap } from "@/constants/shortcuts";
 import { useShortcutStore } from "@/stores/shortcutStore";
 import { findShortcutConflicts } from "@/utils/shortcutKeys";
+import { formatShortcut } from "@/utils/shortcutLabel";
 import { COLOR_THEMES } from "@/constants/themes";
 import {
   getAliasesForAccount,
@@ -63,7 +66,7 @@ import { Button } from "@/components/ui/Button";
 import { TextField } from "@/components/ui/TextField";
 import appIcon from "@/assets/icon.png";
 
-type SettingsTab = "general" | "notifications" | "composing" | "mail-rules" | "people" | "accounts" | "shortcuts" | "ai" | "about";
+type SettingsTab = "general" | "notifications" | "composing" | "mail-rules" | "people" | "accounts" | "shortcuts" | "freshdesk" | "ai" | "about";
 
 const tabs: { id: SettingsTab; label: string; icon: LucideIcon }[] = [
   { id: "general", label: "General", icon: Settings },
@@ -73,6 +76,7 @@ const tabs: { id: SettingsTab; label: string; icon: LucideIcon }[] = [
   { id: "people", label: "People", icon: Users },
   { id: "accounts", label: "Accounts", icon: UserCircle },
   { id: "shortcuts", label: "Shortcuts", icon: Keyboard },
+  { id: "freshdesk", label: "Freshdesk", icon: LifeBuoy },
   { id: "ai", label: "AI", icon: Sparkles },
   { id: "about", label: "About", icon: Info },
 ];
@@ -1002,6 +1006,8 @@ export function SettingsPage() {
                 <ShortcutsTab />
               )}
 
+              {activeTab === "freshdesk" && <FreshdeskSettings />}
+
               {activeTab === "ai" && (
                 <>
                   <Section title="Provider">
@@ -1647,7 +1653,7 @@ export function ShortcutsTab() {
           </div>
           <div className="flex items-center gap-2">
             <kbd className="text-xs bg-bg-tertiary px-2 py-1 rounded border border-border-primary font-mono">
-              {composeShortcut}
+              {formatShortcut(composeShortcut)}
             </kbd>
             <button
               ref={globalRecorderRef}
@@ -1718,13 +1724,13 @@ export function ShortcutsTab() {
                           : "bg-bg-tertiary text-text-tertiary hover:text-text-primary border border-border-primary"
                       }`}
                     >
-                      {isRecording ? "Press key..." : currentKey}
+                      {isRecording ? "Press key..." : formatShortcut(currentKey)}
                     </button>
                     {!isDefault && (
                       <button
                         onClick={() => resetKey(item.id)}
                         className="text-xs text-text-tertiary hover:text-text-primary"
-                        title={`Reset to ${defaults[item.id]}`}
+                        title={`Reset to ${formatShortcut(defaults[item.id] ?? "")}`}
                       >
                         ×
                       </button>

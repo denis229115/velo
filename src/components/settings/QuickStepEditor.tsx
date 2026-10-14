@@ -16,6 +16,7 @@ import {
 } from "@/services/quickSteps/types";
 import { ALL_CATEGORIES } from "@/services/db/threadCategories";
 import { seedDefaultQuickSteps } from "@/services/quickSteps/defaults";
+import { formatShortcut } from "@/utils/shortcutLabel";
 
 function describeActions(actionsJson: string): string {
   try {
@@ -243,7 +244,7 @@ export function QuickStepEditor() {
                 type="text"
                 value={shortcut}
                 onChange={(e) => setShortcut(e.target.value)}
-                placeholder="e.g. Ctrl+Shift+1"
+                placeholder={`e.g. ${formatShortcut("Ctrl+Shift+1")}`}
                 className="w-full px-3 py-1 bg-bg-tertiary border border-border-primary rounded text-xs text-text-primary outline-none focus:border-accent font-mono"
               />
             </div>
