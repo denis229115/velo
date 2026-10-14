@@ -382,7 +382,7 @@ export function InlineReply({ thread, messages, accountId, noReply, onSent }: In
       <div className="relative">
         <EditorContent editor={editor} />
         {autoDraftLoading && (
-          <div className="absolute inset-0 flex items-center justify-center bg-bg-primary/60 backdrop-blur-[1px]">
+          <div className="absolute inset-0 flex items-center justify-center bg-bg-primary/60">
             <div className="flex items-center gap-2 text-xs text-text-secondary">
               <Loader2 size={14} className="animate-spin" />
               Generating draft...

@@ -768,11 +768,11 @@ export const HELP_CATEGORIES: HelpCategory[] = [
         title: "AI overview",
         summary: "Every AI request goes through one gateway, to the Claude API only.",
         description:
-          "Every AI request in Velo goes through one AI gateway. It sends only allowlisted fields (subject, message text, status and priority): sender and recipient addresses, custom fields, internal notes and attachments never leave Velo. Only the Claude API (Anthropic) may receive email, ticket or task content, and AI stays off until you approve it in Settings > AI. Other providers can still be configured but are refused for this content, with the reason shown. The AI gets no tools and its output is only shown to you. Every request is recorded in a local AI audit log. AI features include thread summaries, smart replies, compose assistance, text transformation, categorisation, smart labels, task extraction, auto-drafts and natural language inbox queries. Reading, replying and composing keep working when AI is off or failing.",
+          "Every AI request in Velo goes through one AI gateway. It sends only allowlisted fields (subject, message text, status and priority, plus the sender's domain such as example.com for categorisation and smart labels): sender and recipient addresses and names, custom fields, internal notes and attachments never leave Velo. Only the Claude API (Anthropic) may receive email, ticket or task content, and AI stays off until you approve it in Settings > AI. Other providers are no longer offered; if one was selected before, Settings > AI explains why it is refused and offers to switch to Claude. The AI gets no tools and its output is only shown to you. Every request is recorded in a local AI audit log. AI features include thread summaries, smart replies, compose assistance, text transformation, categorisation, smart labels, task extraction, auto-drafts and natural language inbox queries. Reading, replying and composing keep working when AI is off or failing.",
         tips: [
           { text: "Add your Anthropic API key in Settings > AI, then tick the approval box." },
           { text: "Only the Claude API may receive email, ticket or task content." },
-          { text: "Sender and recipient addresses are never sent to the AI." },
+          { text: "Sender and recipient addresses are never sent to the AI; categorisation sees only the sender's domain." },
           { text: "Every AI request is logged locally: when, which feature, which model." },
           { text: "AI results are cached per message content, model and prompt version." },
           { text: "API keys are stored securely in your local database." },
@@ -1104,12 +1104,12 @@ export const HELP_CATEGORIES: HelpCategory[] = [
         title: "Light & dark mode",
         summary: "Switch between light, dark, or system theme.",
         description:
-          "Choose between light mode, dark mode, or system-matched (follows your OS setting). Dark mode uses carefully chosen colors for comfortable reading in low-light environments, with a darker background and softer text. The theme switches instantly and persists across restarts. The animated gradient background also adapts — light mode uses blues/purples/pinks, dark mode uses deeper blues and purples.",
+          "Choose between light mode, dark mode, or system-matched (follows your OS setting). Dark mode uses carefully chosen colors for comfortable reading in low-light environments, with a darker background and softer text. The theme switches instantly and persists across restarts. Surfaces are neutral and solid so text stays readable; only the sidebar is translucent. Keyboard focus is always shown with a visible ring.",
         tips: [
           { text: "Change theme in Settings > General." },
           { text: "\"System\" follows your OS light/dark preference." },
           { text: "Dark mode is optimized for low-light environments." },
-          { text: "The animated background gradient adapts to light/dark mode." },
+          { text: "Plain-text emails follow the theme; HTML emails keep a light page so senders' colours stay readable." },
         ],
         relatedSettingsTab: "general",
       },
@@ -1117,12 +1117,12 @@ export const HELP_CATEGORIES: HelpCategory[] = [
         id: "accent-colors",
         icon: Palette,
         title: "Accent colors",
-        summary: "8 color presets to personalize the app.",
+        summary: "9 color presets to personalize the app.",
         description:
-          "Choose from 8 accent color presets to personalize the look of the app: Indigo (default), Rose, Emerald, Amber, Sky, Violet, Orange, or Slate. Each preset has separate light and dark mode variants that are optimized for readability. The accent color is used for buttons, active states, links, badges, and highlights throughout the app. Accent colors are independent of the light/dark theme.",
+          "Choose from 9 accent color presets to personalize the look of the app: Blue (default), Indigo, Rose, Emerald, Amber, Sky, Violet, Orange, or Slate. Each preset has separate light and dark mode variants that are optimized for readability. The accent color is used for buttons, active states, links, badges, and highlights throughout the app. Accent colors are independent of the light/dark theme.",
         tips: [
           { text: "Change accent color in Settings > General." },
-          { text: "8 presets: Indigo, Rose, Emerald, Amber, Sky, Violet, Orange, Slate." },
+          { text: "9 presets: Blue (default), Indigo, Rose, Emerald, Amber, Sky, Violet, Orange, Slate." },
           { text: "Each color has optimized light and dark variants." },
           { text: "Accent color is independent of light/dark theme." },
         ],
@@ -1134,7 +1134,7 @@ export const HELP_CATEGORIES: HelpCategory[] = [
         title: "Font size & email density",
         summary: "Adjust text size and list spacing.",
         description:
-          "Font scale adjusts the overall text size across the app: Small, Default, Large, or Extra Large. Email density controls the spacing in the email list: Compact (more threads visible), Default (balanced), or Comfortable (more breathing room). Both settings combine — use large font with comfortable density for accessibility, or small font with compact density to see more at once.",
+          "Font scale adjusts the overall text size across the app: Small, Default, Large, or Extra Large. Email density controls the spacing in the email list: Compact (the default, more threads visible), Default (balanced), or Comfortable (more breathing room). Both settings combine — use large font with comfortable density for accessibility, or small font with compact density to see more at once.",
         tips: [
           { text: "Font sizes: Small, Default, Large, Extra Large." },
           { text: "Density options: Compact, Default, Comfortable." },

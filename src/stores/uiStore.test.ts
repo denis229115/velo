@@ -16,9 +16,17 @@ describe("uiStore", () => {
       readingPanePosition: "right",
       readFilter: "all",
       fontScale: "default",
-      colorTheme: "indigo",
+      colorTheme: "blue",
       inboxViewMode: "unified",
     });
+  });
+
+  it("defaults the email list to compact rows until the user picks a density", () => {
+    expect(useUIStore.getInitialState().emailDensity).toBe("compact");
+  });
+
+  it("starts new installs on the neutral blue accent", () => {
+    expect(useUIStore.getInitialState().colorTheme).toBe("blue");
   });
 
   it("should have correct default values", () => {
@@ -83,11 +91,11 @@ describe("uiStore", () => {
   });
 
   it("setEmailDensity should persist to DB and update state", () => {
-    expect(useUIStore.getState().emailDensity).toBe("default");
-
-    useUIStore.getState().setEmailDensity("compact");
-    expect(setSetting).toHaveBeenCalledWith("email_density", "compact");
     expect(useUIStore.getState().emailDensity).toBe("compact");
+
+    useUIStore.getState().setEmailDensity("default");
+    expect(setSetting).toHaveBeenCalledWith("email_density", "default");
+    expect(useUIStore.getState().emailDensity).toBe("default");
 
     useUIStore.getState().setEmailDensity("spacious");
     expect(setSetting).toHaveBeenCalledWith("email_density", "spacious");
@@ -147,7 +155,7 @@ describe("uiStore", () => {
   });
 
   it("setColorTheme should persist to DB and update state", () => {
-    expect(useUIStore.getState().colorTheme).toBe("indigo");
+    expect(useUIStore.getState().colorTheme).toBe("blue");
 
     useUIStore.getState().setColorTheme("rose");
     expect(setSetting).toHaveBeenCalledWith("color_theme", "rose");

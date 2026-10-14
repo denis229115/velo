@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { setSetting } from "@/services/db/settings";
-import type { ColorThemeId } from "@/constants/themes";
+import { DEFAULT_COLOR_THEME, type ColorThemeId } from "@/constants/themes";
 
 type Theme = "light" | "dark" | "system";
 type ReadingPanePosition = "right" | "bottom" | "hidden";
@@ -68,11 +68,11 @@ export const useUIStore = create<UIState>((set) => ({
   readingPanePosition: "right",
   readFilter: "all",
   emailListWidth: 320,
-  emailDensity: "default",
+  emailDensity: "compact",
   defaultReplyMode: "reply",
   markAsReadBehavior: "instant",
   fontScale: "default",
-  colorTheme: "indigo",
+  colorTheme: DEFAULT_COLOR_THEME,
   sendAndArchive: false,
   inboxViewMode: "unified",
   taskSidebarVisible: false,
@@ -82,7 +82,10 @@ export const useUIStore = create<UIState>((set) => ({
   pendingOpsCount: 0,
   isSyncingFolder: null,
 
-  setTheme: (theme) => set({ theme }),
+  setTheme: (theme) => {
+    setSetting("theme", theme).catch(() => {});
+    set({ theme });
+  },
   toggleSidebar: () =>
     set((state) => {
       const collapsed = !state.sidebarCollapsed;

@@ -4,7 +4,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { stripRemoteImages, hasBlockedImages } from "@/utils/imageBlocker";
 import { addToAllowlist } from "@/services/db/imageAllowlist";
 import { escapeHtml, sanitizeHtml } from "@/utils/sanitize";
-import { useUIStore } from "@/stores/uiStore";
+import { useIsDarkTheme } from "@/hooks/useAppearance";
 import type { DbAttachment } from "@/services/db/attachments";
 
 interface EmailRendererProps {
@@ -34,9 +34,7 @@ export function EmailRenderer({
   const [overrideShow, setOverrideShow] = useState(false);
   const [cidMap, setCidMap] = useState<Map<string, string>>(new Map());
 
-  const theme = useUIStore((s) => s.theme);
-  const isDark = theme === "dark"
-    || (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+  const isDark = useIsDarkTheme();
 
   const shouldBlock = blockImages && !senderAllowlisted && !overrideShow;
 
@@ -147,7 +145,7 @@ export function EmailRenderer({
       overflow: hidden;
     }
     img { max-width: 100%; height: auto; }
-    a { color: ${plainTextDark ? "#60a5fa" : "#3b82f6"}; }
+    a { color: ${plainTextDark ? "#60a5fa" : "#1d4ed8"}; }
     blockquote {
       border-left: 3px solid ${plainTextDark ? "#4b5563" : "#d1d5db"};
       margin: 8px 0;

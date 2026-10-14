@@ -71,7 +71,8 @@ import { OfflineBanner } from "./components/ui/OfflineBanner";
 import { UpdateToast } from "./components/ui/UpdateToast";
 import { ErrorBoundary } from "./components/ui/ErrorBoundary";
 import { formatSyncError } from "./utils/networkErrors";
-import { getThemeById, COLOR_THEMES } from "./constants/themes";
+import { COLOR_THEMES } from "./constants/themes";
+import { useAppearance } from "./hooks/useAppearance";
 import type { ColorThemeId } from "./constants/themes";
 import { router } from "./router";
 import { getSelectedThreadId } from "./router/navigate";
@@ -95,10 +96,7 @@ function useRouterSyncBridge() {
 import { useThreadStore } from "./stores/threadStore";
 
 export default function App() {
-  const theme = useUIStore((s) => s.theme);
   const fontScale = useUIStore((s) => s.fontScale);
-  const colorTheme = useUIStore((s) => s.colorTheme);
-  const reduceMotion = useUIStore((s) => s.reduceMotion);
   const sidebarCollapsed = useUIStore((s) => s.sidebarCollapsed);
   const [showAddAccount, setShowAddAccount] = useState(false);
   const [initialized, setInitialized] = useState(false);
@@ -422,27 +420,7 @@ export default function App() {
     return unsub;
   }, []);
 
-  // Sync theme class to <html> element
-  useEffect(() => {
-    const root = document.documentElement;
-    if (theme === "dark") {
-      root.classList.add("dark");
-    } else if (theme === "light") {
-      root.classList.remove("dark");
-    } else {
-      const mq = window.matchMedia("(prefers-color-scheme: dark)");
-      const apply = () => {
-        if (mq.matches) {
-          root.classList.add("dark");
-        } else {
-          root.classList.remove("dark");
-        }
-      };
-      apply();
-      mq.addEventListener("change", apply);
-      return () => mq.removeEventListener("change", apply);
-    }
-  }, [theme]);
+  useAppearance();
 
   // Sync font-scale class to <html> element
   useEffect(() => {
@@ -450,44 +428,6 @@ export default function App() {
     root.classList.remove("font-scale-small", "font-scale-default", "font-scale-large", "font-scale-xlarge");
     root.classList.add(`font-scale-${fontScale}`);
   }, [fontScale]);
-
-  // Sync reduce-motion class to <html> element
-  useEffect(() => {
-    const root = document.documentElement;
-    root.classList.toggle("reduce-motion", reduceMotion);
-  }, [reduceMotion]);
-
-  // Apply color theme CSS custom properties to <html>
-  useEffect(() => {
-    const root = document.documentElement;
-    const props = ["--color-accent", "--color-accent-hover", "--color-accent-light", "--color-bg-selected", "--color-sidebar-active"];
-
-    const apply = () => {
-      if (colorTheme === "indigo") {
-        // Default theme — remove inline overrides, let CSS handle it
-        for (const p of props) root.style.removeProperty(p);
-        return;
-      }
-      const themeData = getThemeById(colorTheme);
-      const isDark =
-        theme === "dark" ||
-        (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
-      const colors = isDark ? themeData.dark : themeData.light;
-      root.style.setProperty("--color-accent", colors.accent);
-      root.style.setProperty("--color-accent-hover", colors.accentHover);
-      root.style.setProperty("--color-accent-light", colors.accentLight);
-      root.style.setProperty("--color-bg-selected", colors.bgSelected);
-      root.style.setProperty("--color-sidebar-active", colors.sidebarActive);
-    };
-
-    apply();
-
-    if (theme === "system") {
-      const mq = window.matchMedia("(prefers-color-scheme: dark)");
-      mq.addEventListener("change", apply);
-      return () => mq.removeEventListener("change", apply);
-    }
-  }, [colorTheme, theme]);
 
   const handleAddAccountSuccess = useCallback(async () => {
     setShowAddAccount(false);
@@ -542,14 +482,6 @@ export default function App() {
   return (
     <div className="flex flex-col h-screen overflow-hidden text-text-primary">
       <OfflineBanner />
-      {/* Animated gradient blobs for glassmorphism effect */}
-      <div className="animated-bg" aria-hidden="true">
-        <div className="blob" />
-        <div className="blob" />
-        <div className="blob" />
-        <div className="blob" />
-        <div className="blob" />
-      </div>
       <TitleBar />
       <div className="flex flex-1 min-w-0 overflow-hidden">
         <DndProvider>
@@ -566,8 +498,8 @@ export default function App() {
       {/* Sync status bar */}
       {syncStatus && (
         <div
-          className={`fixed bottom-0 left-0 right-0 glass-panel text-white text-xs px-4 py-1.5 text-center z-40 animate-[slideUp_200ms_ease-out,fadeIn_200ms_ease-out] ${
-            syncStatus.startsWith("Sync failed") ? "bg-danger/90" : "bg-accent/90"
+          className={`fixed bottom-0 left-0 right-0 text-white text-xs px-4 py-1.5 text-center z-40 animate-[slideUp_200ms_ease-out,fadeIn_200ms_ease-out] ${
+            syncStatus.startsWith("Sync failed") ? "bg-danger" : "bg-accent"
           }`}
         >
           {syncStatus}

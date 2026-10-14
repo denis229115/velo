@@ -56,7 +56,7 @@ export function AttachmentGridItem({ attachment, onPreview, onDownload, onJumpTo
         {previewable && (
           <button
             onClick={onPreview}
-            className="p-1.5 rounded-md bg-bg-primary/90 border border-border-primary text-text-secondary hover:text-text-primary transition-colors"
+            className="p-1.5 rounded-md bg-surface-overlay border border-border-primary text-text-secondary hover:text-text-primary transition-colors"
             title="Preview"
           >
             <Eye size={13} />
@@ -64,14 +64,14 @@ export function AttachmentGridItem({ attachment, onPreview, onDownload, onJumpTo
         )}
         <button
           onClick={onDownload}
-          className="p-1.5 rounded-md bg-bg-primary/90 border border-border-primary text-text-secondary hover:text-text-primary transition-colors"
+          className="p-1.5 rounded-md bg-surface-overlay border border-border-primary text-text-secondary hover:text-text-primary transition-colors"
           title="Download"
         >
           <Download size={13} />
         </button>
         <button
           onClick={onJumpToEmail}
-          className="p-1.5 rounded-md bg-bg-primary/90 border border-border-primary text-text-secondary hover:text-text-primary transition-colors"
+          className="p-1.5 rounded-md bg-surface-overlay border border-border-primary text-text-secondary hover:text-text-primary transition-colors"
           title="Jump to email"
         >
           <ExternalLink size={13} />
