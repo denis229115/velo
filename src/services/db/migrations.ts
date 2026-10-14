@@ -814,6 +814,62 @@ const MIGRATIONS = [
       ALTER TABLE scheduled_emails ADD COLUMN last_error TEXT;
     `,
   },
+  {
+    version: 26,
+    description: "Tenant-scoped integration accounts and Freshdesk metadata",
+    sql: `
+      CREATE TABLE IF NOT EXISTS integration_accounts (
+        kind TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        tenant_host TEXT NOT NULL,
+        me_agent_id TEXT,
+        me_name TEXT,
+        me_email TEXT,
+        connected_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        metadata_refreshed_at INTEGER
+      );
+      CREATE TABLE IF NOT EXISTS freshdesk_field_choices (
+        tenant_id TEXT NOT NULL,
+        field_name TEXT NOT NULL,
+        choice_id TEXT NOT NULL,
+        label TEXT NOT NULL,
+        customer_label TEXT,
+        position INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (tenant_id, field_name, choice_id)
+      );
+      CREATE TABLE IF NOT EXISTS freshdesk_ticket_fields (
+        tenant_id TEXT NOT NULL,
+        field_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        label TEXT NOT NULL,
+        type TEXT NOT NULL,
+        is_default INTEGER NOT NULL DEFAULT 0,
+        required_for_agents INTEGER NOT NULL DEFAULT 0,
+        required_for_closure INTEGER NOT NULL DEFAULT 0,
+        position INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (tenant_id, field_id)
+      );
+      CREATE TABLE IF NOT EXISTS freshdesk_agents (
+        tenant_id TEXT NOT NULL,
+        agent_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        email TEXT,
+        PRIMARY KEY (tenant_id, agent_id)
+      );
+      CREATE TABLE IF NOT EXISTS freshdesk_groups (
+        tenant_id TEXT NOT NULL,
+        group_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        PRIMARY KEY (tenant_id, group_id)
+      );
+      CREATE TABLE IF NOT EXISTS freshdesk_status_classes (
+        tenant_id TEXT NOT NULL,
+        status_id TEXT NOT NULL,
+        status_class TEXT NOT NULL CHECK (status_class IN ('open', 'waiting', 'done')),
+        PRIMARY KEY (tenant_id, status_id)
+      );
+    `,
+  },
 ];
 
 /**
