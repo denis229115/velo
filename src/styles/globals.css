@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "@fontsource-variable/inter/wght.css";
 @import "./theme.css";
 
 /*
@@ -53,6 +54,20 @@
   --color-warning: #d97706;
   --color-success: #059669;
 
+  /* Type scale (rem, so the four font-scale steps still apply) */
+  --font-sans: "Inter Variable", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --text-micro: 0.625rem; /* 10px: key chips, badges */
+  --text-meta: 0.6875rem; /* 11px: times, breadcrumbs, footer */
+  --text-preview: 0.75rem; /* 12px: previews, tabs */
+  --text-row: 0.8125rem; /* 13px: list rows */
+  --text-title: 1.375rem; /* 22px: page title */
+  --text-title--letter-spacing: -0.03em;
+  --text-title--line-height: 1.2;
+
+  /* Radii added to Tailwind's defaults */
+  --radius-chip: 4px;
+  --radius-panel: 10px;
+
   --sidebar-blur: 20px;
   --overlay-shadow: 0 8px 28px rgba(0, 0, 0, 0.12);
 }
@@ -84,9 +99,7 @@ body,
 }
 
 body {
-  font-family:
-    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue",
-    Arial, sans-serif;
+  font-family: var(--font-sans);
   background: var(--surface-base);
   color: var(--color-text-primary);
   -webkit-font-smoothing: antialiased;
