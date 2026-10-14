@@ -37,6 +37,7 @@ import {
   ChevronUp,
   ChevronDown,
   RotateCcw,
+  AlertTriangle,
   type LucideIcon,
 } from "lucide-react";
 import { SignatureEditor } from "./SignatureEditor";
@@ -50,6 +51,7 @@ import { QuickStepEditor } from "./QuickStepEditor";
 import { SmartLabelEditor } from "./SmartLabelEditor";
 import { SHORTCUTS, getDefaultKeyMap } from "@/constants/shortcuts";
 import { useShortcutStore } from "@/stores/shortcutStore";
+import { findShortcutConflicts } from "@/utils/shortcutKeys";
 import { COLOR_THEMES } from "@/constants/themes";
 import {
   getAliasesForAccount,
@@ -1842,7 +1844,7 @@ function InfoRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-function ShortcutsTab() {
+export function ShortcutsTab() {
   const keyMap = useShortcutStore((s) => s.keyMap);
   const setKey = useShortcutStore((s) => s.setKey);
   const resetKey = useShortcutStore((s) => s.resetKey);
@@ -1903,6 +1905,8 @@ function ShortcutsTab() {
   }, [setKey]);
 
   const hasCustom = Object.entries(keyMap).some(([id, keys]) => defaults[id] !== keys);
+  const conflicts = findShortcutConflicts(keyMap);
+  const descById = new Map(SHORTCUTS.flatMap((c) => c.items.map((i) => [i.id, i.desc] as const)));
 
   return (
     <>
@@ -1955,15 +1959,25 @@ function ShortcutsTab() {
               const currentKey = keyMap[item.id] ?? item.keys;
               const isDefault = currentKey === defaults[item.id];
               const isRecording = recordingId === item.id;
+              const clashesWith = conflicts.get(item.id);
 
               return (
                 <div
                   key={item.id}
+                  data-shortcut-row
                   className="flex items-center justify-between py-2 px-1"
                 >
-                  <span className="text-sm text-text-secondary">
-                    {item.desc}
-                  </span>
+                  <div className="min-w-0">
+                    <span className="text-sm text-text-secondary">
+                      {item.desc}
+                    </span>
+                    {clashesWith && (
+                      <p role="alert" className="flex items-center gap-1 text-xs text-warning mt-0.5">
+                        <AlertTriangle size={12} className="shrink-0" />
+                        Also used by {clashesWith.map((id) => descById.get(id) ?? id).join(", ")}
+                      </p>
+                    )}
+                  </div>
                   <div className="flex items-center gap-2 ml-4 shrink-0">
                     <button
                       onClick={() => setRecordingId(isRecording ? null : item.id)}

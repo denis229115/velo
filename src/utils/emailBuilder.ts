@@ -18,6 +18,8 @@ export interface EmailDraft {
   references?: string;
   threadId?: string;
   attachments?: EmailAttachment[];
+  /** Fixed Message-ID header (with angle brackets); generated when omitted */
+  messageId?: string;
 }
 
 function base64UrlEncode(str: string): string {
@@ -98,7 +100,7 @@ function generateMessageId(from: string): string {
 }
 
 export function buildRawEmail(draft: EmailDraft): string {
-  const messageId = generateMessageId(draft.from);
+  const messageId = draft.messageId ?? generateMessageId(draft.from);
   const lines: string[] = [
     `From: ${draft.from}`,
     `To: ${draft.to.join(", ")}`,

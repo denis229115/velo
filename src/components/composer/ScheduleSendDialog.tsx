@@ -57,6 +57,7 @@ export function ScheduleSendDialog({ onSchedule, onClose }: ScheduleSendDialogPr
       onSelect={onSchedule}
       submitLabel="Schedule"
       zIndex="z-[60]"
+      note="Your email sends when Velo is next open at or after this time — not while your Mac sleeps or Velo is closed."
     />
   );
 }

@@ -4,6 +4,7 @@ import { UndoSendToast } from "./components/composer/UndoSendToast";
 import { useAccountStore } from "./stores/accountStore";
 import { useComposerStore } from "./stores/composerStore";
 import { useUIStore } from "./stores/uiStore";
+import { useShortcutStore } from "./stores/shortcutStore";
 import { runMigrations } from "./services/db/migrations";
 import { getAllAccounts } from "./services/db/accounts";
 import { getSetting } from "./services/db/settings";
@@ -42,6 +43,9 @@ export default function ComposerWindow() {
         if (savedColorTheme && COLOR_THEMES.some((t) => t.id === savedColorTheme)) {
           setColorTheme(savedColorTheme as ColorThemeId);
         }
+
+        // Custom send / send-later bindings
+        await useShortcutStore.getState().loadKeyMap();
 
         // Load accounts into store
         const dbAccounts = await getAllAccounts();

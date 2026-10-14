@@ -805,6 +805,15 @@ const MIGRATIONS = [
       );
     `,
   },
+  {
+    version: 25,
+    description: "Bounded retries with backoff for scheduled emails",
+    sql: `
+      ALTER TABLE scheduled_emails ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE scheduled_emails ADD COLUMN next_attempt_at INTEGER;
+      ALTER TABLE scheduled_emails ADD COLUMN last_error TEXT;
+    `,
+  },
 ];
 
 /**
