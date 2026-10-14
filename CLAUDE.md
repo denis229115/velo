@@ -154,13 +154,15 @@ Multi-select: click to toggle, Shift+click for range. All keyboard actions work 
 
 Tailwind CSS v4 — uses `@import "tailwindcss"`, `@theme {}` for custom properties, and `@custom-variant dark` in `src/styles/globals.css`. Dark mode toggles via `<html class="dark">` which swaps CSS custom properties. Font scaling via `font-scale-{small|default|large|xlarge}` classes on `<html>`.
 
-**Semantic color tokens**: `bg-bg-primary/secondary/tertiary/hover/selected`, `text-text-primary/secondary/tertiary`, `border-border-primary/secondary`, `bg-accent/accent-hover/accent-light`, `bg-danger/warning/success`, `bg-sidebar-bg`, `text-sidebar-text`.
+**Theme token layer** (`src/styles/theme.css`, plain CSS with light values on `:root` and dark values on `.dark`): surfaces `surface-base/sidebar/list/reader/composer/overlay/subtle`, text `text-primary/secondary/muted`, `separator`, states `state-hover/selected/focus`, `link`, `status-success/warning/error`. Exposed as Tailwind utilities in `globals.css` (`bg-surface-list`, `text-text-muted`, `border-separator`, `text-link`, `text-status-error`, …). Older names (`bg-bg-primary/secondary/tertiary/hover/selected`, `text-text-primary/secondary/tertiary`, `border-border-primary/secondary`, `bg-sidebar-bg`, `text-sidebar-text`) are aliases onto these tokens. `bg-accent/accent-hover/accent-light` follow the accent preset; `bg-danger/warning/success` are solid fills for white text. Use `.overlay-shadow` for menus, popovers and dialogs. `useAppearance()` (`src/hooks/useAppearance.ts`) applies theme, accent preset and reduced motion; mount it once per window.
 
-**Glass effects**: `.glass-panel`, `.glass-modal`, `.glass-backdrop` utility classes with blur and shadow properties.
+**Glass**: only the sidebar is translucent (`.glass-sidebar`). Lists, reader, composer, menus and dialogs use solid surfaces; `themeGuard.test.ts` fails on blur or gradients elsewhere.
+
+**Focus and motion**: an unlayered `:focus-visible` rule in `theme.css` draws the focus ring on every interactive element (Tailwind's `outline-none` can't remove it). `.reduce-motion` on `<html>` (macOS Reduce motion or the in-app setting) disables animations and transitions.
 
 **Color themes**: 8 accent color presets (Indigo, Rose, Emerald, Amber, Sky, Violet, Orange, Slate) defined in `src/constants/themes.ts`. Each has light & dark variants. Applied via CSS custom properties, independent of light/dark mode.
 
-**Background**: Animated gradient blobs (5 blobs with radial gradients, keyframe animations). Light mode uses blue→purple→pink→orange→cyan gradient; dark mode uses darker blues/purples.
+**Background**: solid `surface-base`; no gradients or animated blobs.
 
 **Icons**: `lucide-react` icon library.
 

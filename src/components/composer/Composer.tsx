@@ -423,7 +423,7 @@ export function Composer() {
 
       {/* Composer window */}
       <div
-        className={`relative bg-bg-primary border rounded-lg glass-modal pointer-events-auto flex flex-col slide-up-panel ${
+        className={`relative bg-surface-composer border rounded-lg overlay-shadow pointer-events-auto flex flex-col slide-up-panel ${
           isFullpage ? "w-full h-full max-w-5xl" : "w-full max-w-2xl max-h-[80vh]"
         } ${isDragging ? "border-accent border-2" : "border-border-primary"}`}
         onDragEnter={handleDragEnter}

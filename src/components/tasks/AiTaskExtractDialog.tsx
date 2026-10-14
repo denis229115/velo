@@ -90,8 +90,8 @@ export function AiTaskExtractDialog({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px]" onClick={onClose} />
-      <div className="relative glass-modal rounded-xl shadow-2xl w-[480px] max-w-[90vw] overflow-hidden">
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+      <div className="relative bg-surface-overlay border border-separator rounded-xl overlay-shadow w-[480px] max-w-[90vw] overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-border-secondary">
           <div className="flex items-center gap-2">

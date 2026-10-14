@@ -85,7 +85,7 @@ export function AccountSwitcher({
       {/* Dropdown */}
       {open && (
         <div
-          className={`absolute z-50 mt-1 py-1 rounded-lg border border-border-primary bg-bg-primary shadow-lg glass-panel ${
+          className={`absolute z-50 mt-1 py-1 rounded-lg border border-separator bg-surface-overlay overlay-shadow ${
             collapsed ? "left-full ml-1 top-0 w-64" : "left-2 right-2"
           }`}
         >
