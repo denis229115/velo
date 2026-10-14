@@ -68,7 +68,7 @@ const MAX_THREAD_RESULTS = 8;
 const MAX_TICKET_RESULTS = 8;
 const SEARCH_DEBOUNCE_MS = 150;
 /** Pages that have no mail list, so "show all results" opens the inbox list instead. */
-const NON_MAIL_PAGES = new Set(["settings", "attachments", "scheduled", "tasks", "calendar", "help"]);
+const NON_MAIL_PAGES = new Set(["settings", "attachments", "scheduled", "tasks", "calendar", "help", "freshdesk"]);
 
 /** Local search hits grouped to one entry per thread, best match first. */
 function useThreadSearch(query: string, accountId: string | null, enabled: boolean): SearchResult[] {

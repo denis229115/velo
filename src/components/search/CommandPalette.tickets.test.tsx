@@ -38,7 +38,8 @@ vi.mock("@/hooks/useRouteNavigation", () => ({ useActiveLabel: () => route.label
 import { runMigrations } from "@/services/db/migrations";
 import { classifyStatus, connectHelpdesk } from "@/services/freshdesk/connection";
 import { syncTickets } from "@/services/freshdesk/ticketSync";
-import { navigateToTicket } from "@/router/navigate";
+import { navigateToLabel, navigateToTicket } from "@/router/navigate";
+import { useThreadStore } from "@/stores/threadStore";
 import { CommandPalette } from "./CommandPalette";
 
 vi.spyOn(console, "log").mockImplementation(() => {});
@@ -150,6 +151,19 @@ describe("Command palette ticket search", () => {
     await waitFor(() => expect(groupNames()).toEqual(["Tickets", "Threads"]));
   });
 
+  it("shows all mail results in the inbox when chosen on the Freshdesk page", async () => {
+    await connectAndSync();
+    route.label = "freshdesk";
+    vi.mocked(navigateToLabel).mockClear();
+    const onClose = openPalette();
+    typeQuery("invoice");
+
+    fireEvent.click(await screen.findByRole("option", { name: "Show all results for “invoice”" }));
+    expect(useThreadStore.getState().searchQuery).toBe("invoice");
+    expect(navigateToLabel).toHaveBeenCalledWith("inbox");
+    expect(onClose).toHaveBeenCalled();
+  });
+
   it("says it searched the downloaded tickets only, and reads no network while searching", async () => {
     await connectAndSync();
     const before = stub.requests.length;
@@ -211,15 +225,28 @@ describe("Command palette ticket lookup in Freshdesk", () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
-  it("shows the rate-limit message when Freshdesk asks Velo to slow down", async () => {
+  it("says when to try the lookup again when Freshdesk asks Velo to slow down", async () => {
     await connectAndSync();
     stub.respondOnce(ALPHA_HOST, "/api/v2/tickets/1005", rateLimited);
     openPalette();
     typeQuery("1005");
-    fireEvent.click(await within(await ticketsGroup()).findByRole("option", lookup("1005")));
+    const option = await within(await ticketsGroup()).findByRole("option", lookup("1005"));
+    fireEvent.click(option);
 
-    expect(await screen.findByText("Freshdesk is rate limiting requests. Velo will try again later.")).toBeInTheDocument();
+    // Retry-After 42 s from 12:00:00 UTC
+    const retryAt = new Date(FIXTURE_NOW + 42_000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    const message = `Freshdesk asked Velo to slow down. Try this lookup again after ${retryAt}.`;
+    expect(await screen.findByText(message)).toBeInTheDocument();
+    expect(screen.queryByText(/Sync resumes automatically/)).not.toBeInTheDocument();
     expect(navigateToTicket).not.toHaveBeenCalled();
+
+    // Trying again inside the wait asks nothing of Freshdesk and says the same
+    const before = stub.requests.length;
+    typeQuery("1006x");
+    typeQuery("1005");
+    fireEvent.click(await within(await ticketsGroup()).findByRole("option", lookup("1005")));
+    expect(await screen.findByText(message)).toBeInTheDocument();
+    expect(stub.requests.length).toBe(before);
   });
 
   it("shows the API key error when Freshdesk rejects the credentials", async () => {
