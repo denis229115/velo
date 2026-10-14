@@ -18,6 +18,12 @@ export interface ListRowProps {
   /** Shown before the subject, e.g. a ticket ID */
   subjectPrefix?: ReactNode;
   preview?: ReactNode;
+  /**
+   * Short facts (assignee, last answer…) on a line of their own under the subject, most important first.
+   * The line is one row high: an item that does not fit is dropped whole, last first, never cut mid-word.
+   * Pass each fact as its own element.
+   */
+  detailLine?: ReactNode;
   /** Optional details on a line of their own under the subject; the row grows to hold them */
   extraLine?: ReactNode;
   /** Unix ms */
@@ -82,6 +88,7 @@ export function ListRow({
   subject,
   subjectPrefix,
   preview,
+  detailLine,
   extraLine,
   time,
   hasAttachment,
@@ -116,6 +123,14 @@ export function ListRow({
   );
   // Reserves room under the absolutely positioned star so the time never sits beneath it
   const starSlot = onToggleStar && <span aria-hidden className="w-5 shrink-0" />;
+  const details = detailLine && (
+    <span
+      data-line
+      className="flex flex-wrap content-start items-center gap-x-3 h-lh overflow-hidden min-w-0 text-preview text-text-tertiary [&>*]:shrink-0 [&>*]:whitespace-nowrap"
+    >
+      {detailLine}
+    </span>
+  );
   const extra = extraLine && (
     <span data-line className="flex items-center gap-x-3 min-w-0 text-preview text-text-tertiary">
       {extraLine}
@@ -135,7 +150,7 @@ export function ListRow({
         onClick={onClick}
         aria-selected={selected}
         className={`w-full text-left flex items-center gap-2.5 px-3 -outline-offset-2 ${
-          compact ? `py-1.5 ${extra ? "" : "@2xl:py-0 @2xl:h-11"}` : density === "spacious" ? "py-3.5" : "py-2.5"
+          compact ? `py-1.5 ${extra || details ? "" : "@2xl:py-0 @2xl:h-11"}` : density === "spacious" ? "py-3.5" : "py-2.5"
         } ${className}`}
       >
         <UnreadDot unread={unread} />
@@ -158,6 +173,7 @@ export function ListRow({
                 {starSlot}
               </span>
             </span>
+            {details}
             {extra}
           </span>
         ) : (
@@ -174,6 +190,7 @@ export function ListRow({
               <span className={`truncate shrink-0 max-w-[70%] ${subjectWeight}`}>{subject}</span>
               {preview && <span className="truncate text-preview text-text-tertiary min-w-0">{preview}</span>}
             </span>
+            {details}
             {extra}
           </span>
         )}

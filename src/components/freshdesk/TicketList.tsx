@@ -86,25 +86,26 @@ function NeedsReplyBadge() {
   );
 }
 
-/** Assignee first, so it is the last thing to be cut, then Last answered and Last customer message. */
-function TicketRowDetails({ ticket: t }: { ticket: TicketListItem }) {
+/**
+ * Assignee, Last answered and Last customer message, in that order of importance: the row's detail line
+ * drops whole items from the end when the list is narrow, so the assignee is the last thing to go.
+ */
+function ticketRowDetails(t: TicketListItem): ReactNode[] {
   const a = t.activity;
-  return (
-    <span className="inline-flex items-center gap-x-3 min-w-0">
-      <span data-column="assignee" className="inline-flex items-center gap-1 shrink-0 max-w-40">
-        <UserRound size={11} aria-hidden className="shrink-0" />
-        <span className="truncate">{t.assignee ?? "Unassigned"}</span>
-      </span>
-      <span className="inline-flex items-center gap-1 shrink-0">
-        <span className="text-text-tertiary">Answered</span>
-        <ActivityValue time={a.lastAnswered} history={a.history} never="Never" focusable={false} />
-      </span>
-      <span className="inline-flex items-center gap-1 shrink-0">
-        <span className="text-text-tertiary">Customer</span>
-        <ActivityValue time={a.lastCustomerMessage} history={a.history} never="None" focusable={false} />
-      </span>
-    </span>
-  );
+  return [
+    <span key="assignee" data-column="assignee" className="inline-flex items-center gap-1 shrink-0 max-w-40">
+      <UserRound size={11} aria-hidden className="shrink-0" />
+      <span className="truncate">{t.assignee ?? "Unassigned"}</span>
+    </span>,
+    <span key="answered" className="inline-flex items-center gap-1">
+      <span className="text-text-tertiary">Answered</span>
+      <ActivityValue time={a.lastAnswered} history={a.history} never="Never" focusable={false} />
+    </span>,
+    <span key="customer" className="inline-flex items-center gap-1">
+      <span className="text-text-tertiary">Customer</span>
+      <ActivityValue time={a.lastCustomerMessage} history={a.history} never="None" focusable={false} />
+    </span>,
+  ];
 }
 
 /** List or board: one switch, the same view, filters and sort either way (A04) */
@@ -284,7 +285,7 @@ export function TicketList({ selectedTicketId, width }: { selectedTicketId: stri
                   sender={t.customer ?? "Customer not loaded"}
                   subject={t.subject || "(no subject)"}
                   subjectPrefix={`#${t.id}`}
-                  preview={<TicketRowDetails ticket={t} />}
+                  detailLine={ticketRowDetails(t)}
                   extraLine={ticketRowColumns(t, view.columns)}
                   time={t.updatedAt}
                   selected={t.id === selectedTicketId}
