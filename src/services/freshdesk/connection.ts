@@ -78,6 +78,14 @@ export async function getHelpdeskConnection(): Promise<HelpdeskConnection | null
   };
 }
 
+/** The ticket's page in the connected helpdesk; null for sample data, which is not in Freshdesk. */
+export function getTicketWebUrl(ticketId: string): Promise<string | null> {
+  return withReadSnapshot(async () => {
+    const connection = await getHelpdeskConnection();
+    return connection ? `https://${connection.host}/a/tickets/${encodeURIComponent(ticketId)}` : null;
+  });
+}
+
 /**
  * Verifies the credentials against Freshdesk, reads the helpdesk's metadata
  * and only then stores anything. A different helpdesk (or sample data)

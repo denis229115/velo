@@ -87,6 +87,7 @@ async function connectAndSync() {
 const reader = () => within(screen.getByRole("region", { name: "Ticket reader" }));
 const entries = () => within(reader().getByRole("list", { name: "Conversation history" })).getAllByRole("article");
 const metric = (label: string) => reader().getByRole("definition", { name: label }).textContent?.replace(/\s+/g, " ").trim();
+const needsReply = () => reader().getByRole("note", { name: "Attention" }).textContent?.replace(/\s+/g, " ").trim();
 
 beforeEach(async () => {
   vi.useFakeTimers({ toFake: ["Date"] });
@@ -138,7 +139,7 @@ describe("ticket reader", () => {
       "Internal note",
     ]);
     expect(metric("Last answered")).toBe("Never answered");
-    expect(metric("Needs reply")).toBe("Yes");
+    expect(needsReply()).toMatch(/^Needs reply · /);
   });
 
   it("shows Last answered, Last customer message and Last internal note, each with the zones on hover (A05)", async () => {
@@ -146,9 +147,10 @@ describe("ticket reader", () => {
     renderFreshdesk("/freshdesk/ticket/1001");
 
     await waitFor(() => expect(metric("Last answered")).toBe("1 d ago"));
-    expect(metric("Last customer message")).toBe("1 d ago");
+    expect(metric("Customer wrote")).toBe("1 d ago");
+    fireEvent.click(reader().getByRole("button", { name: "Details" }));
     expect(metric("Last internal note")).toBe("1 d ago");
-    expect(metric("Needs reply")).toBe("Yes");
+    expect(needsReply()).toMatch(/^Needs reply · /);
 
     // Last answered: 44 h before 2026-10-14 12:00Z is 12 Oct 16:00Z: 17:00 in London, 18:00 in Berlin
     fireEvent.mouseEnter(within(reader().getByRole("definition", { name: "Last answered" })).getByText("1 d ago"));
@@ -171,8 +173,8 @@ describe("ticket reader", () => {
 
     await waitFor(() => expect(reader().getByText(/History partly loaded/)).toBeInTheDocument());
     expect(metric("Last answered")).toBe("Unknown");
-    expect(metric("Last customer message")).toBe("Unknown");
-    expect(metric("Needs reply")).toBe("Unknown");
+    expect(metric("Customer wrote")).toBe("Unknown");
+    expect(needsReply()).toBe("Needs reply: Unknown");
     expect(reader().queryByText("Never answered")).not.toBeInTheDocument();
 
     // The 100 loaded conversations: the request and the latest 20 show, earlier ones on request
