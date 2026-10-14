@@ -61,23 +61,8 @@ export async function askMyInbox(
     };
   }
 
-  // Format context for AI
-  const context = results
-    .map((r) => {
-      const date = new Date(r.date).toLocaleDateString("en-US", {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-      });
-      const from = r.from_name
-        ? `${r.from_name} <${r.from_address}>`
-        : (r.from_address ?? "Unknown");
-      return `[Message ID: ${r.message_id}]\nFrom: ${from}\nDate: ${date}\nSubject: ${r.subject ?? "(no subject)"}\nPreview: ${r.snippet ?? ""}`;
-    })
-    .join("\n---\n");
-
-  // Call AI
-  const answer = await callAskInbox(question, accountId, context);
+  // Call AI with the found messages' subjects and previews only
+  const answer = await callAskInbox(question, results);
 
   return { answer, sourceMessages: results };
 }

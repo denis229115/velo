@@ -23,6 +23,11 @@ export async function getActiveProviderName(): Promise<AiProvider> {
   return "claude";
 }
 
+export async function getProviderModel(providerName: Exclude<AiProvider, "ollama">): Promise<string> {
+  return (await getSetting(MODEL_SETTINGS[providerName])) ?? DEFAULT_MODELS[providerName];
+}
+
+/** Only the AI gateway may call this; see gateway.ts. */
 export async function getActiveProvider(): Promise<AiProviderClient> {
   const providerName = await getActiveProviderName();
 
@@ -47,7 +52,7 @@ export async function getActiveProvider(): Promise<AiProviderClient> {
     throw new AiError("NOT_CONFIGURED", `${providerName} API key not configured`);
   }
 
-  const model = (await getSetting(MODEL_SETTINGS[providerName])) ?? DEFAULT_MODELS[providerName];
+  const model = await getProviderModel(providerName);
   const cacheKey = `${apiKey}|${model}`;
 
   if (cachedProvider && cachedProvider.name === providerName && cachedProvider.key === cacheKey) {
