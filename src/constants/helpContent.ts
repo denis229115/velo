@@ -451,7 +451,7 @@ export const HELP_CATEGORIES: HelpCategory[] = [
         title: "Search operators",
         summary: "Gmail-style operators to refine search results.",
         description:
-          "Search lives in the command palette: press Cmd+K (Ctrl+K on Windows and Linux) or click the search icon, then type. Search uses Gmail-style operators for precise filtering. Combine multiple operators to find exactly what you need. All searches run against your local database using FTS5 full-text indexing, so results are instant. Operators can be combined freely — they use AND logic, so each additional operator narrows the results further.",
+          "Search lives in the command palette: press Cmd+K (Ctrl+K on Windows and Linux) or click the search icon in the sidebar header, then type. Search uses Gmail-style operators for precise filtering. Combine multiple operators to find exactly what you need. All searches run against your local database using FTS5 full-text indexing, so results are instant. Operators can be combined freely — they use AND logic, so each additional operator narrows the results further.",
         tips: [
           { text: "from:jane — emails from a specific sender" },
           { text: "to:team@ — emails sent to a specific address" },
@@ -467,15 +467,15 @@ export const HELP_CATEGORIES: HelpCategory[] = [
         id: "command-palette",
         icon: Command,
         title: "Command palette and search",
-        summary: "One place to search your email and run commands.",
+        summary: "One place to search your email and tickets and run commands.",
         description:
-          "The command palette replaces the old search bar. Open it from anywhere, even while typing in a field, with the shortcut or the search icon in the sidebar header and the list header. Type to see matching commands and matching email threads in two groups, Commands and Threads. Email search runs on your local database and understands the same Gmail-style operators (from:, to:, subject:, has:attachment, is:unread, before:, after:, label:). Choose “Show all results” to see every match in the mail list, where you can save the search as a smart folder or clear it. Smart folders are also listed in the palette.",
+          "The command palette replaces the old search bar. Open it from anywhere, even while typing in a field, with the shortcut or the search icon in the sidebar header (it is there when the sidebar is collapsed too). Type to see matching commands, email threads and Freshdesk tickets in three groups: Commands, Threads and Tickets. On the Freshdesk page Tickets comes first; elsewhere Threads comes before Tickets. Ticket search matches the ticket ID (#123 or 123), subject, customer name and email, status, priority and assignee, and searches only the tickets downloaded to this computer; the Tickets group says so and shows the coverage. For a ticket ID that is not downloaded, choose “Look up ticket #123 in Freshdesk” to fetch that one ticket. Until a helpdesk is connected, the sample tickets are searched and stay marked Sample. Email search runs on your local database and understands the same Gmail-style operators (from:, to:, subject:, has:attachment, is:unread, before:, after:, label:). Choose “Show all results” to see every match in the mail list, where you can save the search as a smart folder or clear it. Smart folders are also listed in the palette.",
         tips: [
           { text: "Open search and commands", shortcut: "Ctrl+K" },
           { text: "Also opens with", shortcut: "/" },
-          { text: "Use the arrow keys to move, Enter to open a thread or run a command, Escape to close." },
+          { text: "Use the arrow keys to move, Enter to open a thread or ticket or run a command, Escape to close." },
           { text: "With an operator query such as from:jane, Enter opens the full results list." },
-          { text: "Searching never contacts a server or an AI service: it reads only the email stored on this computer." },
+          { text: "Searching never contacts a server or an AI service: it reads only the email and tickets stored on this computer. Only “Look up ticket in Freshdesk” asks the helpdesk, for that one ticket." },
         ],
       },
       {

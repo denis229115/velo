@@ -2,30 +2,18 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { ListSearchActions } from "./ListSearchActions";
 import { useThreadStore } from "@/stores/threadStore";
 import { useSmartFolderStore } from "@/stores/smartFolderStore";
-import { useShortcutStore } from "@/stores/shortcutStore";
-import { getDefaultKeyMap } from "@/constants/shortcuts";
-import { pretendPlatform, restoreUserAgent } from "@/test/platform";
 
 beforeEach(() => {
-  useShortcutStore.setState({ keyMap: getDefaultKeyMap() });
   useThreadStore.setState({ searchQuery: "", searchThreadIds: null });
 });
-afterEach(restoreUserAgent);
 
 describe("List search actions", () => {
-  it("offers a search button that opens the palette when no search is active", () => {
-    pretendPlatform("windows");
-    const listener = vi.fn();
-    window.addEventListener("velo-toggle-command-palette", listener);
+  it("shows no search button: the sidebar header holds the only one", () => {
     render(<ListSearchActions />);
+    expect(screen.queryByRole("button", { name: "Search" })).not.toBeInTheDocument();
 
-    const search = screen.getByRole("button", { name: "Search" });
-    expect(search).toHaveAttribute("title", "Search (Ctrl+K)");
-    fireEvent.click(search);
-
-    expect(listener).toHaveBeenCalledTimes(1);
-    expect(screen.queryByRole("button", { name: "Clear search" })).not.toBeInTheDocument();
-    window.removeEventListener("velo-toggle-command-palette", listener);
+    useThreadStore.setState({ searchQuery: "from:alice" });
+    expect(screen.queryByRole("button", { name: "Search" })).not.toBeInTheDocument();
   });
 
   it("clears an active search", () => {

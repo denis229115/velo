@@ -54,7 +54,7 @@ Velo is designed to be used entirely from the keyboard. All shortcuts are custom
 
 | Key | Action |
 |-----|--------|
-| `/` or `Ctrl+K` | Command palette |
+| `/` or `Ctrl+K` | Command palette: search mail, tickets and commands |
 | `?` | Keyboard shortcuts help |
 | `i` | Ask Inbox (AI) |
 | `F5` | Sync current folder |

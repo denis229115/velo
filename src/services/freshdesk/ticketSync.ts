@@ -54,6 +54,17 @@ export const AUTH_ERROR_MESSAGE =
   "Freshdesk rejected the API key; it may have expired or been revoked. Reconnect the helpdesk in Settings → Freshdesk.";
 const RATE_LIMIT_MESSAGE = "Freshdesk asked Velo to slow down. Sync resumes automatically.";
 
+/** A by-ID lookup is not retried for the operator, so it says when trying again can work. */
+function lookupRateLimited(retryAfterUntil: number, now: number): FreshdeskError {
+  const at = new Date(retryAfterUntil * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return new FreshdeskError(
+    "rate_limited",
+    `Freshdesk asked Velo to slow down. Try this lookup again after ${at}.`,
+    429,
+    retryAfterUntil - now,
+  );
+}
+
 export interface TicketStatusInfo {
   id: string;
   /** Freshdesk's exact label; null when the status ID is not in the helpdesk's metadata */
@@ -66,6 +77,7 @@ export interface TicketListItem {
   id: string;
   subject: string;
   customer: string | null;
+  customerEmail: string | null;
   status: TicketStatusInfo;
   priority: { id: string; label: string } | null;
   assignee: string | null;
@@ -154,6 +166,7 @@ function sampleList(classes: Map<string, StatusClass>): TicketListData {
         id: t.id,
         subject: t.subject,
         customer: t.customerName,
+        customerEmail: null,
         status,
         priority: priorityLabel ? { id: t.priorityId, label: priorityLabel } : null,
         assignee: t.assigneeName,
@@ -207,6 +220,7 @@ export async function getTicketList(): Promise<TicketListData> {
         id: t.ticketId,
         subject: t.subject,
         customer: t.customerName,
+        customerEmail: t.customerEmail,
         status,
         priority: t.priorityId !== null ? { id: t.priorityId, label: priorityLabel ?? `Priority ${t.priorityId}` } : null,
         assignee: t.responderId !== null ? (agentNames.get(t.responderId) ?? `Agent ${t.responderId}`) : null,
@@ -344,7 +358,7 @@ export async function fetchOlderTicket(ticketId: string): Promise<TicketListItem
   const state = await getTicketSyncState(tenantId);
   const now = nowS();
   if (state.retryAfterUntil !== null && state.retryAfterUntil > now) {
-    throw new FreshdeskError("rate_limited", RATE_LIMIT_MESSAGE, 429, state.retryAfterUntil - now);
+    throw lookupRateLimited(state.retryAfterUntil, now);
   }
   try {
     await upsertTickets(tenantId, [await fetchTicketById(credentials, id)]);
@@ -353,6 +367,7 @@ export async function fetchOlderTicket(ticketId: string): Promise<TicketListItem
     if (err instanceof FreshdeskError && err.kind === "rate_limited") {
       const wait = err.retryAfterSeconds ?? backoffSeconds(state.consecutiveFailures);
       await saveTicketSyncState(tenantId, { ...state, state: "rate_limited", retryAfterUntil: now + wait, errorMessage: RATE_LIMIT_MESSAGE });
+      throw lookupRateLimited(now + wait, now);
     }
     throw err;
   }
