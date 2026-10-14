@@ -18,6 +18,7 @@ import {
   regenerateAutoDraft,
   type AutoDraftMode,
 } from "@/services/ai/writingStyleService";
+import { AiSendNote } from "@/components/ai/AiSendPreview";
 import type { DbMessage } from "@/services/db/messages";
 import type { Thread } from "@/stores/threadStore";
 
@@ -37,6 +38,7 @@ export function InlineReply({ thread, messages, accountId, noReply, onSent }: In
   const [signatureHtml, setSignatureHtml] = useState("");
   const [autoDraftLoading, setAutoDraftLoading] = useState(false);
   const [hasAutoDraft, setHasAutoDraft] = useState(false);
+  const [autoDraftOn, setAutoDraftOn] = useState(false);
   const accounts = useAccountStore((s) => s.accounts);
   const activeAccount = accounts.find((a) => a.id === accountId);
   const openComposer = useComposerStore((s) => s.openComposer);
@@ -68,6 +70,7 @@ export function InlineReply({ thread, messages, accountId, noReply, onSent }: In
     setAutoDraftLoading(true);
     try {
       const enabled = await isAutoDraftEnabled();
+      setAutoDraftOn(enabled);
       if (!enabled || autoDraftAbortRef.current) return;
 
       const draft = await generateAutoDraft(thread.id, accountId, messages, draftMode);
@@ -422,6 +425,11 @@ export function InlineReply({ thread, messages, accountId, noReply, onSent }: In
                 Clear
               </button>
             </>
+          )}
+          {autoDraftOn && mode !== "forward" && (
+            <div className="px-2">
+              <AiSendNote features={["auto_draft"]} onPreview={handleRegenerateDraft} />
+            </div>
           )}
         </div>
         <button

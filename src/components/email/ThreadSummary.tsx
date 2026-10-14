@@ -2,7 +2,13 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import { Sparkles, ChevronDown, ChevronUp, RefreshCw } from "lucide-react";
 import { getAiReadiness, type AiReadiness } from "@/services/ai/gateway";
 import { summarizeThread } from "@/services/ai/aiService";
+import { AiError } from "@/services/ai/errors";
+import { AiSendNote } from "@/components/ai/AiSendPreview";
 import type { DbMessage } from "@/services/db/messages";
+
+// The gateway refused or the operator cancelled: nothing left Velo, so say so
+// rather than reporting a failure.
+const NOT_SENT_CODES = new Set(["CANCELLED", "PREVIEW_REQUIRED", "SENSITIVE_DATA"]);
 
 interface ThreadSummaryProps {
   threadId: string;
@@ -16,6 +22,7 @@ export function ThreadSummary({ threadId, accountId, messages }: ThreadSummaryPr
   const [collapsed, setCollapsed] = useState(false);
   const [readiness, setReadiness] = useState<AiReadiness | null>(null);
   const [failed, setFailed] = useState(false);
+  const [notSent, setNotSent] = useState<string | null>(null);
   const checkedRef = useRef(false);
   const available = readiness?.status === "ready";
 
@@ -32,6 +39,7 @@ export function ThreadSummary({ threadId, accountId, messages }: ThreadSummaryPr
     loadingRef.current = true;
     setLoading(true);
     setFailed(false);
+    setNotSent(null);
     if (refresh) setSummary(null);
     try {
       const result = await summarizeThread(threadId, accountId, messages, { refresh });
@@ -40,6 +48,7 @@ export function ThreadSummary({ threadId, accountId, messages }: ThreadSummaryPr
       console.error("Failed to summarize thread:", err);
       setSummary(null);
       setFailed(true);
+      if (err instanceof AiError && NOT_SENT_CODES.has(err.code)) setNotSent(err.message);
     } finally {
       loadingRef.current = false;
       setLoading(false);
@@ -98,8 +107,11 @@ export function ThreadSummary({ threadId, accountId, messages }: ThreadSummaryPr
           )}
           {summary && <p className="text-xs leading-relaxed">{summary}</p>}
           {failed && !loading && !summary && (
-            <p className="text-xs text-text-tertiary">Summary unavailable right now.</p>
+            <p className="text-xs text-text-tertiary">{notSent ?? "Summary unavailable right now."}</p>
           )}
+          <div className="mt-2">
+            <AiSendNote features={["thread_summary"]} onPreview={handleRefresh} />
+          </div>
         </div>
       )}
     </div>
