@@ -386,11 +386,20 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
                       {item.icon === "thread" && <Mail size={14} className="shrink-0 text-text-tertiary" aria-hidden />}
                       {item.icon === "all-results" && <ListFilter size={14} className="shrink-0 text-accent" aria-hidden />}
                       {item.icon === "ticket" && <Ticket size={14} className="shrink-0 text-text-tertiary" aria-hidden />}
-                      {item.prefix && <span className="shrink-0 text-xs tabular-nums text-text-tertiary">{item.prefix}</span>}
-                      <span className={`min-w-0 flex-1 truncate ${item.icon === "all-results" ? "text-accent" : "text-text-primary"}`}>
-                        {item.label}
-                      </span>
-                      {item.badges}
+                      {item.badges ? (
+                        // Badges get their own line so the subject keeps its room
+                        <span className="min-w-0 flex-1 flex flex-col gap-0.5">
+                          <span className="flex items-center gap-2 min-w-0">
+                            {item.prefix && <span className="shrink-0 text-xs tabular-nums text-text-tertiary">{item.prefix}</span>}
+                            <span className="min-w-0 truncate text-text-primary">{item.label}</span>
+                          </span>
+                          <span className="flex items-center gap-1.5 min-w-0">{item.badges}</span>
+                        </span>
+                      ) : (
+                        <span className={`min-w-0 flex-1 truncate ${item.icon === "all-results" ? "text-accent" : "text-text-primary"}`}>
+                          {item.label}
+                        </span>
+                      )}
                       {item.detail && (
                         <span className="shrink-0 max-w-[40%] truncate text-xs text-text-tertiary">{item.detail}</span>
                       )}
