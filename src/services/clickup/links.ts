@@ -201,8 +201,8 @@ async function requireLinkContext(item: LinkedItem) {
  * result's task ID) is verified through ClickUp first; nothing is written to
  * ClickUp or Freshdesk.
  */
-export async function linkTask(item: LinkedItem, reference: string): Promise<RelatedTask> {
-  const ref: TaskReference | null = parseTaskReference(reference);
+export async function linkTask(item: LinkedItem, reference: string | { taskId: string }): Promise<RelatedTask> {
+  const ref: TaskReference | null = typeof reference === "string" ? parseTaskReference(reference) : reference;
   if (!ref) throw new ClickUpError("not_found", "That is not a ClickUp task URL or ID.");
   const { credentials, key } = await requireLinkContext(item);
   await assertNotWaiting(credentials.tenantId);

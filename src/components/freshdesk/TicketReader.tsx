@@ -12,6 +12,7 @@ import { getTicketHistory, type HistoryEntry, type TicketHistoryView } from "@/s
 import type { ConversationAttachment } from "@/services/freshdesk/activity";
 import { TicketPriorityBadge, TicketStatusBadge } from "./TicketBadges";
 import { ActivityValue, EntryKindBadge, NeedsReplyValue } from "./TicketActivity";
+import { RelatedTasksPanel } from "@/components/clickup/RelatedTasksPanel";
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
   const id = `ticket-field-${label.toLowerCase().replace(/\W+/g, "-")}`;
@@ -191,6 +192,7 @@ export function TicketReader({ ticket, ticketId }: { ticket: TicketListItem | nu
               <Timestamp at={ticket.updatedAt} />
             </Field>
           </dl>
+          <RelatedTasksPanel item={{ kind: "ticket", ticketId: ticket.id }} />
           <HistoryNotice view={view} />
           {view && view.entries.length > 0 && <History key={view.ticketId} entries={view.entries} />}
         </div>

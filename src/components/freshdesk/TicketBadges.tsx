@@ -1,4 +1,5 @@
-import { ChevronDown, ChevronUp, ChevronsUp, Circle, CircleCheck, CircleDot, CircleHelp, Clock, Equal, type LucideIcon } from "lucide-react";
+import { ChevronDown, ChevronUp, ChevronsUp, Circle, CircleCheck, CircleDot, CircleHelp, Clock, Equal, ListChecks, type LucideIcon } from "lucide-react";
+import type { LinkedWorkSummary } from "@/services/clickup/links";
 import type { TicketListItem, TicketStatusInfo } from "@/services/freshdesk/ticketSync";
 
 type Tone = "open" | "waiting" | "done" | "neutral" | "alert";
@@ -57,4 +58,12 @@ const PRIORITY_STYLE: Record<string, { tone: Tone; icon: LucideIcon }> = {
 export function TicketPriorityBadge({ priority }: { priority: NonNullable<TicketListItem["priority"]> }) {
   const style = PRIORITY_STYLE[priority.id] ?? { tone: "neutral" as const, icon: Equal };
   return <Badge tone={style.tone} icon={style.icon} label={priority.label} title={`Priority: ${priority.label}`} />;
+}
+
+/** Linked ClickUp tasks on a ticket; toned done when every linked task is done. */
+export function LinkedWorkBadge({ summary }: { summary: LinkedWorkSummary }) {
+  const label = `${summary.count} task${summary.count === 1 ? "" : "s"}`;
+  const allDone = summary.done === summary.count;
+  const title = `Linked ClickUp tasks: ${summary.count}${summary.done > 0 ? ` (${summary.done} done)` : ""}`;
+  return <Badge tone={allDone ? "done" : "neutral"} icon={allDone ? CircleCheck : ListChecks} label={label} title={title} />;
 }
