@@ -4,9 +4,7 @@ import { useUIStore } from "@/stores/uiStore";
 import { navigateToLabel, navigateToSettings } from "@/router/navigate";
 import { useAccountStore } from "@/stores/accountStore";
 import { getSetting, setSetting, getSecureSetting, setSecureSetting } from "@/services/db/settings";
-import { PROVIDER_MODELS } from "@/services/ai/types";
-import { AI_APPROVAL_SETTING, APPROVED_PROVIDER } from "@/services/ai/gateway";
-import { AiProviderApproval } from "./AiProviderApproval";
+import { AiProviderSettings } from "./AiProviderSettings";
 import { deleteAccount } from "@/services/db/accounts";
 import { removeClient, reauthorizeAccount } from "@/services/gmail/tokenManager";
 import { triggerSync, forceFullSync, resyncAccount } from "@/services/gmail/syncManager";
@@ -114,24 +112,9 @@ export function SettingsPage() {
   const [phishingDetectionEnabled, setPhishingDetectionEnabled] = useState(true);
   const [phishingSensitivity, setPhishingSensitivity] = useState<"low" | "default" | "high">("default");
   const [autostartEnabled, setAutostartEnabled] = useState(false);
-  const [aiProvider, setAiProvider] = useState<"claude" | "openai" | "gemini" | "ollama" | "copilot">("claude");
-  const [claudeApiKey, setClaudeApiKey] = useState("");
-  const [openaiApiKey, setOpenaiApiKey] = useState("");
-  const [geminiApiKey, setGeminiApiKey] = useState("");
-  const [copilotApiKey, setCopilotApiKey] = useState("");
-  const [ollamaServerUrl, setOllamaServerUrl] = useState("http://localhost:11434");
-  const [ollamaModel, setOllamaModel] = useState("llama3.2");
-  const [claudeModel, setClaudeModel] = useState("claude-haiku-4-5-20251001");
-  const [openaiModel, setOpenaiModel] = useState("gpt-4o-mini");
-  const [geminiModel, setGeminiModel] = useState("gemini-2.5-flash-preview-05-20");
-  const [copilotModel, setCopilotModel] = useState("openai/gpt-4o-mini");
   const [aiEnabled, setAiEnabled] = useState(true);
-  const [aiProviderApproved, setAiProviderApproved] = useState(false);
   const [aiAutoCategorize, setAiAutoCategorize] = useState(true);
   const [aiAutoSummarize, setAiAutoSummarize] = useState(true);
-  const [aiKeySaved, setAiKeySaved] = useState(false);
-  const [aiTesting, setAiTesting] = useState(false);
-  const [aiTestResult, setAiTestResult] = useState<"success" | "fail" | null>(null);
   const [aiAutoDraftEnabled, setAiAutoDraftEnabled] = useState(true);
   const [aiWritingStyleEnabled, setAiWritingStyleEnabled] = useState(true);
   const [styleAnalyzing, setStyleAnalyzing] = useState(false);
@@ -176,31 +159,8 @@ export function SettingsPage() {
       }
 
       // Load AI settings
-      const provider = await getSetting("ai_provider");
-      if (provider === "openai" || provider === "gemini" || provider === "ollama" || provider === "copilot") setAiProvider(provider);
-      const ollamaUrl = await getSetting("ollama_server_url");
-      if (ollamaUrl) setOllamaServerUrl(ollamaUrl);
-      const ollamaModelVal = await getSetting("ollama_model");
-      if (ollamaModelVal) setOllamaModel(ollamaModelVal);
-      const claudeModelVal = await getSetting("claude_model");
-      if (claudeModelVal) setClaudeModel(claudeModelVal);
-      const openaiModelVal = await getSetting("openai_model");
-      if (openaiModelVal) setOpenaiModel(openaiModelVal);
-      const geminiModelVal = await getSetting("gemini_model");
-      if (geminiModelVal) setGeminiModel(geminiModelVal);
-      const aiKey = await getSecureSetting("claude_api_key");
-      setClaudeApiKey(aiKey ?? "");
-      const oaiKey = await getSecureSetting("openai_api_key");
-      setOpenaiApiKey(oaiKey ?? "");
-      const gemKey = await getSecureSetting("gemini_api_key");
-      setGeminiApiKey(gemKey ?? "");
-      const copKey = await getSecureSetting("copilot_api_key");
-      setCopilotApiKey(copKey ?? "");
-      const copilotModelVal = await getSetting("copilot_model");
-      if (copilotModelVal) setCopilotModel(copilotModelVal);
       const aiEn = await getSetting("ai_enabled");
       setAiEnabled(aiEn !== "false");
-      setAiProviderApproved((await getSetting(AI_APPROVAL_SETTING)) === APPROVED_PROVIDER);
       const aiCat = await getSetting("ai_auto_categorize");
       setAiAutoCategorize(aiCat !== "false");
       const aiSum = await getSetting("ai_auto_summarize");
@@ -1044,240 +1004,8 @@ export function SettingsPage() {
               {activeTab === "ai" && (
                 <>
                   <Section title="Provider">
-                    <p className="text-xs text-text-tertiary mb-3">
-                      Choose which AI provider to use for summarization, compose assistance, and smart categorization.
-                    </p>
-                    <SettingRow label="AI Provider">
-                      <select
-                        value={aiProvider}
-                        onChange={async (e) => {
-                          const val = e.target.value as "claude" | "openai" | "gemini" | "ollama" | "copilot";
-                          setAiProvider(val);
-                          setAiTestResult(null);
-                          await setSetting("ai_provider", val);
-                          const { clearProviderClients } = await import("@/services/ai/providerManager");
-                          clearProviderClients();
-                        }}
-                        className="w-48 bg-bg-tertiary text-text-primary text-sm px-3 py-1.5 rounded-md border border-border-primary focus:border-accent outline-none"
-                      >
-                        <option value="claude">Claude (Anthropic)</option>
-                        <option value="openai">OpenAI</option>
-                        <option value="gemini">Gemini (Google)</option>
-                        <option value="ollama">Local AI (Ollama / LMStudio)</option>
-                        <option value="copilot">GitHub Copilot</option>
-                      </select>
-                    </SettingRow>
-                    <p className="text-xs text-text-tertiary">
-                      {aiProvider === "claude" && `Uses ${PROVIDER_MODELS.claude.find((m) => m.id === claudeModel)?.label ?? claudeModel}.`}
-                      {aiProvider === "openai" && `Uses ${PROVIDER_MODELS.openai.find((m) => m.id === openaiModel)?.label ?? openaiModel}.`}
-                      {aiProvider === "gemini" && `Uses ${PROVIDER_MODELS.gemini.find((m) => m.id === geminiModel)?.label ?? geminiModel}.`}
-                      {aiProvider === "ollama" && "Connect to a local Ollama or LMStudio server. No API key required."}
-                      {aiProvider === "copilot" && `Uses ${PROVIDER_MODELS.copilot.find((m) => m.id === copilotModel)?.label ?? copilotModel}. Requires a GitHub PAT with models:read permission.`}
-                    </p>
-                    <AiProviderApproval
-                      provider={aiProvider}
-                      approved={aiProviderApproved}
-                      onApprovedChange={async (approved) => {
-                        setAiProviderApproved(approved);
-                        await setSetting(AI_APPROVAL_SETTING, approved ? APPROVED_PROVIDER : "");
-                      }}
-                    />
+                    <AiProviderSettings />
                   </Section>
-
-                  {aiProvider === "ollama" ? (
-                    <Section title="Local Server">
-                      <div className="space-y-3">
-                        <TextField
-                          label="Server URL"
-                          size="md"
-                          value={ollamaServerUrl}
-                          onChange={(e) => setOllamaServerUrl(e.target.value)}
-                          placeholder="http://localhost:11434"
-                        />
-                        <TextField
-                          label="Model Name"
-                          size="md"
-                          value={ollamaModel}
-                          onChange={(e) => setOllamaModel(e.target.value)}
-                          placeholder="llama3.2"
-                        />
-                        <div className="flex items-center gap-2">
-                          <Button
-                            variant="primary"
-                            size="md"
-                            onClick={async () => {
-                              await setSetting("ollama_server_url", ollamaServerUrl.trim());
-                              await setSetting("ollama_model", ollamaModel.trim());
-                              const { clearProviderClients } = await import("@/services/ai/providerManager");
-                              clearProviderClients();
-                              setAiKeySaved(true);
-                              setTimeout(() => setAiKeySaved(false), 2000);
-                            }}
-                            disabled={!ollamaServerUrl.trim() || !ollamaModel.trim()}
-                          >
-                            {aiKeySaved ? "Saved!" : "Save"}
-                          </Button>
-                          <Button
-                            variant="secondary"
-                            size="md"
-                            onClick={async () => {
-                              setAiTesting(true);
-                              setAiTestResult(null);
-                              try {
-                                const { testConnection } = await import("@/services/ai/aiService");
-                                const ok = await testConnection();
-                                setAiTestResult(ok ? "success" : "fail");
-                              } catch {
-                                setAiTestResult("fail");
-                              } finally {
-                                setAiTesting(false);
-                              }
-                            }}
-                            disabled={!ollamaServerUrl.trim() || !ollamaModel.trim() || aiTesting}
-                            className="bg-bg-tertiary text-text-primary border border-border-primary"
-                          >
-                            {aiTesting ? "Testing..." : "Test Connection"}
-                          </Button>
-                          {aiTestResult === "success" && (
-                            <span className="text-xs text-success">Connected!</span>
-                          )}
-                          {aiTestResult === "fail" && (
-                            <span className="text-xs text-danger">Connection failed</span>
-                          )}
-                        </div>
-                      </div>
-                    </Section>
-                  ) : (
-                    <Section title="API Key">
-                      <div className="space-y-3">
-                        <TextField
-                          label={
-                            aiProvider === "claude" ? "Anthropic API Key"
-                            : aiProvider === "openai" ? "OpenAI API Key"
-                            : aiProvider === "copilot" ? "GitHub Personal Access Token"
-                            : "Google AI API Key"
-                          }
-                          size="md"
-                          type="password"
-                          value={
-                            aiProvider === "claude" ? claudeApiKey
-                            : aiProvider === "openai" ? openaiApiKey
-                            : aiProvider === "copilot" ? copilotApiKey
-                            : geminiApiKey
-                          }
-                          onChange={(e) => {
-                            if (aiProvider === "claude") setClaudeApiKey(e.target.value);
-                            else if (aiProvider === "openai") setOpenaiApiKey(e.target.value);
-                            else if (aiProvider === "copilot") setCopilotApiKey(e.target.value);
-                            else setGeminiApiKey(e.target.value);
-                          }}
-                          placeholder={
-                            aiProvider === "claude" ? "sk-ant-..."
-                            : aiProvider === "openai" ? "sk-..."
-                            : aiProvider === "copilot" ? "ghp_..."
-                            : "AI..."
-                          }
-                        />
-                        <SettingRow label="Model">
-                          <select
-                            value={
-                              aiProvider === "claude" ? claudeModel
-                              : aiProvider === "openai" ? openaiModel
-                              : aiProvider === "copilot" ? copilotModel
-                              : geminiModel
-                            }
-                            onChange={async (e) => {
-                              const val = e.target.value;
-                              const modelSettingMap = {
-                                claude: "claude_model",
-                                openai: "openai_model",
-                                gemini: "gemini_model",
-                                copilot: "copilot_model",
-                              } as const;
-                              if (aiProvider === "claude") setClaudeModel(val);
-                              else if (aiProvider === "openai") setOpenaiModel(val);
-                              else if (aiProvider === "copilot") setCopilotModel(val);
-                              else setGeminiModel(val);
-                              await setSetting(modelSettingMap[aiProvider], val);
-                              const { clearProviderClients } = await import("@/services/ai/providerManager");
-                              clearProviderClients();
-                            }}
-                            className="w-48 bg-bg-tertiary text-text-primary text-sm px-3 py-1.5 rounded-md border border-border-primary focus:border-accent outline-none"
-                          >
-                            {PROVIDER_MODELS[aiProvider].map((m) => (
-                              <option key={m.id} value={m.id}>{m.label}</option>
-                            ))}
-                          </select>
-                        </SettingRow>
-                        <div className="flex items-center gap-2">
-                          <Button
-                            variant="primary"
-                            size="md"
-                            onClick={async () => {
-                              const keySettingMap = {
-                                claude: "claude_api_key",
-                                openai: "openai_api_key",
-                                gemini: "gemini_api_key",
-                                copilot: "copilot_api_key",
-                              } as const;
-                              const keyValue =
-                                aiProvider === "claude" ? claudeApiKey.trim()
-                                : aiProvider === "openai" ? openaiApiKey.trim()
-                                : aiProvider === "copilot" ? copilotApiKey.trim()
-                                : geminiApiKey.trim();
-                              if (keyValue) {
-                                await setSecureSetting(keySettingMap[aiProvider], keyValue);
-                                const { clearProviderClients } = await import("@/services/ai/providerManager");
-                                clearProviderClients();
-                              }
-                              setAiKeySaved(true);
-                              setTimeout(() => setAiKeySaved(false), 2000);
-                            }}
-                            disabled={
-                              !(aiProvider === "claude" ? claudeApiKey.trim()
-                              : aiProvider === "openai" ? openaiApiKey.trim()
-                              : aiProvider === "copilot" ? copilotApiKey.trim()
-                              : geminiApiKey.trim())
-                            }
-                          >
-                            {aiKeySaved ? "Saved!" : "Save Key"}
-                          </Button>
-                          <Button
-                            variant="secondary"
-                            size="md"
-                            onClick={async () => {
-                              setAiTesting(true);
-                              setAiTestResult(null);
-                              try {
-                                const { testConnection } = await import("@/services/ai/aiService");
-                                const ok = await testConnection();
-                                setAiTestResult(ok ? "success" : "fail");
-                              } catch {
-                                setAiTestResult("fail");
-                              } finally {
-                                setAiTesting(false);
-                              }
-                            }}
-                            disabled={
-                              !(aiProvider === "claude" ? claudeApiKey.trim()
-                              : aiProvider === "openai" ? openaiApiKey.trim()
-                              : aiProvider === "copilot" ? copilotApiKey.trim()
-                              : geminiApiKey.trim()) || aiTesting
-                            }
-                            className="bg-bg-tertiary text-text-primary border border-border-primary"
-                          >
-                            {aiTesting ? "Testing..." : "Test Connection"}
-                          </Button>
-                          {aiTestResult === "success" && (
-                            <span className="text-xs text-success">Connected!</span>
-                          )}
-                          {aiTestResult === "fail" && (
-                            <span className="text-xs text-danger">Connection failed</span>
-                          )}
-                        </div>
-                      </div>
-                    </Section>
-                  )}
 
                   <Section title="Features">
                     <ToggleRow
