@@ -34,9 +34,23 @@ import {
   containsSecret,
   containsSensitiveData,
   redact,
-  type FlagCategory,
-  type SensitiveKind,
 } from "./sensitiveData";
+import {
+  APPROVED_PROVIDER_LABEL,
+  getSendPreviewHandler,
+  takePreviewRequest,
+  type AiDataKind,
+  type SendPreview,
+} from "./sendPreview";
+
+export {
+  APPROVED_PROVIDER_LABEL,
+  previewNextRequest,
+  setSendPreviewHandler,
+  type AiDataKind,
+  type SendPreview,
+  type SendPreviewHandler,
+} from "./sendPreview";
 
 export type AiFeature =
   | "thread_summary"
@@ -80,7 +94,6 @@ export interface AiGatewayRequest {
 
 /** The provider allowed to receive email, ticket and task content. */
 export const APPROVED_PROVIDER = "claude" as const;
-export const APPROVED_PROVIDER_LABEL = "Claude API (Anthropic)";
 /** Setting the operator flips in Settings → AI to approve the Claude API. */
 export const AI_APPROVAL_SETTING = "ai_approved_provider";
 
@@ -130,49 +143,6 @@ export async function isAiAvailable(): Promise<boolean> {
   return (await getAiReadiness()).status === "ready";
 }
 
-/** A source field or a sensitive-data type; the first request carrying one needs a send preview. */
-export type AiDataKind =
-  | "subject"
-  | "message_text"
-  | "status"
-  | "priority"
-  | "sender_domain"
-  | "operator_request"
-  | SensitiveKind;
-
-export interface SendPreview {
-  feature: AiFeature;
-  reason: "first_use" | "new_data_kind" | "requested";
-  providerLabel: string;
-  model: string;
-  /** Exactly what will be sent */
-  systemPrompt: string;
-  userContent: string;
-  /** Data kinds never sent before (empty on first use and when requested) */
-  newKinds: AiDataKind[];
-  flagCounts: Record<FlagCategory, number>;
-}
-
-/** Resolves true to send, false to cancel. */
-export type SendPreviewHandler = (preview: SendPreview) => Promise<boolean>;
-
-/** Data kinds the operator has already seen in a send preview. */
-export const AI_PREVIEWED_KINDS_SETTING = "ai_previewed_data_kinds";
-
-let previewHandler: SendPreviewHandler | null = null;
-const previewRequested = new Set<AiFeature>();
-let previewQueue: Promise<unknown> = Promise.resolve();
-
-/** Register the window that shows send previews; without one, a request that needs a preview is not sent. */
-export function setSendPreviewHandler(handler: SendPreviewHandler | null): void {
-  previewHandler = handler;
-}
-
-/** Show the send preview for the next request of these features, even when nothing is new. */
-export function previewNextRequest(features: AiFeature[]): void {
-  for (const feature of features) previewRequested.add(feature);
-}
-
 function dataKinds(req: AiGatewayRequest, redaction: Redaction): AiDataKind[] {
   const kinds = new Set<AiDataKind>();
   for (const item of req.items ?? []) {
@@ -186,6 +156,11 @@ function dataKinds(req: AiGatewayRequest, redaction: Redaction): AiDataKind[] {
   for (const kind of redaction.kinds()) kinds.add(kind);
   return [...kinds];
 }
+
+/** Data kinds the operator has already seen in a send preview. */
+export const AI_PREVIEWED_KINDS_SETTING = "ai_previewed_data_kinds";
+
+let previewQueue: Promise<unknown> = Promise.resolve();
 
 async function readPreviewedKinds(): Promise<AiDataKind[] | null> {
   const raw = await getSetting(AI_PREVIEWED_KINDS_SETTING);
@@ -209,11 +184,12 @@ async function confirmSend(
   const run = previewQueue.then(async () => {
     const previewed = await readPreviewedKinds();
     const newKinds = previewed === null ? [] : kinds.filter((k) => !previewed.includes(k));
-    const requested = previewRequested.delete(preview.feature);
+    const requested = takePreviewRequest(preview.feature);
     const reason: SendPreview["reason"] | null =
       previewed === null ? "first_use" : newKinds.length > 0 ? "new_data_kind" : requested ? "requested" : null;
     if (!reason) return;
 
+    const previewHandler = getSendPreviewHandler();
     if (!previewHandler) {
       throw new AiError("PREVIEW_REQUIRED", "Not sent: this request needs a send preview, and none can be shown here.");
     }
