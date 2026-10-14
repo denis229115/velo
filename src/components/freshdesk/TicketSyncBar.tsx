@@ -1,5 +1,5 @@
 import { CircleAlert, Clock, TriangleAlert } from "lucide-react";
-import type { TicketListData } from "@/services/freshdesk/ticketSync";
+import type { TicketListData, TicketSyncStatus } from "@/services/freshdesk/ticketSync";
 import { SampleBadge } from "@/components/ui/SampleBadge";
 import { navigateToSettings } from "@/router/navigate";
 
@@ -11,6 +11,13 @@ export function formatAgo(ms: number, now = Date.now()): string {
   if (hours < 48) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
   const days = Math.floor(hours / 24);
   return `${days} days ago`;
+}
+
+/** What the local ticket copy covers, never a helpdesk-wide total. */
+export function coverageText(sync: TicketSyncStatus): string {
+  if (sync.coverage.outstandingTotal === null) return "coverage unknown until the first full sync";
+  if (sync.coverage.complete) return "all outstanding + 90 days of done";
+  return `partial: ${sync.coverage.outstandingDownloaded ?? 0} of ${sync.coverage.outstandingTotal} outstanding`;
 }
 
 const timeOfDay = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -28,12 +35,7 @@ export function TicketSyncBar({ data }: { data: TicketListData }) {
 
   const { sync } = data;
   const downloaded = data.tickets.length;
-  const coverage =
-    sync.coverage.outstandingTotal === null
-      ? "coverage unknown until the first full sync"
-      : sync.coverage.complete
-        ? "all outstanding + 90 days of done"
-        : `partial: ${sync.coverage.outstandingDownloaded ?? 0} of ${sync.coverage.outstandingTotal} outstanding`;
+  const coverage = coverageText(sync);
 
   const freshness =
     sync.lastSuccessAt === null ? "Not synced yet" : `Last synced ${formatAgo(sync.lastSuccessAt)}`;

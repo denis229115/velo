@@ -63,6 +63,7 @@ export interface TicketListItem {
   id: string;
   subject: string;
   customer: string | null;
+  customerEmail: string | null;
   status: TicketStatusInfo;
   priority: { id: string; label: string } | null;
   assignee: string | null;
@@ -138,6 +139,7 @@ function sampleList(classes: Map<string, StatusClass>): TicketListData {
         id: t.id,
         subject: t.subject,
         customer: t.customerName,
+        customerEmail: null,
         status,
         priority: priorityLabel ? { id: t.priorityId, label: priorityLabel } : null,
         assignee: t.assigneeName,
@@ -187,6 +189,7 @@ export async function getTicketList(): Promise<TicketListData> {
         id: t.ticketId,
         subject: t.subject,
         customer: t.customerName,
+        customerEmail: t.customerEmail,
         status,
         priority: t.priorityId !== null ? { id: t.priorityId, label: priorityLabel ?? `Priority ${t.priorityId}` } : null,
         assignee: t.responderId !== null ? (agentNames.get(t.responderId) ?? `Agent ${t.responderId}`) : null,
