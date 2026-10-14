@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { ListChecks, MessageCircleWarning, RefreshCw, UserRound } from "lucide-react";
 import { ListHeader } from "@/components/list/ListHeader";
 import { ListRow } from "@/components/list/ListRow";
@@ -85,28 +85,15 @@ function NeedsReplyBadge() {
   );
 }
 
-/**
- * The view's optional columns, then Last answered, Last customer message and the assignee under the subject.
- * Optional columns come first: they were chosen for this view, so they must not be the ones truncated.
- */
-function TicketRowDetails({ ticket: t, columns }: { ticket: TicketListItem; columns: OptionalTicketColumn[] }) {
+/** Assignee first, so it is the last thing to be cut, then Last answered and Last customer message. */
+function TicketRowDetails({ ticket: t }: { ticket: TicketListItem }) {
   const a = t.activity;
   return (
     <span className="inline-flex items-center gap-x-3 min-w-0">
-      {columns.includes("company_group") && (t.group || t.companyId) && (
-        <span data-column="company_group" className="shrink-0 max-w-48 truncate">
-          {[t.group?.name, t.companyId ? `Company ${t.companyId}` : null].filter(Boolean).join(" · ")}
-        </span>
-      )}
-      {columns.includes("sla_due") && t.dueBy !== null && (
-        <span
-          data-column="sla_due"
-          title={`SLA due ${formatFullDate(t.dueBy)}`}
-          className={`shrink-0 ${t.outstanding && t.dueBy < Date.now() ? "text-status-error" : ""}`}
-        >
-          Due {formatFullDate(t.dueBy)}
-        </span>
-      )}
+      <span data-column="assignee" className="inline-flex items-center gap-1 shrink-0 max-w-40">
+        <UserRound size={11} aria-hidden className="shrink-0" />
+        <span className="truncate">{t.assignee ?? "Unassigned"}</span>
+      </span>
       <span className="inline-flex items-center gap-1 shrink-0">
         <span className="text-text-tertiary">Answered</span>
         <ActivityValue time={a.lastAnswered} history={a.history} never="Never" focusable={false} />
@@ -115,11 +102,36 @@ function TicketRowDetails({ ticket: t, columns }: { ticket: TicketListItem; colu
         <span className="text-text-tertiary">Customer</span>
         <ActivityValue time={a.lastCustomerMessage} history={a.history} never="None" focusable={false} />
       </span>
-      <span className="inline-flex items-center gap-1 min-w-0">
-        <UserRound size={11} aria-hidden className="shrink-0" />
-        <span className="truncate">{t.assignee ?? "Unassigned"}</span>
-      </span>
     </span>
+  );
+}
+
+/**
+ * The view's optional columns on a line of their own: they were chosen for this view, so they get room
+ * instead of being squeezed out by, or squeezing, the assignee line. Null when the ticket has none to show,
+ * so the row stays two lines.
+ */
+function ticketRowColumns(t: TicketListItem, columns: OptionalTicketColumn[]): ReactNode {
+  const company = columns.includes("company_group") && (t.group || t.companyId);
+  const sla = columns.includes("sla_due") && t.dueBy !== null;
+  if (!company && !sla) return null;
+  return (
+    <>
+      {company && (
+        <span data-column="company_group" className="truncate min-w-0">
+          {[t.group?.name, t.companyId ? `Company ${t.companyId}` : null].filter(Boolean).join(" · ")}
+        </span>
+      )}
+      {sla && t.dueBy !== null && (
+        <span
+          data-column="sla_due"
+          title={`SLA due ${formatFullDate(t.dueBy)}`}
+          className={`shrink-0 ${t.outstanding && t.dueBy < Date.now() ? "text-status-error" : ""}`}
+        >
+          Due {formatFullDate(t.dueBy)}
+        </span>
+      )}
+    </>
   );
 }
 
@@ -235,7 +247,8 @@ export function TicketList({ selectedTicketId, width }: { selectedTicketId: stri
                   sender={t.customer ?? "Customer not loaded"}
                   subject={t.subject || "(no subject)"}
                   subjectPrefix={`#${t.id}`}
-                  preview={<TicketRowDetails ticket={t} columns={view.columns} />}
+                  preview={<TicketRowDetails ticket={t} />}
+                  extraLine={ticketRowColumns(t, view.columns)}
                   time={t.updatedAt}
                   selected={t.id === selectedTicketId}
                   indicators={

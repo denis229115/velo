@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Columns3, ListFilter, Pencil, Trash2 } from "lucide-react";
 import {
   SORT_LABELS,
@@ -35,8 +35,22 @@ export function TicketViewToolbar({
   const updateView = useTicketStore((s) => s.updateView);
   const deleteView = useTicketStore((s) => s.deleteView);
   const [columnsOpen, setColumnsOpen] = useState(false);
+  const columnsRef = useRef<HTMLSpanElement>(null);
+  const columnsButtonRef = useRef<HTMLButtonElement>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
   const available = availableOptionalColumns(data);
+
+  // A click outside the menu closes it; Escape (below) and this both hand focus back to the button
+  useEffect(() => {
+    if (!columnsOpen) return;
+    const closeOnOutside = (e: MouseEvent) => {
+      if (columnsRef.current?.contains(e.target as Node)) return;
+      setColumnsOpen(false);
+      columnsButtonRef.current?.focus();
+    };
+    document.addEventListener("mousedown", closeOnOutside);
+    return () => document.removeEventListener("mousedown", closeOnOutside);
+  }, [columnsOpen]);
 
   const toggleColumn = (column: OptionalTicketColumn) =>
     void updateView(view.id, {
@@ -62,8 +76,18 @@ export function TicketViewToolbar({
         Filters
         {draft && <span className="sr-only"> (edited)</span>}
       </button>
-      <span className="relative">
-        <button type="button" aria-expanded={columnsOpen} onClick={() => setColumnsOpen((o) => !o)} className={`${control} ${idle} inline-flex items-center gap-1`}>
+      <span
+        ref={columnsRef}
+        className="relative"
+        onKeyDown={(e) => {
+          if (e.key !== "Escape" || !columnsOpen) return;
+          // Only the menu closes: the Escape must not also reach the list's own shortcuts
+          e.stopPropagation();
+          setColumnsOpen(false);
+          columnsButtonRef.current?.focus();
+        }}
+      >
+        <button ref={columnsButtonRef} type="button" aria-expanded={columnsOpen} onClick={() => setColumnsOpen((o) => !o)} className={`${control} ${idle} inline-flex items-center gap-1`}>
           <Columns3 size={12} aria-hidden />
           Columns
         </button>
