@@ -72,6 +72,23 @@
 }
 
 /*
+ * Keyboard focus ring for every interactive element, in both themes.
+ * Programmatic-only focus targets (tabindex="-1") and the rich-text editor,
+ * whose caret is its focus indicator, are left alone.
+ */
+:focus-visible {
+  outline-width: 2px;
+  outline-style: solid;
+  outline-color: var(--state-focus);
+  outline-offset: 1px;
+}
+
+[tabindex="-1"]:focus-visible,
+.ProseMirror:focus-visible {
+  outline-style: none;
+}
+
+/*
  * Reduced motion: `.reduce-motion` is set on <html> when macOS asks for reduced
  * motion or the in-app setting is on. The media query covers first paint.
  */
