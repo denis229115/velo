@@ -186,8 +186,9 @@ function ComposerPane({
         setCcText("");
         setThenStatusId("");
         dirty.current = false;
-        await useTicketStore.getState().load();
       }
+      // The send or the Staleness check re-read the ticket: show what is new in the history and Last answered
+      if (next.kind === "sent" || next.kind === "stale") await useTicketStore.getState().load();
     } finally {
       setBusy(false);
     }
@@ -234,7 +235,7 @@ function ComposerPane({
         {isNote ? <Lock size={12} aria-hidden className="shrink-0 text-status-warning" /> : <Reply size={12} aria-hidden className="shrink-0 text-accent" />}
         {isNote
           ? "Only agents can see this. The customer is not notified."
-          : "The customer receives this by email, with your signature."}
+          : "The customer receives this by email."}
       </p>
 
       <Summary ticket={ticket} mode={mode} me={me} ccText={ccText} badCc={badCc} locked={unconfirmed} onCcChange={(v) => {
@@ -251,7 +252,7 @@ function ComposerPane({
       <div className="px-3 py-2.5 space-y-2">
         <OutcomeView outcome={outcome} mode={mode} busy={busy} writable={writable.writable} onSendAnyway={(baseline) => void send({ acknowledged: baseline })} onCheck={() => void send()} />
         <div className="flex flex-wrap items-center gap-2">
-          {!unconfirmed && (
+          {!unconfirmed && outcome?.kind !== "stale" && (
             <Button
               variant="primary"
               size="sm"
@@ -262,14 +263,14 @@ function ComposerPane({
               {busy ? "Sending…" : sendLabel}
             </Button>
           )}
-          {mode === "reply" && (
+          {mode === "reply" && !unconfirmed && (
             <label className="inline-flex items-center gap-1.5 text-meta text-text-secondary">
               Then set status
               <select
                 value={thenStatusId}
                 onChange={(e) => setThenStatusId(e.target.value)}
                 {...writable.controlProps}
-                disabled={writable.controlProps.disabled || unconfirmed}
+                disabled={writable.controlProps.disabled || outcome?.kind === "stale"}
                 className="rounded-md border border-border-primary bg-bg-primary px-1.5 py-1 text-meta text-text-primary disabled:opacity-50"
               >
                 <option value="">Keep current status</option>
@@ -281,7 +282,7 @@ function ComposerPane({
               </select>
             </label>
           )}
-          <span className="ml-auto text-micro text-text-tertiary">Draft saved on this device</span>
+          {!empty && <span className="ml-auto text-micro text-text-tertiary">Draft kept on this device</span>}
         </div>
         <FreshdeskWriteReason writable={writable} />
       </div>
@@ -408,8 +409,8 @@ function OutcomeView({
               <li key={c}>{c}</li>
             ))}
           </ul>
-          <Button variant="secondary" size="xs" className="border border-border-primary" disabled={busy || !writable} onClick={() => onSendAnyway(outcome.baseline)}>
-            Send anyway
+          <Button variant="primary" size="xs" disabled={busy || !writable} onClick={() => onSendAnyway(outcome.baseline)}>
+            {busy ? "Sending…" : "Send anyway"}
           </Button>
         </div>
       );
