@@ -82,7 +82,8 @@ export const ThreadCard = memo(function ThreadCard({ thread, isSelected, onClick
   const indicators = (
     <>
       {showCategoryBadge && category && category !== "Primary" && CATEGORY_COLORS[category] && (
-        <span className={`shrink-0 text-micro px-1.5 rounded-full leading-normal ${CATEGORY_COLORS[category]}`}>
+        // Narrow list (reading pane open): hidden so the sender name keeps the space
+        <span className={`hidden @2xl:inline shrink-0 text-micro px-1.5 rounded-full leading-normal ${CATEGORY_COLORS[category]}`}>
           {category}
         </span>
       )}

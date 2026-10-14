@@ -134,4 +134,47 @@ describe("ThreadCard", () => {
     fireEvent.click(screen.getByRole("button", { name: /email from Alice/ }));
     expect(onClick).toHaveBeenCalledWith(thread);
   });
+  describe.each(["light", "dark"] as const)("category badge in the %s theme", (theme) => {
+    beforeEach(() => {
+      document.documentElement.classList.toggle("dark", theme === "dark");
+    });
+
+    const renderBadged = (fromName = "The Weekly Build") =>
+      render(
+        <ThreadCard
+          thread={makeThread({ fromName })}
+          isSelected={false}
+          onClick={onClick}
+          category="Newsletters"
+          showCategoryBadge
+        />,
+      );
+
+    // jsdom does not evaluate container queries, so assert the responsive classes the list's @container resolves
+    it("hides the badge in a narrow list and shows it once the list is wide (@2xl)", () => {
+      renderBadged();
+      const badge = screen.getByText("Newsletters");
+      expect(badge).toHaveClass("hidden", "@2xl:inline");
+    });
+
+    it("keeps the badge colours for the theme", () => {
+      renderBadged();
+      expect(screen.getByText("Newsletters")).toHaveClass("text-orange-600", "dark:text-orange-400");
+    });
+
+    it("lets a long sender name fill the row, since the hidden badge takes no space in a narrow list", () => {
+      renderBadged("The Weekly Build Editorial Team");
+      const sender = screen.getByText("The Weekly Build Editorial Team");
+      expect(sender).toHaveClass("truncate", "flex-1");
+      expect(sender.parentElement).toContainElement(screen.getByText("Newsletters"));
+    });
+
+    it("shows no badge for Primary or without the badge flag", () => {
+      const { rerender } = renderBadged();
+      rerender(<ThreadCard thread={makeThread()} isSelected={false} onClick={onClick} category="Primary" showCategoryBadge />);
+      expect(screen.queryByText("Primary")).not.toBeInTheDocument();
+      rerender(<ThreadCard thread={makeThread()} isSelected={false} onClick={onClick} category="Updates" />);
+      expect(screen.queryByText("Updates")).not.toBeInTheDocument();
+    });
+  });
 });
