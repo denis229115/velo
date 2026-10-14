@@ -33,6 +33,13 @@ describe("ListRow", () => {
     expect(row?.querySelector("time")).toHaveClass("tabular-nums");
   });
 
+  it("keeps the compact row on one line in a wide list and folds the subject under the sender in a narrow one", () => {
+    renderRow();
+    const subjectGroup = screen.getByText("Quarterly report").parentElement;
+    expect(subjectGroup).toHaveClass("basis-full", "@2xl:basis-auto");
+    expect(screen.getByText("Alice Walker").closest("button")).toHaveClass("@2xl:h-11");
+  });
+
   it("marks unread with a medium weight and a dot instead of bold", () => {
     renderRow();
     expect(screen.getByText("Alice Walker")).toHaveClass("font-[550]");

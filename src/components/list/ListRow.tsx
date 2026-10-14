@@ -124,23 +124,26 @@ export function ListRow({
         onClick={onClick}
         aria-selected={selected}
         className={`w-full text-left flex items-center gap-2.5 px-3 -outline-offset-2 ${
-          compact ? "h-11" : density === "spacious" ? "py-3.5" : "py-2.5"
+          compact ? "py-1.5 @2xl:py-0 @2xl:h-11" : density === "spacious" ? "py-3.5" : "py-2.5"
         } ${className}`}
       >
         <UnreadDot unread={unread} />
         <Avatar name={sender} unread={unread} checked={checked} size={compact ? "sm" : "md"} />
 
         {compact ? (
-          <span data-line className="flex-1 min-w-0 flex items-center gap-3 text-row">
-            <span className={`truncate shrink-0 w-28 @lg:w-44 ${weight}`}>{sender}</span>
-            <span className="min-w-0 flex items-baseline gap-2 flex-1 overflow-hidden">
-              <span className={`truncate shrink-0 max-w-[70%] ${subjectWeight}`}>{subject}</span>
-              {preview && <span className="truncate text-preview text-text-tertiary min-w-0">{preview}</span>}
+          // One line once the list is wide (@2xl); a narrow list folds the subject under the sender
+          <span data-line className="flex-1 min-w-0 flex flex-wrap @2xl:flex-nowrap items-center gap-x-3 gap-y-0.5 text-row">
+            <span className={`truncate flex-1 min-w-0 @2xl:flex-none @2xl:w-44 ${weight}`}>{sender}</span>
+            <span className="order-3 @2xl:order-2 basis-full @2xl:basis-auto min-w-0 flex items-baseline gap-2 flex-1 overflow-hidden">
+              <span className={`truncate shrink-0 max-w-full @lg:max-w-[70%] ${subjectWeight}`}>{subject}</span>
+              {preview && <span className="hidden @lg:inline truncate text-preview text-text-tertiary min-w-0">{preview}</span>}
             </span>
-            {indicators}
-            {attachment}
-            {timeEl}
-            {starSlot}
+            <span className="order-2 @2xl:order-3 flex items-center gap-2 shrink-0">
+              {indicators}
+              {attachment}
+              {timeEl}
+              {starSlot}
+            </span>
           </span>
         ) : (
           <span className="flex-1 min-w-0 flex flex-col gap-0.5">
@@ -160,7 +163,7 @@ export function ListRow({
       </button>
 
       {hasTrailing && (
-        <div className={`absolute right-2 flex items-center gap-0.5 ${compact ? "inset-y-0" : "top-1.5 h-7"}`}>
+        <div className={`absolute right-2 flex items-center gap-0.5 ${compact ? "top-1 h-7 @2xl:inset-y-0 @2xl:h-auto" : "top-1.5 h-7"}`}>
           {actions && actions.length > 0 && (
             <div className="hidden group-hover:flex items-center gap-0.5 rounded-md pl-2 bg-bg-hover">
               {actions.map(({ label, icon: Icon, onAction }) => (
