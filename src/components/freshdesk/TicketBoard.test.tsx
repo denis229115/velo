@@ -66,7 +66,6 @@ import { runMigrations } from "@/services/db/migrations";
 import { classifyStatus, connectHelpdesk } from "@/services/freshdesk/connection";
 import { syncTickets } from "@/services/freshdesk/ticketSync";
 import { hydrateTicketHistories, resetHydrationState } from "@/services/freshdesk/ticketHistory";
-import { getSelectedThreadId } from "@/router/navigate";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useTicketStore } from "@/stores/ticketStore";
 import { useUIStore } from "@/stores/uiStore";
@@ -121,7 +120,6 @@ async function openBoard() {
 }
 const rows = () => screen.queryAllByRole("button", { name: /^Ticket #/ });
 const rowIds = () => rows().map((r) => r.getAttribute("aria-label")?.match(/^Ticket #([\w-]+)/)?.[1]);
-const press = (key: string) => act(() => void fireEvent.keyDown(window, { key }));
 const reader = () => screen.getByRole("region", { name: "Ticket reader" });
 const sidebar = () => within(screen.getByRole("group", { name: "Freshdesk views" }));
 const sidebarView = (name: string) => sidebar().findByRole("button", { name });
@@ -146,6 +144,9 @@ beforeEach(async () => {
 afterEach(async () => {
   // Let background history reads finish before the database goes away
   await hydrateTicketHistories().catch(() => {});
+  // View writes queue behind the database mutex; one more read waits them out
+  cleanup();
+  await useTicketStore.getState().loadViews().catch(() => {});
   resetHydrationState();
   vi.useRealTimers();
   db.close();
@@ -222,5 +223,94 @@ describe("Freshdesk ticket board", () => {
     await waitFor(() => expect(cardIds()).toEqual(["1002"]));
     // Columns stay, so the board never pretends the other statuses vanished
     expect(column("Open")).toBeInTheDocument();
+  });
+});
+
+describe("moving tickets on the board", () => {
+  async function boardReady() {
+    await connectAndSync();
+    const router = renderFreshdesk();
+    await waitFor(() => expect(rows().length).toBeGreaterThan(0));
+    await openBoard();
+    stub.requests.length = 0;
+    return router;
+  }
+  async function moveWithMenu(ticketId: string, status: string) {
+    fireEvent.click(screen.getByRole("button", { name: `Move ticket #${ticketId}` }));
+    const menu = screen.getByRole("menu", { name: `Move ticket #${ticketId} to` });
+    // The menu takes focus, so the keyboard alone can pick a status
+    await waitFor(() => expect(menu).toContainElement(document.activeElement as HTMLElement));
+    fireEvent.click(within(menu).getByRole("menuitem", { name: status }));
+  }
+
+  it("the Move menu sends one status write with the status ID and the card changes column", async () => {
+    await boardReady();
+    await moveWithMenu("1001", "Fixture: With engineering");
+
+    await waitFor(() => expect(columnIds("Fixture: With engineering").sort()).toEqual(["1001", "1002"]));
+    expect(writes()).toEqual([
+      expect.objectContaining({ method: "PUT", url: `https://${ALPHA_HOST}/api/v2/tickets/1001`, body: { status: 6 } }),
+    ]);
+    expect(columnIds("Open")).not.toContain("1001");
+  });
+
+  it("dragging a card onto a column sends the same single status write", async () => {
+    await boardReady();
+    act(() => dnd.onDragEnd!({ active: { id: "ticket:1008", data: { current: { ticketId: "1008" } } }, over: { id: "status:3" } }));
+
+    await waitFor(() => expect(columnIds("Pending").sort()).toEqual(["1006", "1008"]));
+    expect(writes()).toEqual([expect.objectContaining({ method: "PUT", body: { status: 3 } })]);
+    // Dropping on its own column or on no column sends nothing
+    act(() => dnd.onDragEnd!({ active: { id: "ticket:1001", data: { current: { ticketId: "1001" } } }, over: { id: "status:2" } }));
+    act(() => dnd.onDragEnd!({ active: { id: "ticket:1001", data: { current: { ticketId: "1001" } } }, over: null }));
+    expect(writes()).toHaveLength(1);
+  });
+
+  it("a rejected move returns the card to its column and shows Freshdesk's reason (A08)", async () => {
+    await boardReady();
+    stub.respondOnce(ALPHA_HOST, "/api/v2/tickets/1001", accessDenied);
+    await moveWithMenu("1001", "Pending");
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Ticket #1001 stays in Open. Freshdesk did not allow this change: You are not authorized to perform this action.",
+    );
+    expect(columnIds("Open")).toContain("1001");
+    expect(columnIds("Pending")).toEqual(["1006"]);
+  });
+
+  it("asks for a field Freshdesk requires, sends it with the move, then offers to open the ticket that left the view (A08)", async () => {
+    const router = await boardReady();
+    stub.respondOnce(ALPHA_HOST, "/api/v2/tickets/1001", closureFieldMissing);
+    await moveWithMenu("1001", "Resolved");
+
+    const prompt = await screen.findByRole("dialog", { name: "Freshdesk needs more information" });
+    // Until Freshdesk accepts, the card stays where it was
+    expect(columnIds("Open")).toContain("1001");
+    const field = within(prompt).getByLabelText("Fixture product");
+    expect(within(prompt).getByRole("button", { name: "Move to Resolved" })).toBeDisabled();
+    fireEvent.change(field, { target: { value: "Fixture Gadget" } });
+    fireEvent.click(within(prompt).getByRole("button", { name: "Move to Resolved" }));
+
+    const moved = await screen.findByRole("dialog", { name: "Ticket moved" });
+    expect(moved).toHaveTextContent("Ticket #1001 is now Resolved and no longer matches “All outstanding”.");
+    expect(writes().map((w) => w.body)).toEqual([
+      { status: 4 },
+      { status: 4, custom_fields: { cf_fixture_product: "Fixture Gadget" } },
+    ]);
+    expect(cardIds()).not.toContain("1001");
+
+    fireEvent.click(within(moved).getByRole("button", { name: "Open ticket" }));
+    await waitFor(() => expect(router.state.location.pathname).toBe("/freshdesk/ticket/1001"));
+    expect(within(reader()).getByText("Fixture: cannot sign in")).toBeInTheDocument();
+  });
+
+  it("offline, moves explain that a connection is required and nothing is sent", async () => {
+    await boardReady();
+    act(() => useUIStore.setState({ isOnline: false }));
+
+    expect(screen.getByText("Changing a ticket needs a connection to Freshdesk.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Move ticket #1001" })).toBeDisabled();
+    act(() => dnd.onDragEnd!({ active: { id: "ticket:1001", data: { current: { ticketId: "1001" } } }, over: { id: "status:3" } }));
+    expect(writes()).toEqual([]);
   });
 });
