@@ -2,10 +2,13 @@ import { render, screen, fireEvent, within } from "@testing-library/react";
 import { CommandPalette } from "./CommandPalette";
 import { pretendPlatform, restoreUserAgent } from "@/test/platform";
 import { searchMessages, type SearchResult } from "@/services/db/search";
-import { navigateToThread, navigateToLabel, getActiveLabel } from "@/router/navigate";
+import { navigateToThread, navigateToLabel, getActiveLabel, getSelectedThreadId } from "@/router/navigate";
 import { useThreadStore } from "@/stores/threadStore";
 import { useSmartFolderStore } from "@/stores/smartFolderStore";
 import { useAccountStore } from "@/stores/accountStore";
+import { useUIStore } from "@/stores/uiStore";
+import { getEmailProvider } from "@/services/email/providerFactory";
+import { enqueuePendingOperation } from "@/services/db/pendingOperations";
 
 vi.mock("@/router/navigate", () => ({
   navigateToLabel: vi.fn(),
@@ -15,9 +18,15 @@ vi.mock("@/router/navigate", () => ({
   getSelectedThreadId: vi.fn(() => null),
 }));
 vi.mock("@/services/db/search", () => ({ searchMessages: vi.fn(async () => []) }));
-vi.mock("@/hooks/useRouteNavigation", () => ({ useActiveLabel: () => "inbox" }));
+const route = vi.hoisted(() => ({ label: "inbox" }));
+vi.mock("@/hooks/useRouteNavigation", () => ({ useActiveLabel: () => route.label }));
 vi.mock("@/services/db/templates", () => ({ getTemplatesForAccount: vi.fn(async () => []) }));
-vi.mock("@/services/gmail/tokenManager", () => ({ getGmailClient: vi.fn() }));
+// The provider boundary (Gmail API / IMAP) and the local database are faked; emailActions runs for real.
+vi.mock("@/services/email/providerFactory", () => ({ getEmailProvider: vi.fn() }));
+vi.mock("@/services/db/pendingOperations", () => ({ enqueuePendingOperation: vi.fn(async () => "op-1") }));
+vi.mock("@/services/db/connection", () => ({
+  getDb: vi.fn(async () => ({ execute: vi.fn(async () => undefined), select: vi.fn(async () => []) })),
+}));
 
 afterEach(restoreUserAgent);
 
@@ -142,5 +151,68 @@ describe("Command palette email search", () => {
     fireEvent.click(screen.getByRole("option", { name: "Open Receipts" }));
 
     expect(navigateToLabel).toHaveBeenCalledWith("smart-folder:sf-1");
+  });
+});
+
+describe("Command palette spam action", () => {
+  const providers = { gmail: { spam: vi.fn(async () => {}) }, imap: { spam: vi.fn(async () => {}) } };
+
+  async function runSpamCommand(name: RegExp) {
+    render(<CommandPalette isOpen onClose={() => {}} />);
+    typeQuery("spam");
+    fireEvent.click(screen.getByRole("option", { name }));
+    await vi.waitFor(() => expect(vi.mocked(enqueuePendingOperation).mock.calls.length + providers.gmail.spam.mock.calls.length + providers.imap.spam.mock.calls.length).toBeGreaterThan(0));
+  }
+
+  beforeEach(() => {
+    route.label = "inbox";
+    providers.gmail.spam.mockClear();
+    providers.imap.spam.mockClear();
+    vi.mocked(enqueuePendingOperation).mockClear();
+    vi.mocked(getSelectedThreadId).mockReturnValue("t1");
+    vi.mocked(getEmailProvider).mockImplementation(async (accountId) =>
+      (accountId === "imap-acc" ? providers.imap : providers.gmail) as never,
+    );
+    useUIStore.setState({ isOnline: true });
+    useThreadStore.setState({ threads: [] });
+  });
+
+  afterEach(() => {
+    vi.mocked(getSelectedThreadId).mockReturnValue(null);
+  });
+
+  it.each([
+    ["gmail", "gmail-acc"],
+    ["imap", "imap-acc"],
+  ] as const)("reports the open thread as spam through the %s provider", async (kind, accountId) => {
+    useAccountStore.setState({ activeAccountId: accountId });
+
+    await runSpamCommand(/^Report Spam/);
+
+    expect(providers[kind].spam).toHaveBeenCalledWith("t1", [], true);
+  });
+
+  it("marks the thread as not spam when viewing the spam folder", async () => {
+    route.label = "spam";
+    useAccountStore.setState({ activeAccountId: "imap-acc" });
+
+    await runSpamCommand(/^Not Spam/);
+
+    expect(providers.imap.spam).toHaveBeenCalledWith("t1", [], false);
+  });
+
+  it("queues the report when offline instead of calling the provider", async () => {
+    useAccountStore.setState({ activeAccountId: "gmail-acc" });
+    useUIStore.setState({ isOnline: false });
+
+    await runSpamCommand(/^Report Spam/);
+
+    expect(providers.gmail.spam).not.toHaveBeenCalled();
+    expect(enqueuePendingOperation).toHaveBeenCalledWith(
+      "gmail-acc",
+      "spam",
+      "t1",
+      expect.objectContaining({ threadId: "t1", isSpam: true }),
+    );
   });
 });

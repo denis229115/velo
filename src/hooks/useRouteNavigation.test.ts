@@ -75,6 +75,15 @@ describe("useRouteNavigation hooks", () => {
       expect(useActiveLabel()).toBe("calendar");
     });
 
+    it.each([
+      ["/tasks", "tasks"],
+      ["/attachments", "attachments"],
+      ["/scheduled", "scheduled"],
+    ])("should return the page name for the %s route", (routeId, label) => {
+      setMatches([{ routeId, params: {} }]);
+      expect(useActiveLabel()).toBe(label);
+    });
+
     it("should return 'inbox' as fallback when no matches", () => {
       setMatches([]);
       expect(useActiveLabel()).toBe("inbox");
