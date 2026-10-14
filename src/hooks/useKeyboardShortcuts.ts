@@ -5,7 +5,8 @@ import { useComposerStore } from "@/stores/composerStore";
 import { useAccountStore } from "@/stores/accountStore";
 import { useShortcutStore } from "@/stores/shortcutStore";
 import { useContextMenuStore } from "@/stores/contextMenuStore";
-import { navigateToLabel, navigateToThread, navigateBack, getActiveLabel, getSelectedThreadId } from "@/router/navigate";
+import { navigateToLabel, navigateToThread, navigateToTicket, navigateBack, getActiveLabel, getSelectedThreadId, getSelectedTicketId } from "@/router/navigate";
+import { selectVisibleTickets, useTicketStore } from "@/stores/ticketStore";
 import { archiveThread, trashThread, permanentDeleteThread, starThread, spamThread } from "@/services/emailActions";
 import { deleteThread as deleteThreadFromDb, pinThread as pinThreadDb, unpinThread as unpinThreadDb, muteThread as muteThreadDb, unmuteThread as unmuteThreadDb } from "@/services/db/threads";
 import { deleteDraftsForThread } from "@/services/gmail/draftDeletion";
@@ -151,6 +152,13 @@ export function useKeyboardShortcuts() {
         }
       }
 
+      // Enter opens a ticket in the Freshdesk list (a focused button keeps its own Enter)
+      if (key === "Enter" && !singleKey.get(key) && target.tagName !== "BUTTON" && target.tagName !== "A" && getActiveLabel() === "freshdesk") {
+        e.preventDefault();
+        await executeAction("nav.open");
+        return;
+      }
+
       // Single key shortcuts
       let actionId = singleKey.get(key);
       // Delete and Backspace always trigger delete action
@@ -168,7 +176,46 @@ export function useKeyboardShortcuts() {
   }, []);
 }
 
+/**
+ * The Freshdesk ticket list: navigation walks the visible tickets; email thread
+ * actions do not apply. Returns false for actions that work the same everywhere.
+ */
+function executeTicketAction(actionId: string): boolean {
+  const tickets = selectVisibleTickets(useTicketStore.getState());
+  const selectedId = getSelectedTicketId();
+  const currentIdx = tickets.findIndex((t) => t.id === selectedId);
+
+  switch (actionId) {
+    case "nav.next": {
+      const next = tickets[Math.min(currentIdx + 1, tickets.length - 1)];
+      if (next) navigateToTicket(next.id);
+      return true;
+    }
+    case "nav.prev": {
+      const prev = tickets[Math.max(currentIdx - 1, 0)];
+      if (prev) navigateToTicket(prev.id);
+      return true;
+    }
+    case "nav.open": {
+      if (!selectedId && tickets[0]) navigateToTicket(tickets[0].id);
+      return true;
+    }
+    case "nav.escape": {
+      if (useComposerStore.getState().isOpen) return false;
+      if (selectedId) navigateToLabel("freshdesk");
+      return true;
+    }
+    case "app.syncFolder":
+      void useTicketStore.getState().refresh();
+      return true;
+    default:
+      // Thread actions (archive, star, reply…) would hit email threads selected elsewhere
+      return actionId.startsWith("action.") && actionId !== "action.compose";
+  }
+}
+
 async function executeAction(actionId: string): Promise<void> {
+  if (getActiveLabel() === "freshdesk" && executeTicketAction(actionId)) return;
   const threads = useThreadStore.getState().threads;
   const selectedId = getSelectedThreadId();
   const currentIdx = threads.findIndex((t) => t.id === selectedId);

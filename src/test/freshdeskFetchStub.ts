@@ -1,5 +1,5 @@
 import { createMockFetchResponse } from "@/test/mocks";
-import type { FreshdeskFixtureTenant } from "@/services/freshdesk/__fixtures__/freshdeskFixtures";
+import type { FixtureTicket, FreshdeskFixtureTenant } from "@/services/freshdesk/__fixtures__/freshdeskFixtures";
 
 export interface RecordedRequest {
   url: string;
@@ -32,7 +32,7 @@ export function createFreshdeskFetchStub(
     });
   }
 
-  function page(items: unknown[], url: URL) {
+  function page<T>(items: T[], url: URL): T[] {
     const perPage = Number(url.searchParams.get("per_page") ?? 30);
     const pageNo = Number(url.searchParams.get("page") ?? 1);
     return items.slice((pageNo - 1) * perPage, pageNo * perPage);
@@ -54,7 +54,48 @@ export function createFreshdeskFetchStub(
     }
 
     const { tenant } = helpdesk;
+    const tickets = tenant.tickets ?? [];
+    const withRequester = (t: FixtureTicket) =>
+      url.searchParams.get("include") === "requester"
+        ? { ...t, requester: tenant.contacts?.find((c) => c.id === t.requester_id) ?? null }
+        : t;
+
+    const ticketMatch = url.pathname.match(/^\/api\/v2\/tickets\/(\d+)$/);
+    if (ticketMatch) {
+      const found = tickets.find((t) => t.id === Number(ticketMatch[1]));
+      return found ? json(200, withRequester(found)) : json(404, { code: "not_found" });
+    }
+    const contactMatch = url.pathname.match(/^\/api\/v2\/contacts\/(\d+)$/);
+    if (contactMatch) {
+      const found = tenant.contacts?.find((c) => c.id === Number(contactMatch[1]));
+      return found ? json(200, found) : json(404, { code: "not_found" });
+    }
+
     switch (url.pathname) {
+      case "/api/v2/tickets": {
+        // Freshdesk returns only tickets created in the last 30 days unless updated_since is given
+        const since = url.searchParams.get("updated_since");
+        const floor = since ? Date.parse(since) : Date.now() - 30 * 86_400_000;
+        const field = since ? "updated_at" : "created_at";
+        const desc = url.searchParams.get("order_type") !== "asc";
+        const orderBy = url.searchParams.get("order_by") ?? "created_at";
+        const matching = tickets
+          .filter((t) => Date.parse(t[field]) >= floor)
+          .sort((a, b) => {
+            const diff = Date.parse(String(a[orderBy])) - Date.parse(String(b[orderBy]));
+            return desc ? -diff : diff;
+          });
+        return json(200, page(matching, url).map(withRequester));
+      }
+      case "/api/v2/search/tickets": {
+        // Search: quoted query, 30 results per page, at most 10 pages
+        const query = url.searchParams.get("query") ?? "";
+        const pageNo = Number(url.searchParams.get("page") ?? 1);
+        if (!/^".*"$/.test(query) || pageNo > 10) return json(400, { description: "Validation failed", errors: [{ field: "query", code: "invalid_value" }] });
+        const statuses = [...query.matchAll(/status:(\d+)/g)].map((m) => Number(m[1]));
+        const matching = tickets.filter((t) => statuses.includes(t.status));
+        return json(200, { results: matching.slice((pageNo - 1) * 30, pageNo * 30), total: matching.length });
+      }
       case "/api/v2/agents/me":
         return json(200, tenant.me);
       case "/api/v2/ticket_fields":

@@ -6,6 +6,7 @@ import {
 } from "@tanstack/react-router";
 import App from "@/App";
 import { MailLayout } from "@/components/layout/MailLayout";
+import { FreshdeskPage } from "@/components/freshdesk/FreshdeskPage";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 
 // Lazy-load heavy pages — these include many sub-components and service imports
@@ -198,6 +199,27 @@ export const tasksRoute = createRoute({
   component: TasksPageWrapper,
 });
 
+// ---------- /freshdesk ----------
+function FreshdeskPageWrapper() {
+  return (
+    <ErrorBoundary name="FreshdeskPage">
+      <FreshdeskPage />
+    </ErrorBoundary>
+  );
+}
+
+export const freshdeskRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "freshdesk",
+  component: FreshdeskPageWrapper,
+});
+
+// ---------- /freshdesk/ticket/$ticketId ----------
+export const freshdeskTicketRoute = createRoute({
+  getParentRoute: () => freshdeskRoute,
+  path: "ticket/$ticketId",
+});
+
 // ---------- /calendar ----------
 export const calendarRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -232,6 +254,7 @@ export const routeTree = rootRoute.addChildren([
   attachmentsRoute,
   scheduledRoute,
   tasksRoute,
+  freshdeskRoute.addChildren([freshdeskTicketRoute]),
   calendarRoute,
   helpIndexRoute,
   helpTopicRoute,

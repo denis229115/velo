@@ -34,6 +34,9 @@ export function useActiveLabel(): string {
     if (match.routeId === "/calendar") {
       return "calendar";
     }
+    if (match.routeId === "/freshdesk" || match.routeId === "/freshdesk/ticket/$ticketId") {
+      return "freshdesk";
+    }
     if (match.routeId === "/help/$topic" || match.routeId === "/help") {
       return "help";
     }
@@ -50,6 +53,17 @@ export function useSelectedThreadId(): string | null {
     const params = match.params as Record<string, string>;
     if (params["threadId"]) {
       return params["threadId"];
+    }
+  }
+  return null;
+}
+
+/** The ticket open in the Freshdesk reader, from its own route parameter. */
+export function useSelectedTicketId(): string | null {
+  const matches = useMatchesSafe();
+  for (const match of matches) {
+    if (match.routeId === "/freshdesk/ticket/$ticketId") {
+      return (match.params as { ticketId: string }).ticketId;
     }
   }
   return null;

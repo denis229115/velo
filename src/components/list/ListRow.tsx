@@ -15,7 +15,9 @@ export interface ListRowProps {
   /** Name shown in the sender column; its initials fill the avatar */
   sender: string;
   subject: string;
-  preview?: string | null;
+  /** Shown before the subject, e.g. a ticket ID */
+  subjectPrefix?: ReactNode;
+  preview?: ReactNode;
   /** Unix ms */
   time: number;
   hasAttachment?: boolean;
@@ -76,6 +78,7 @@ export function ListRow({
   unread,
   sender,
   subject,
+  subjectPrefix,
   preview,
   time,
   hasAttachment,
@@ -135,6 +138,7 @@ export function ListRow({
           <span data-line className="flex-1 min-w-0 flex flex-wrap @2xl:flex-nowrap items-center gap-x-3 gap-y-0.5 text-row">
             <span className={`truncate flex-1 min-w-0 @2xl:flex-none @2xl:w-44 ${weight}`}>{sender}</span>
             <span className="order-3 @2xl:order-2 basis-full @2xl:basis-auto min-w-0 flex items-baseline gap-2 flex-1 overflow-hidden">
+              {subjectPrefix && <span className="shrink-0 text-meta tabular-nums text-text-tertiary">{subjectPrefix}</span>}
               <span className={`truncate shrink-0 max-w-full @lg:max-w-[70%] ${subjectWeight}`}>{subject}</span>
               {preview && <span className="hidden @lg:inline truncate text-preview text-text-tertiary min-w-0">{preview}</span>}
             </span>
@@ -155,6 +159,7 @@ export function ListRow({
               {starSlot}
             </span>
             <span data-line className="flex items-baseline gap-2 min-w-0 text-row">
+              {subjectPrefix && <span className="shrink-0 text-meta tabular-nums text-text-tertiary">{subjectPrefix}</span>}
               <span className={`truncate shrink-0 max-w-[70%] ${subjectWeight}`}>{subject}</span>
               {preview && <span className="truncate text-preview text-text-tertiary min-w-0">{preview}</span>}
             </span>

@@ -15,6 +15,7 @@ import {
   updateIntegrationIdentity,
   type StatusClass,
 } from "@/services/db/freshdesk";
+import { clearTicketSyncAuthBlock } from "@/services/db/freshdeskTickets";
 import { FreshdeskError, normalizeHelpdeskHost, type HelpdeskCredentials } from "./client";
 import {
   fetchCurrentAgent,
@@ -94,6 +95,7 @@ export async function connectHelpdesk(input: { host: string; apiKey: string }): 
   await setSecureSetting(API_KEY_SETTING, apiKey);
   await saveIntegrationAccount({ kind: "freshdesk", tenantId, tenantHost: host, me });
   await replaceHelpdeskMetadata(tenantId, metadata);
+  await clearTicketSyncAuthBlock(tenantId);
 
   const connection = await getHelpdeskConnection();
   if (!connection) throw new FreshdeskError("server", "The helpdesk connection could not be saved.");
@@ -106,7 +108,8 @@ export async function disconnectHelpdesk(): Promise<void> {
   await deleteIntegrationAccount("freshdesk");
 }
 
-async function currentCredentials(): Promise<{ tenantId: string; credentials: HelpdeskCredentials } | null> {
+/** The connected helpdesk and its API key; null in sample mode. Never log the result. */
+export async function currentCredentials(): Promise<{ tenantId: string; credentials: HelpdeskCredentials } | null> {
   const account = await getIntegrationAccount("freshdesk");
   if (!account) return null;
   const apiKey = await getSecureSetting(API_KEY_SETTING);
