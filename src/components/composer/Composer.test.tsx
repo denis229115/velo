@@ -159,3 +159,22 @@ describe("Composer scheduling", () => {
     ]);
   });
 });
+
+describe("Composer scheduling from a send-as alias", () => {
+  it("stores the alias chosen in the From selector with the scheduled email", async () => {
+    await db.execute(
+      `INSERT INTO send_as_aliases (id, account_id, email, is_primary, is_default)
+       VALUES ('alias-main', 'gmail-1', 'me@gmail.com', 1, 1), ('alias-support', 'gmail-1', 'support@acme.com', 0, 0)`,
+    );
+    await renderComposer();
+    await waitFor(() => expect(useComposerStore.getState().fromEmail).toBe("me@gmail.com"));
+    act(() => useComposerStore.getState().setFromEmail("support@acme.com"));
+
+    pressInEditor({ key: "L", metaKey: true, shiftKey: true });
+    fireEvent.click(await screen.findByText("Tomorrow morning"));
+
+    await waitFor(() => expect(useComposerStore.getState().isOpen).toBe(false));
+    const rows = await db.select<{ from_email: string | null }[]>("SELECT from_email FROM scheduled_emails");
+    expect(rows).toEqual([{ from_email: "support@acme.com" }]);
+  });
+});

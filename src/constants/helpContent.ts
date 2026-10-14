@@ -352,11 +352,13 @@ export const HELP_CATEGORIES: HelpCategory[] = [
         title: "Schedule send",
         summary: "Write now, send later at a chosen time.",
         description:
-          "Compose an email and schedule it to be sent at a specific date and time. Send later works for every email account, Gmail and IMAP/SMTP. Choose from quick presets (tomorrow morning, Monday morning) or pick a custom date and time. Scheduled emails send when Velo is next open at or after the chosen time: nothing sends while your Mac sleeps or Velo is closed, and emails that fall due while you're offline wait until you're back online. A failed send is retried a few times with increasing delays; if it still fails you get a notification. If Velo closes in the middle of sending, it never resends automatically: it checks your Sent mail and, if it can't find the email, tells you to check Sent before sending it again.",
+          "Compose an email and schedule it to be sent at a specific date and time. Send later works for every email account, Gmail and IMAP/SMTP, and sends from the address you picked in From, including send-as aliases. Choose from quick presets (tomorrow morning, Monday morning) or pick a custom date and time. Scheduled emails send when Velo is next open at or after the chosen time: nothing sends while your Mac sleeps or Velo is closed, and emails that fall due while you're offline wait until you're back online. The Scheduled screen lists every scheduled email with its status (scheduled, sending, sent or failed), send time, email account and any error; cancel a scheduled one there before it goes out, or retry a failed one. A failed send is retried a few times with increasing delays; if it still fails you get a notification and it stays on the Scheduled screen. If Velo closes in the middle of sending, it never resends automatically: it checks your Sent mail and, if it can't find the email, tells you to check Sent before you retry it.",
         tips: [
           { text: "Open the send-later picker from the composer, even while typing", shortcut: "Ctrl+Shift+L" },
           { text: "Or click the clock button next to Send." },
           { text: "Quick presets: Tomorrow Morning (9am), Tomorrow Afternoon (1pm), Monday Morning." },
+          { text: "See, cancel and retry scheduled emails on the Scheduled screen", shortcut: "g then l" },
+          { text: "A retry sends the same email once; if a copy already reached Sent, it is marked sent instead." },
           { text: "Rebind send now and send later in Settings > Shortcuts." },
         ],
         relatedSettingsTab: "shortcuts",

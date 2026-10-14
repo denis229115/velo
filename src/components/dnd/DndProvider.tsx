@@ -37,6 +37,9 @@ export function resolveLabelChange(
   targetSidebarId: string,
   sourceLabel: string,
 ): { addLabelIds: string[]; removeLabelIds: string[] } | null {
+  // The Scheduled screen lists scheduled emails, not a label threads can move to
+  if (targetSidebarId === "scheduled") return null;
+
   const targetGmailId = LABEL_MAP[targetSidebarId] ?? targetSidebarId;
   const sourceGmailId = LABEL_MAP[sourceLabel] ?? sourceLabel;
 

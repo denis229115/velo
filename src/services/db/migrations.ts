@@ -870,6 +870,13 @@ const MIGRATIONS = [
       );
     `,
   },
+  {
+    version: 27,
+    description: "Send-as alias for scheduled emails",
+    sql: `
+      ALTER TABLE scheduled_emails ADD COLUMN from_email TEXT;
+    `,
+  },
 ];
 
 /**

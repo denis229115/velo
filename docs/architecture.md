@@ -50,7 +50,7 @@ Velo follows a **three-layer architecture** with clear separation of concerns.
 ```
 velo/
 ├── src/
-│   ├── components/           # React components (14 groups, ~94 files)
+│   ├── components/           # React components (15 groups, ~96 files)
 │   │   ├── layout/           # Sidebar, EmailList, ReadingPane, TitleBar
 │   │   ├── email/            # ThreadView, MessageItem, EmailRenderer,
 │   │   │                     # ContactSidebar, SmartReplySuggestions,
@@ -67,6 +67,7 @@ velo/
 │   │   ├── calendar/         # CalendarPage, MonthView, WeekView, DayView,
 │   │   │                     # EventCard, EventCreateModal
 │   │   ├── attachments/      # AttachmentLibrary, AttachmentGridItem, AttachmentListItem
+│   │   ├── scheduled/        # ScheduledEmailsPage, ScheduledList
 │   │   ├── tasks/            # TasksPage, TaskItem, TaskSidebar, TaskQuickAdd,
 │   │   │                     # AiTaskExtractDialog
 │   │   ├── help/             # HelpPage, HelpSidebar, HelpSearchBar,

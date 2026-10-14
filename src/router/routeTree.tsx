@@ -13,6 +13,7 @@ const SettingsPage = lazy(() => import("@/components/settings/SettingsPage").the
 const HelpPage = lazy(() => import("@/components/help/HelpPage").then((m) => ({ default: m.HelpPage })));
 const CalendarPage = lazy(() => import("@/components/calendar/CalendarPage").then((m) => ({ default: m.CalendarPage })));
 const TasksPage = lazy(() => import("@/components/tasks/TasksPage").then((m) => ({ default: m.TasksPage })));
+const ScheduledEmailsPage = lazy(() => import("@/components/scheduled/ScheduledEmailsPage").then((m) => ({ default: m.ScheduledEmailsPage })));
 const AttachmentLibrary = lazy(() => import("@/components/attachments/AttachmentLibrary").then((m) => ({ default: m.AttachmentLibrary })));
 
 // ---------- Search param validation ----------
@@ -163,6 +164,23 @@ export const attachmentsRoute = createRoute({
   component: AttachmentLibraryWrapper,
 });
 
+// ---------- /scheduled ----------
+function ScheduledEmailsPageWrapper() {
+  return (
+    <ErrorBoundary name="ScheduledEmailsPage">
+      <Suspense fallback={<div className="flex-1 flex items-center justify-center text-text-tertiary text-sm">Loading scheduled emails...</div>}>
+        <ScheduledEmailsPage />
+      </Suspense>
+    </ErrorBoundary>
+  );
+}
+
+export const scheduledRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "scheduled",
+  component: ScheduledEmailsPageWrapper,
+});
+
 // ---------- /tasks ----------
 function TasksPageWrapper() {
   return (
@@ -212,6 +230,7 @@ export const routeTree = rootRoute.addChildren([
   settingsIndexRoute,
   settingsTabRoute,
   attachmentsRoute,
+  scheduledRoute,
   tasksRoute,
   calendarRoute,
   helpIndexRoute,
