@@ -4,6 +4,7 @@ import { useUIStore } from "@/stores/uiStore";
 import { navigateToLabel, navigateToSettings } from "@/router/navigate";
 import { useAccountStore } from "@/stores/accountStore";
 import { getSetting, setSetting, getSecureSetting, setSecureSetting } from "@/services/db/settings";
+import { TimeZoneSettings } from "./TimeZoneSettings";
 import { AiProviderSettings } from "./AiProviderSettings";
 import { FreshdeskSettings } from "./FreshdeskSettings";
 import { deleteAccount } from "@/services/db/accounts";
@@ -483,6 +484,8 @@ export function SettingsPage() {
                   </Section>
 
                   <SidebarNavEditor />
+
+                  <TimeZoneSettings />
 
                   <Section title="Startup">
                     <ToggleRow
