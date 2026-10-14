@@ -23,6 +23,8 @@ export interface HelpdeskAgent {
   agentId: string;
   name: string;
   email: string | null;
+  /** The agent's Freshdesk signature (HTML, untrusted); only "me" carries one */
+  signature?: string | null;
 }
 
 export interface HelpdeskGroup {
@@ -53,6 +55,7 @@ interface RawTicketField {
 interface RawAgent {
   id: number | string;
   contact?: { name?: string; email?: string | null };
+  signature?: string | null;
 }
 
 interface RawGroup {
@@ -126,6 +129,12 @@ export function decodeAgent(raw: unknown): HelpdeskAgent {
   return { agentId: String(agent.id), name: agent.contact.name, email: agent.contact.email ?? null };
 }
 
+/** "Me", with the signature Freshdesk adds to my replies */
+function decodeMe(raw: unknown): HelpdeskAgent {
+  const signature = (raw as RawAgent | null)?.signature;
+  return { ...decodeAgent(raw), signature: typeof signature === "string" && signature.trim() !== "" ? signature : null };
+}
+
 function decodeGroup(raw: unknown): HelpdeskGroup {
   const group = raw as RawGroup | null;
   if (group?.id == null || typeof group.name !== "string") malformed("a group");
@@ -134,7 +143,7 @@ function decodeGroup(raw: unknown): HelpdeskGroup {
 
 /** The agent Freshdesk authenticates these credentials as: "me". */
 export async function fetchCurrentAgent(credentials: HelpdeskCredentials): Promise<HelpdeskAgent> {
-  return decodeAgent(await freshdeskGet<unknown>(credentials, "/agents/me"));
+  return decodeMe(await freshdeskGet<unknown>(credentials, "/agents/me"));
 }
 
 export async function fetchHelpdeskMetadata(credentials: HelpdeskCredentials): Promise<HelpdeskMetadata> {

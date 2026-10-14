@@ -81,9 +81,10 @@ async function readBody(response: Response): Promise<unknown> {
 
 async function freshdeskRequest<T>(
   credentials: HelpdeskCredentials,
-  method: "GET" | "PUT",
+  method: "GET" | "PUT" | "POST",
   path: string,
   payload?: unknown,
+  timeoutMs?: number,
 ): Promise<T> {
   let response: Response;
   try {
@@ -94,6 +95,7 @@ async function freshdeskRequest<T>(
         "Content-Type": "application/json",
       },
       ...(payload !== undefined && { body: JSON.stringify(payload) }),
+      ...(timeoutMs !== undefined && { signal: AbortSignal.timeout(timeoutMs) }),
     });
   } catch {
     throw new FreshdeskError("network", `Could not reach ${credentials.host}.`);
@@ -140,6 +142,17 @@ export function freshdeskGet<T>(credentials: HelpdeskCredentials, path: string):
 /** PUT to a Freshdesk API v2 path: a remote write. Never retried here. */
 export function freshdeskPut<T>(credentials: HelpdeskCredentials, path: string, payload: unknown): Promise<T> {
   return freshdeskRequest<T>(credentials, "PUT", path, payload);
+}
+
+/** How long a send waits for Freshdesk's answer before its outcome counts as unconfirmed */
+const POST_TIMEOUT_MS = 30_000;
+
+/**
+ * POST to a Freshdesk API v2 path: a remote write. Never retried here; a
+ * `network` error means the outcome is unknown (the write may have landed).
+ */
+export function freshdeskPost<T>(credentials: HelpdeskCredentials, path: string, payload: unknown): Promise<T> {
+  return freshdeskRequest<T>(credentials, "POST", path, payload, POST_TIMEOUT_MS);
 }
 
 const PAGE_SIZE = 100;

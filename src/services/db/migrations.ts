@@ -1091,6 +1091,26 @@ const MIGRATIONS = [
       CREATE INDEX IF NOT EXISTS idx_freshdesk_journal_ticket ON freshdesk_operation_journal(tenant_id, ticket_id);
     `,
   },
+  {
+    version: 33,
+    description: "Freshdesk ticket drafts and the agent signature",
+    sql: `
+      CREATE TABLE IF NOT EXISTS freshdesk_ticket_drafts (
+        tenant_id TEXT NOT NULL,
+        agent_id TEXT NOT NULL,
+        ticket_id TEXT NOT NULL,
+        mode TEXT NOT NULL CHECK (mode IN ('reply', 'note')),
+        body_html TEXT NOT NULL DEFAULT '',
+        cc_json TEXT NOT NULL DEFAULT '[]',
+        started_at INTEGER NOT NULL,
+        assignee_at_start TEXT,
+        unconfirmed_entry_id INTEGER,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (tenant_id, agent_id, ticket_id, mode)
+      );
+      ALTER TABLE integration_accounts ADD COLUMN me_signature TEXT;
+    `,
+  },
 ];
 
 /**
