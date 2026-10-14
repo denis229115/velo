@@ -1288,6 +1288,20 @@ export const HELP_CATEGORIES: HelpCategory[] = [
         relatedSettingsTab: "freshdesk",
       },
       {
+        id: "freshdesk-board",
+        icon: LifeBuoy,
+        title: "Ticket board and ticket edits",
+        summary: "See a ticket view as a board and change status, priority and assignee.",
+        description:
+          "Switch a ticket view between List and Board with the buttons in its header; the view keeps its filters and sort and remembers its presentation. The board has one column per Freshdesk status, in Freshdesk's order, including empty ones; Done columns start collapsed and you can expand or collapse any column. Cards show the ticket ID, subject, customer, priority, assignee, how long since Last answered, and linked ClickUp tasks. Drag a card to another column, or use its Move button to pick a status with the keyboard, and Velo changes the status in Freshdesk. In the reader you can change status, priority and assignee. If Freshdesk needs a field before it accepts a change, Velo asks for it; if Freshdesk refuses, the ticket goes back to how it was and the reason is shown. When a moved ticket no longer matches the view, Velo says so and offers to open it.",
+        tips: [
+          { text: "Changes go to Freshdesk at once and need a connection; they are never saved up to send later." },
+          { text: "Group, tags and custom fields are still changed in Freshdesk." },
+          { text: "Tickets with a status Freshdesk no longer has appear in their own Unknown status column." },
+        ],
+        relatedSettingsTab: "freshdesk",
+      },
+      {
         id: "clickup-links",
         icon: ListChecks,
         title: "Link ClickUp tasks to tickets",

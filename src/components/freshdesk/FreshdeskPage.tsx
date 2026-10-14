@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from "react";
 import { useUIStore } from "@/stores/uiStore";
-import { selectVisibleTickets, useTicketStore } from "@/stores/ticketStore";
+import { selectCurrentView, selectVisibleTickets, useTicketStore } from "@/stores/ticketStore";
 import { useSelectedTicketId } from "@/hooks/useRouteNavigation";
 import { TicketList } from "./TicketList";
 import { TicketReader } from "./TicketReader";
@@ -49,6 +49,23 @@ export function FreshdeskPage() {
     if (!live) return;
     focusHistory(selectedTicketId, visibleKey ? visibleKey.split(",") : []);
   }, [live, selectedTicketId, visibleKey, focusHistory]);
+
+  // The board takes the whole row; an opened ticket reads beside it
+  if (selectCurrentView({ views, selectedViewId }).presentation === "board") {
+    return (
+      <div className="flex flex-1 min-w-0 flex-row">
+        <TicketList selectedTicketId={selectedTicketId} />
+        {selectedTicketId && (
+          <>
+            <div className="w-px bg-border-primary shrink-0" />
+            <div className="flex w-[min(34rem,45%)] shrink-0">
+              <TicketReader ticket={ticket} ticketId={selectedTicketId} />
+            </div>
+          </>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-1 min-w-0 flex-row">

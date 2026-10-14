@@ -9,9 +9,18 @@ export type FreshdeskErrorKind =
   | "auth"
   | "rate_limited"
   | "invalid_value"
+  | "validation"
+  | "permission"
   | "not_found"
   | "network"
   | "server";
+
+/** One entry of Freshdesk's `errors` array on a 400 */
+export interface FreshdeskFieldError {
+  field: string;
+  code: string;
+  message: string;
+}
 
 /**
  * A failed Freshdesk call. Messages never include the API key or the
@@ -23,6 +32,8 @@ export class FreshdeskError extends Error {
     message: string,
     readonly status?: number,
     readonly retryAfterSeconds?: number,
+    /** Freshdesk's own reason: its field errors on a 400, its message on a refused write */
+    readonly detail?: { fieldErrors: FreshdeskFieldError[]; message: string | null },
   ) {
     super(message);
     this.name = "FreshdeskError";
@@ -45,9 +56,19 @@ export function normalizeHelpdeskHost(input: string): string {
   return host;
 }
 
-function hasInvalidValue(body: unknown): boolean {
-  const errors = (body as { errors?: { code?: string }[] } | null)?.errors;
-  return Array.isArray(errors) && errors.some((e) => e.code === "invalid_value");
+function fieldErrors(body: unknown): FreshdeskFieldError[] {
+  const errors = (body as { errors?: unknown } | null)?.errors;
+  if (!Array.isArray(errors)) return [];
+  return errors.map((e: Record<string, unknown>) => ({
+    field: typeof e?.field === "string" ? e.field : "",
+    code: typeof e?.code === "string" ? e.code : "",
+    message: typeof e?.message === "string" ? e.message : "",
+  }));
+}
+
+function bodyMessage(body: unknown): string | null {
+  const message = (body as { message?: unknown } | null)?.message;
+  return typeof message === "string" && message ? message : null;
 }
 
 async function readBody(response: Response): Promise<unknown> {
@@ -58,16 +79,21 @@ async function readBody(response: Response): Promise<unknown> {
   }
 }
 
-/** GET a Freshdesk API v2 path through the Tauri HTTP boundary. */
-export async function freshdeskGet<T>(credentials: HelpdeskCredentials, path: string): Promise<T> {
+async function freshdeskRequest<T>(
+  credentials: HelpdeskCredentials,
+  method: "GET" | "PUT",
+  path: string,
+  payload?: unknown,
+): Promise<T> {
   let response: Response;
   try {
     response = await fetch(`https://${credentials.host}/api/v2${path}`, {
-      method: "GET",
+      method,
       headers: {
         Authorization: `Basic ${btoa(`${credentials.apiKey}:X`)}`,
         "Content-Type": "application/json",
       },
+      ...(payload !== undefined && { body: JSON.stringify(payload) }),
     });
   } catch {
     throw new FreshdeskError("network", `Could not reach ${credentials.host}.`);
@@ -77,6 +103,11 @@ export async function freshdeskGet<T>(credentials: HelpdeskCredentials, path: st
   if (response.ok) return body as T;
 
   const status = response.status;
+  const detail = { fieldErrors: fieldErrors(body), message: bodyMessage(body) };
+  // A refused write is about the agent's permissions, not the API key, once the key itself works
+  if (status === 403 && method !== "GET") {
+    throw new FreshdeskError("permission", "Freshdesk did not allow this change.", status, undefined, detail);
+  }
   if (status === 401 || status === 403) {
     throw new FreshdeskError("auth", "Freshdesk rejected the API key. Check it and connect again.", status);
   }
@@ -89,13 +120,26 @@ export async function freshdeskGet<T>(credentials: HelpdeskCredentials, path: st
       Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : undefined,
     );
   }
-  if (status === 400 && hasInvalidValue(body)) {
-    throw new FreshdeskError("invalid_value", "Freshdesk did not accept a field value.", status);
+  if (status === 400 && detail.fieldErrors.some((e) => e.code === "invalid_value")) {
+    throw new FreshdeskError("invalid_value", "Freshdesk did not accept a field value.", status, undefined, detail);
+  }
+  if (status === 400 && detail.fieldErrors.length > 0) {
+    throw new FreshdeskError("validation", "Freshdesk did not accept the change.", status, undefined, detail);
   }
   if (status === 404) {
     throw new FreshdeskError("not_found", `${credentials.host} did not answer as a Freshdesk helpdesk.`, status);
   }
   throw new FreshdeskError("server", `Freshdesk answered with HTTP ${status}.`, status);
+}
+
+/** GET a Freshdesk API v2 path through the Tauri HTTP boundary. */
+export function freshdeskGet<T>(credentials: HelpdeskCredentials, path: string): Promise<T> {
+  return freshdeskRequest<T>(credentials, "GET", path);
+}
+
+/** PUT to a Freshdesk API v2 path: a remote write. Never retried here. */
+export function freshdeskPut<T>(credentials: HelpdeskCredentials, path: string, payload: unknown): Promise<T> {
+  return freshdeskRequest<T>(credentials, "PUT", path, payload);
 }
 
 const PAGE_SIZE = 100;

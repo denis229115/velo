@@ -5,14 +5,22 @@ export interface RecordedRequest {
   url: string;
   method: string;
   authorization: string | null;
+  /** Parsed JSON body of a write */
+  body?: unknown;
 }
 
 interface CannedResponse {
   /** Only answer this page of a paginated path */
   page?: number;
-  status: number;
-  body: unknown;
+  /** Only answer this method (default: any) */
+  method?: string;
+  status?: number;
+  body?: unknown;
   headers?: Record<string, string>;
+  /** The connection drops before an answer arrives */
+  networkError?: boolean;
+  /** Apply the write to the fixture helpdesk before answering (a write accepted but unanswered) */
+  apply?: boolean;
 }
 
 /**
@@ -24,6 +32,19 @@ export function createFreshdeskFetchStub(
 ) {
   const requests: RecordedRequest[] = [];
   const queued = new Map<string, CannedResponse[]>();
+  // Writes land in the stub's own overlay, never in the shared fixtures (tests may still edit those)
+  const written = new Map<string, Partial<FixtureTicket>>();
+  const ticketsOf = (host: string): FixtureTicket[] =>
+    (helpdesks[host]?.tenant.tickets ?? []).map((t) => ({ ...t, ...written.get(`${host}/${t.id}`) }));
+
+  function applyWrite(host: string, ticketId: number, body: Record<string, unknown>): FixtureTicket | null {
+    const found = ticketsOf(host).find((t) => t.id === ticketId);
+    if (!found) return null;
+    const changes: Partial<FixtureTicket> = { updated_at: new Date().toISOString().replace(/\.\d{3}Z$/, "Z") };
+    for (const key of ["status", "priority", "responder_id"] as const) if (key in body) Object.assign(changes, { [key]: body[key] });
+    written.set(`${host}/${ticketId}`, { ...written.get(`${host}/${ticketId}`), ...changes });
+    return { ...found, ...changes };
+  }
 
   function json(status: number, body: unknown, headers?: Record<string, string>) {
     return createMockFetchResponse({
@@ -44,13 +65,22 @@ export function createFreshdeskFetchStub(
     const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
     const headers = new Headers(init?.headers);
     const authorization = headers.get("authorization");
-    requests.push({ url: url.href, method: init?.method ?? "GET", authorization });
+    const method = init?.method ?? "GET";
+    const body = typeof init?.body === "string" ? (JSON.parse(init.body) as Record<string, unknown>) : undefined;
+    requests.push({ url: url.href, method, authorization, ...(body !== undefined && { body }) });
 
     const pending = queued.get(`${url.host}${url.pathname}`) ?? [];
-    const cannedIndex = pending.findIndex((c) => c.page === undefined || c.page === Number(url.searchParams.get("page") ?? 1));
+    const cannedIndex = pending.findIndex(
+      (c) =>
+        (c.method === undefined || c.method === method) &&
+        (c.page === undefined || c.page === Number(url.searchParams.get("page") ?? 1)),
+    );
     if (cannedIndex >= 0) {
       const [canned] = pending.splice(cannedIndex, 1);
-      return json(canned!.status, canned!.body, canned!.headers);
+      const writeMatch = url.pathname.match(/^\/api\/v2\/tickets\/(\d+)$/);
+      if (canned!.apply && writeMatch && body) applyWrite(url.host, Number(writeMatch[1]), body);
+      if (canned!.networkError) throw new TypeError("fixture: connection dropped");
+      return json(canned!.status ?? 200, canned!.body, canned!.headers);
     }
 
     const helpdesk = helpdesks[url.host];
@@ -60,13 +90,17 @@ export function createFreshdeskFetchStub(
     }
 
     const { tenant } = helpdesk;
-    const tickets = tenant.tickets ?? [];
+    const tickets = ticketsOf(url.host);
     const withRequester = (t: FixtureTicket) =>
       url.searchParams.get("include") === "requester"
         ? { ...t, requester: tenant.contacts?.find((c) => c.id === t.requester_id) ?? null }
         : t;
 
     const ticketMatch = url.pathname.match(/^\/api\/v2\/tickets\/(\d+)$/);
+    if (ticketMatch && method === "PUT") {
+      const updated = applyWrite(url.host, Number(ticketMatch[1]), body ?? {});
+      return updated ? json(200, updated) : json(404, { code: "not_found" });
+    }
     if (ticketMatch) {
       const found = tickets.find((t) => t.id === Number(ticketMatch[1]));
       return found ? json(200, withRequester(found)) : json(404, { code: "not_found" });
@@ -124,7 +158,7 @@ export function createFreshdeskFetchStub(
   return {
     fetch,
     requests,
-    /** Answer the next request to `host + path` (or to one page of it) with this response instead. */
+    /** Answer the next request to `host + path` (or to one page or method of it) with this response instead. */
     respondOnce(host: string, path: string, response: CannedResponse) {
       const key = `${host}${path}`;
       queued.set(key, [...(queued.get(key) ?? []), response]);

@@ -1073,6 +1073,24 @@ const MIGRATIONS = [
       ALTER TABLE freshdesk_tickets ADD COLUMN due_by INTEGER;
     `,
   },
+  {
+    version: 32,
+    description: "Freshdesk operation journal for remote writes",
+    sql: `
+      CREATE TABLE IF NOT EXISTS freshdesk_operation_journal (
+        entry_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        tenant_id TEXT NOT NULL,
+        ticket_id TEXT NOT NULL,
+        operation TEXT NOT NULL,
+        changes_json TEXT NOT NULL,
+        outcome TEXT NOT NULL CHECK (outcome IN ('pending', 'confirmed', 'failed', 'unconfirmed')),
+        error_message TEXT,
+        created_at INTEGER NOT NULL,
+        completed_at INTEGER
+      );
+      CREATE INDEX IF NOT EXISTS idx_freshdesk_journal_ticket ON freshdesk_operation_journal(tenant_id, ticket_id);
+    `,
+  },
 ];
 
 /**

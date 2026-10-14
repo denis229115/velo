@@ -21,6 +21,7 @@ import {
   type TicketViewFilter,
 } from "@/services/freshdesk/ticketViews";
 import { getLinkedTicketSummary, type LinkedWorkSummary } from "@/services/clickup/links";
+import { updateTicket, type TicketChanges, type TicketEditResult } from "@/services/freshdesk/ticketEdits";
 
 interface TicketState {
   data: TicketListData | null;
@@ -54,6 +55,16 @@ interface TicketState {
   findOlder: (ticketId: string) => Promise<string | null>;
   /** Tells background hydration which tickets the operator is looking at */
   focusHistory: (openedId: string | null, visibleIds: string[]) => void;
+  /**
+   * Changes status, priority or assignee in Freshdesk. `shown` is applied at once
+   * and rolled back unless Freshdesk confirms; afterwards the ticket is re-read.
+   */
+  editTicket: (
+    ticketId: string,
+    changes: TicketChanges,
+    shown: Partial<TicketListItem>,
+    requiredFields?: Record<string, string>,
+  ) => Promise<TicketEditResult>;
 }
 
 export const useTicketStore = create<TicketState>((set, get) => ({
@@ -120,6 +131,22 @@ export const useTicketStore = create<TicketState>((set, get) => ({
   },
   focusHistory: (openedId, visibleIds) => {
     void hydrateTicketHistories({ openedId, visibleIds });
+  },
+  editTicket: async (ticketId, changes, shown, requiredFields) => {
+    const before = get().data?.tickets.find((t) => t.id === ticketId);
+    const replace = (next: (t: TicketListItem) => TicketListItem) =>
+      set((s) => (s.data ? { data: { ...s.data, tickets: s.data.tickets.map((t) => (t.id === ticketId ? next(t) : t)) } } : {}));
+    if (before) replace((t) => ({ ...t, ...shown }));
+    let result: TicketEditResult;
+    try {
+      result = await updateTicket(ticketId, changes, requiredFields);
+    } catch (error) {
+      result = { outcome: "rejected", message: error instanceof Error ? error.message : String(error) };
+    }
+    // An unconfirmed write shows the local copy, which only ever holds what Freshdesk confirmed
+    if (result.outcome === "confirmed" || result.outcome === "unconfirmed") await get().load();
+    else if (before) replace(() => before);
+    return result;
   },
 }));
 

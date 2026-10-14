@@ -10,12 +10,15 @@ import { useTicketStore } from "@/stores/ticketStore";
 import type { TicketListItem } from "@/services/freshdesk/ticketSync";
 import { getTicketHistory, type HistoryEntry, type TicketHistoryView } from "@/services/freshdesk/ticketHistory";
 import type { ConversationAttachment } from "@/services/freshdesk/activity";
-import { TicketPriorityBadge, TicketStatusBadge } from "./TicketBadges";
 import { ActivityValue, EntryKindBadge, NeedsReplyValue } from "./TicketActivity";
 import { RelatedTasksPanel } from "@/components/clickup/RelatedTasksPanel";
+import { TicketEditError, useTicketEditor } from "./useTicketEditor";
+import { useTicketEditControls } from "./TicketEditControls";
+
+const fieldId = (label: string) => `ticket-field-${label.toLowerCase().replace(/\W+/g, "-")}`;
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
-  const id = `ticket-field-${label.toLowerCase().replace(/\W+/g, "-")}`;
+  const id = fieldId(label);
   return (
     <div className="min-w-0">
       <dt id={id} className="text-meta text-text-tertiary mb-0.5">{label}</dt>
@@ -146,10 +149,13 @@ function useTicketHistory(ticketId: string | null): TicketHistoryView | null {
   return view && view.ticketId === ticketId ? view : null;
 }
 
-/** The ticket open on the right of the list; read-only. */
+/** The ticket open on the right of the list. Status, priority and assignee are edited here; the rest is read-only. */
 export function TicketReader({ ticket, ticketId }: { ticket: TicketListItem | null; ticketId: string | null }) {
   const view = useTicketHistory(ticket ? ticketId : null);
   const a = ticket?.activity;
+  const editor = useTicketEditor();
+  const edit = useTicketEditControls(ticket, editor);
+  const editError = editor.error && editor.error.ticketId === ticket?.id ? editor.error : null;
   return (
     <section aria-label="Ticket reader" className="flex-1 min-w-0 flex flex-col bg-surface-reader">
       {!ticket || !a ? (
@@ -166,13 +172,21 @@ export function TicketReader({ ticket, ticketId }: { ticket: TicketListItem | nu
             {ticket.fetchedOnDemand && <span>Fetched on demand: outside the downloaded scope</span>}
           </div>
           <h2 className="text-title font-semibold text-text-primary mb-5">{ticket.subject || "(no subject)"}</h2>
+          {(edit.blocked || editError) && (
+            <div className="mb-3 max-w-4xl space-y-1.5">
+              {edit.blocked && (
+                <p role="status" className="text-meta text-text-tertiary">
+                  {edit.blocked}
+                </p>
+              )}
+              {editError && <TicketEditError text={editError.text} onDismiss={editor.clearError} />}
+            </div>
+          )}
           <dl className="grid grid-cols-[repeat(auto-fill,minmax(10rem,1fr))] gap-x-6 gap-y-3 max-w-4xl mb-6">
-            <Field label="Status">
-              <TicketStatusBadge status={ticket.status} />
-            </Field>
-            <Field label="Priority">{ticket.priority ? <TicketPriorityBadge priority={ticket.priority} /> : "None"}</Field>
+            <Field label="Status">{edit.render("Status", fieldId("Status"))}</Field>
+            <Field label="Priority">{edit.render("Priority", fieldId("Priority"))}</Field>
             <Field label="Customer">{ticket.customer ?? "Not loaded yet"}</Field>
-            <Field label="Assignee">{ticket.assignee ?? "Unassigned"}</Field>
+            <Field label="Assignee">{edit.render("Assignee", fieldId("Assignee"))}</Field>
             <Field label="Needs reply">
               <NeedsReplyValue value={a.needsReply} history={a.history} />
             </Field>
@@ -193,6 +207,7 @@ export function TicketReader({ ticket, ticketId }: { ticket: TicketListItem | nu
             </Field>
           </dl>
           <RelatedTasksPanel item={{ kind: "ticket", ticketId: ticket.id }} />
+          {editor.element}
           <HistoryNotice view={view} />
           {view && view.entries.length > 0 && <History key={view.ticketId} entries={view.entries} />}
         </div>
