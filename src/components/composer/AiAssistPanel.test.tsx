@@ -54,4 +54,14 @@ describe("AiAssistPanel", () => {
     expect(await screen.findByText("Network unavailable")).toBeInTheDocument();
     expect(setContent).not.toHaveBeenCalled();
   });
+
+  it("names the provider at the point of sending", async () => {
+    vi.mocked(getAiReadiness).mockResolvedValue({ status: "ready", provider: "claude", model: "m" });
+    const { editor } = fakeEditor();
+
+    render(<AiAssistPanel editor={editor} isReplyMode={false} />);
+
+    expect(await screen.findByText("Sends to Claude API (Anthropic)")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Preview" })).toBeInTheDocument();
+  });
 });

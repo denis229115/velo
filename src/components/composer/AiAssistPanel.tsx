@@ -9,6 +9,7 @@ import {
   type TransformType,
 } from "@/services/ai/aiService";
 import { useComposerStore } from "@/stores/composerStore";
+import { AiSendNote } from "@/components/ai/AiSendPreview";
 
 interface AiAssistPanelProps {
   editor: Editor | null;
@@ -97,6 +98,9 @@ export function AiAssistPanel({ editor, isReplyMode, threadMessages }: AiAssistP
       <div className="flex items-center gap-2 mb-2">
         <Sparkles size={12} className="text-accent" />
         <span className="text-xs font-medium text-accent">AI Assist</span>
+        <div className="ml-auto">
+          <AiSendNote features={["ai_compose", "ai_reply", "text_transform"]} />
+        </div>
       </div>
 
       {/* Prompt input */}
