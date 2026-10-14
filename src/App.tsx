@@ -216,7 +216,8 @@ export default function App() {
 
         // Restore read filter
         const savedReadFilter = await getSetting("read_filter");
-        if (savedReadFilter === "all" || savedReadFilter === "read" || savedReadFilter === "unread") {
+        // The list offers All / Unread tabs; an older saved "read" falls back to All
+        if (savedReadFilter === "all" || savedReadFilter === "unread") {
           ui.setReadFilter(savedReadFilter);
         }
 

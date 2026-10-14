@@ -23,6 +23,10 @@ import { getSmartFolderSearchQuery, mapSmartFolderRows, type SmartFolderRow } fr
 import { getDb } from "@/services/db/connection";
 import { Archive, Trash2, X, Ban, Filter, ChevronRight, Package, FolderSearch } from "lucide-react";
 import { EmptyState } from "../ui/EmptyState";
+import { ListHeader } from "../list/ListHeader";
+import { ReadFilterTabs } from "../list/ReadFilterTabs";
+import { DateGroupHeader } from "../list/DateGroupHeader";
+import { groupByDate } from "@/utils/dateGroups";
 import {
   InboxClearIllustration,
   NoSearchResultsIllustration,
@@ -57,7 +61,7 @@ export function EmailList({ width, listRef }: { width?: number; listRef?: React.
   const activeAccountId = useAccountStore((s) => s.activeAccountId);
   const activeLabel = useActiveLabel();
   const readFilter = useUIStore((s) => s.readFilter);
-  const setReadFilter = useUIStore((s) => s.setReadFilter);
+  const activeAccountEmail = useAccountStore((s) => s.accounts.find((a) => a.id === s.activeAccountId)?.email);
   const readingPanePosition = useUIStore((s) => s.readingPanePosition);
   const userLabels = useLabelStore((s) => s.labels);
   const smartFolders = useSmartFolderStore((s) => s.folders);
@@ -231,6 +235,15 @@ export function EmailList({ width, listRef }: { width?: number; listRef?: React.
       return true;
     });
   }, [filteredThreads, activeLabel, activeCategory, categoryMap, bundledCategorySet, heldThreadIds]);
+
+  // Pinned threads lead under their own header; the rest fall into date groups
+  const threadGroups = useMemo(() => {
+    const indexed = visibleThreads.map((thread, idx) => ({ thread, idx }));
+    const pinned = indexed.filter(({ thread }) => thread.isPinned);
+    const rest = indexed.filter(({ thread }) => !thread.isPinned);
+    const groups = groupByDate(rest, ({ thread }) => thread.lastMessageAt);
+    return pinned.length > 0 ? [{ key: "pinned", label: "Pinned", items: pinned }, ...groups] : groups;
+  }, [visibleThreads]);
 
   const mapDbThreads = useCallback(async (dbThreads: Awaited<ReturnType<typeof getThreadsForAccount>>): Promise<Thread[]> => {
     return Promise.all(
@@ -495,15 +508,15 @@ export function EmailList({ width, listRef }: { width?: number; listRef?: React.
       style={readingPanePosition === "right" && width ? { width } : undefined}
     >
       {/* Search */}
-      <div className="px-3 py-2 border-b border-border-secondary">
+      <div className="px-3 pt-2.5">
         <SearchBar />
       </div>
 
-      {/* Header */}
-      <div className="px-4 py-2 border-b border-border-primary flex items-center justify-between">
-        <div>
-          <h2 className="text-sm font-semibold text-text-primary capitalize flex items-center gap-1.5">
-            {isSmartFolder && <FolderSearch size={14} className="text-accent shrink-0" />}
+      <ListHeader
+        breadcrumb={["Mail", ...(activeAccountEmail ? [activeAccountEmail] : [])]}
+        icon={isSmartFolder ? <FolderSearch size={16} className="text-accent shrink-0" /> : undefined}
+        title={
+          <span className="capitalize">
             {isSmartFolder
               ? activeSmartFolder?.name ?? "Smart Folder"
               : activeLabel === "inbox" && inboxViewMode === "split" && activeCategory !== "All"
@@ -511,21 +524,11 @@ export function EmailList({ width, listRef }: { width?: number; listRef?: React.
                 : LABEL_MAP[activeLabel] !== undefined
                   ? activeLabel
                   : userLabels.find((l) => l.id === activeLabel)?.name ?? activeLabel}
-          </h2>
-          <span className="text-xs text-text-tertiary">
-            {filteredThreads.length} conversation{filteredThreads.length !== 1 ? "s" : ""}
           </span>
-        </div>
-        <select
-          value={readFilter}
-          onChange={(e) => setReadFilter(e.target.value as "all" | "read" | "unread")}
-          className="text-xs bg-bg-tertiary text-text-secondary px-2 py-1 rounded border border-border-primary"
-        >
-          <option value="all">All</option>
-          <option value="unread">Unread</option>
-          <option value="read">Read</option>
-        </select>
-      </div>
+        }
+        count={filteredThreads.length}
+        tabRow={<ReadFilterTabs />}
+      />
 
       {/* Category tabs (inbox + split mode only) */}
       {activeLabel === "inbox" && inboxViewMode === "split" && (
@@ -586,7 +589,7 @@ export function EmailList({ width, listRef }: { width?: number; listRef?: React.
       </CSSTransition>
 
       {/* Thread list */}
-      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto">
+      <div ref={scrollContainerRef} className="@container flex-1 overflow-y-auto">
         {isLoading && threads.length === 0 ? (
           <EmailListSkeleton />
         ) : filteredThreads.length === 0 && bundleRules.length === 0 ? (
@@ -656,33 +659,29 @@ export function EmailList({ width, listRef }: { width?: number; listRef?: React.
                 </div>
               );
             })}
-            {visibleThreads.map((thread, idx) => {
-              const prevThread = idx > 0 ? filteredThreads[idx - 1] : undefined;
-              const showDivider = prevThread?.isPinned && !thread.isPinned;
-              return (
-                <div
-                  key={thread.id}
-                  data-thread-id={thread.id}
-                  className={idx < 15 ? "stagger-in" : undefined}
-                  style={idx < 15 ? { animationDelay: `${idx * 30}ms` } : undefined}
-                >
-                  {showDivider && (
-                    <div className="px-4 py-1.5 text-xs font-medium text-text-tertiary uppercase tracking-wider bg-bg-tertiary/50 border-b border-border-secondary">
-                      Other emails
-                    </div>
-                  )}
-                  <ThreadCard
-                    thread={thread}
-                    isSelected={thread.id === selectedThreadId}
-                    onClick={handleThreadClick}
-                    onContextMenu={handleThreadContextMenu}
-                    category={categoryMap.get(thread.id)}
-                    showCategoryBadge={activeLabel === "inbox" && activeCategory === "All"}
-                    hasFollowUp={followUpThreadIds.has(thread.id)}
-                  />
-                </div>
-              );
-            })}
+            {threadGroups.map((group) => (
+              <div key={group.key} role="group" aria-label={group.label}>
+                <DateGroupHeader label={group.label} />
+                {group.items.map(({ thread, idx }) => (
+                  <div
+                    key={thread.id}
+                    data-thread-id={thread.id}
+                    className={idx < 15 ? "stagger-in" : undefined}
+                    style={idx < 15 ? { animationDelay: `${idx * 30}ms` } : undefined}
+                  >
+                    <ThreadCard
+                      thread={thread}
+                      isSelected={thread.id === selectedThreadId}
+                      onClick={handleThreadClick}
+                      onContextMenu={handleThreadContextMenu}
+                      category={categoryMap.get(thread.id)}
+                      showCategoryBadge={activeLabel === "inbox" && activeCategory === "All"}
+                      hasFollowUp={followUpThreadIds.has(thread.id)}
+                    />
+                  </div>
+                ))}
+              </div>
+            ))}
             {loadingMore && (
               <div className="px-4 py-3 text-center text-xs text-text-tertiary">
                 Loading more...
