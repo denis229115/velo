@@ -35,6 +35,7 @@ import {
   ChevronUp,
   ChevronDown,
   RotateCcw,
+  AlertTriangle,
   type LucideIcon,
 } from "lucide-react";
 import { SignatureEditor } from "./SignatureEditor";
@@ -48,6 +49,7 @@ import { QuickStepEditor } from "./QuickStepEditor";
 import { SmartLabelEditor } from "./SmartLabelEditor";
 import { SHORTCUTS, getDefaultKeyMap } from "@/constants/shortcuts";
 import { useShortcutStore } from "@/stores/shortcutStore";
+import { findShortcutConflicts } from "@/utils/shortcutKeys";
 import { COLOR_THEMES } from "@/constants/themes";
 import {
   getAliasesForAccount,
@@ -320,9 +322,9 @@ export function SettingsPage() {
   const activeTabDef = tabs.find((t) => t.id === activeTab);
 
   return (
-    <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-bg-primary/50">
+    <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-surface-reader">
       {/* Header */}
-      <div className="flex items-center gap-3 px-5 py-3 border-b border-border-primary shrink-0 bg-bg-primary/60 backdrop-blur-sm">
+      <div className="flex items-center gap-3 px-5 py-3 border-b border-border-primary shrink-0 bg-surface-reader">
         <button
           onClick={() => navigateToLabel("inbox")}
           className="p-1.5 -ml-1 rounded-md text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors"
@@ -336,7 +338,7 @@ export function SettingsPage() {
       {/* Body: sidebar nav + content */}
       <div className="flex flex-1 min-h-0">
         {/* Vertical tab sidebar */}
-        <nav className="w-48 border-r border-border-primary py-2 overflow-y-auto shrink-0 bg-bg-primary/30">
+        <nav className="w-48 border-r border-border-primary py-2 overflow-y-auto shrink-0 bg-surface-list">
           {tabs.map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
@@ -379,7 +381,6 @@ export function SettingsPage() {
                         onChange={(e) => {
                           const val = e.target.value as "light" | "dark" | "system";
                           setTheme(val);
-                          setSetting("theme", val);
                         }}
                         className="w-48 bg-bg-tertiary text-text-primary text-sm px-3 py-1.5 rounded-md border border-border-primary focus:border-accent outline-none"
                       >
@@ -471,7 +472,7 @@ export function SettingsPage() {
                     </SettingRow>
                     <ToggleRow
                       label="Reduce motion"
-                      description="Disable animated background effects (fixes flickering on some GPUs)"
+                      description="Turn off animations and transitions. Also on automatically when macOS Reduce motion is enabled"
                       checked={reduceMotion}
                       onToggle={() => setReduceMotion(!reduceMotion)}
                     />
@@ -1570,7 +1571,7 @@ function InfoRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-function ShortcutsTab() {
+export function ShortcutsTab() {
   const keyMap = useShortcutStore((s) => s.keyMap);
   const setKey = useShortcutStore((s) => s.setKey);
   const resetKey = useShortcutStore((s) => s.resetKey);
@@ -1631,6 +1632,8 @@ function ShortcutsTab() {
   }, [setKey]);
 
   const hasCustom = Object.entries(keyMap).some(([id, keys]) => defaults[id] !== keys);
+  const conflicts = findShortcutConflicts(keyMap);
+  const descById = new Map(SHORTCUTS.flatMap((c) => c.items.map((i) => [i.id, i.desc] as const)));
 
   return (
     <>
@@ -1683,15 +1686,25 @@ function ShortcutsTab() {
               const currentKey = keyMap[item.id] ?? item.keys;
               const isDefault = currentKey === defaults[item.id];
               const isRecording = recordingId === item.id;
+              const clashesWith = conflicts.get(item.id);
 
               return (
                 <div
                   key={item.id}
+                  data-shortcut-row
                   className="flex items-center justify-between py-2 px-1"
                 >
-                  <span className="text-sm text-text-secondary">
-                    {item.desc}
-                  </span>
+                  <div className="min-w-0">
+                    <span className="text-sm text-text-secondary">
+                      {item.desc}
+                    </span>
+                    {clashesWith && (
+                      <p role="alert" className="flex items-center gap-1 text-xs text-warning mt-0.5">
+                        <AlertTriangle size={12} className="shrink-0" />
+                        Also used by {clashesWith.map((id) => descById.get(id) ?? id).join(", ")}
+                      </p>
+                    )}
+                  </div>
                   <div className="flex items-center gap-2 ml-4 shrink-0">
                     <button
                       onClick={() => setRecordingId(isRecording ? null : item.id)}

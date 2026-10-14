@@ -309,7 +309,7 @@ export const HELP_CATEGORIES: HelpCategory[] = [
           "The composer uses a full rich text editor powered by TipTap. You can format text (bold, italic, lists, links, code blocks), add file attachments, insert a signature, and pick a template — all from one place. The composer opens as a panel at the bottom of the screen. Add recipients with autocomplete (ranked by how often you email them), set a subject, and compose your message.",
         tips: [
           { text: "Open the composer", shortcut: "c" },
-          { text: "Send the email", shortcut: "Ctrl+Enter" },
+          { text: "Send now", shortcut: "Ctrl+Enter" },
           { text: "Recipient autocomplete is ranked by contact frequency." },
           { text: "Use the toolbar or markdown-style shortcuts for formatting." },
           { text: "Close the composer with Escape (draft is auto-saved)." },
@@ -351,13 +351,14 @@ export const HELP_CATEGORIES: HelpCategory[] = [
         title: "Schedule send",
         summary: "Write now, send later at a chosen time.",
         description:
-          "Compose an email and schedule it to be sent at a specific date and time. This is useful for writing emails after hours, on weekends, or in different time zones without sending them immediately. Choose from quick presets (tomorrow morning, Monday morning) or pick a custom date and time. Scheduled emails appear in your Drafts until they're sent. You can cancel or reschedule them before the send time.",
+          "Compose an email and schedule it to be sent at a specific date and time. Send later works for every email account, Gmail and IMAP/SMTP. Choose from quick presets (tomorrow morning, Monday morning) or pick a custom date and time. Scheduled emails send when Velo is next open at or after the chosen time: nothing sends while your Mac sleeps or Velo is closed, and emails that fall due while you're offline wait until you're back online. A failed send is retried a few times with increasing delays; if it still fails you get a notification. If Velo closes in the middle of sending, it never resends automatically: it checks your Sent mail and, if it can't find the email, tells you to check Sent before sending it again.",
         tips: [
-          { text: "Click the dropdown arrow next to the Send button to schedule." },
+          { text: "Open the send-later picker from the composer, even while typing", shortcut: "Ctrl+Shift+L" },
+          { text: "Or click the clock button next to Send." },
           { text: "Quick presets: Tomorrow Morning (9am), Tomorrow Afternoon (1pm), Monday Morning." },
-          { text: "View and manage scheduled emails in Settings > Composing." },
-          { text: "Cancel a scheduled email any time before it sends." },
+          { text: "Rebind send now and send later in Settings > Shortcuts." },
         ],
+        relatedSettingsTab: "shortcuts",
       },
       {
         id: "send-archive",
@@ -479,7 +480,7 @@ export const HELP_CATEGORIES: HelpCategory[] = [
         title: "Keyboard shortcuts",
         summary: "Navigate and act on email without the mouse.",
         description:
-          "Almost every action has a keyboard shortcut, inspired by Superhuman's keyboard-first design. Shortcuts are disabled when you're typing in an input field, text area, or rich text editor to avoid conflicts. The app supports two-key sequences (press g then another key within 1 second) for navigation commands. All shortcuts are fully customizable — rebind any key in Settings.",
+          "Almost every action has a keyboard shortcut, inspired by Superhuman's keyboard-first design. Shortcuts are disabled when you're typing in an input field, text area, or rich text editor to avoid conflicts, except send now and send later, which work from inside the composer. The app supports two-key sequences (press g then another key within 1 second) for navigation commands. All shortcuts are fully customizable — rebind any key in Settings.",
         tips: [
           { text: "View all shortcuts", shortcut: "?" },
           { text: "Navigation: j/k (up/down), o (open), Escape (back)" },
@@ -489,6 +490,7 @@ export const HELP_CATEGORIES: HelpCategory[] = [
           { text: "Ask Inbox (AI)", shortcut: "i" },
           { text: "Sync current folder", shortcut: "F5" },
           { text: "Customize all shortcuts in Settings > Shortcuts." },
+          { text: "Settings warns you when two actions share the same key." },
           { text: "Shortcuts are disabled in text inputs to prevent conflicts." },
         ],
         relatedSettingsTab: "shortcuts",
@@ -1100,12 +1102,12 @@ export const HELP_CATEGORIES: HelpCategory[] = [
         title: "Light & dark mode",
         summary: "Switch between light, dark, or system theme.",
         description:
-          "Choose between light mode, dark mode, or system-matched (follows your OS setting). Dark mode uses carefully chosen colors for comfortable reading in low-light environments, with a darker background and softer text. The theme switches instantly and persists across restarts. The animated gradient background also adapts — light mode uses blues/purples/pinks, dark mode uses deeper blues and purples.",
+          "Choose between light mode, dark mode, or system-matched (follows your OS setting). Dark mode uses carefully chosen colors for comfortable reading in low-light environments, with a darker background and softer text. The theme switches instantly and persists across restarts. Surfaces are neutral and solid so text stays readable; only the sidebar is translucent. Keyboard focus is always shown with a visible ring.",
         tips: [
           { text: "Change theme in Settings > General." },
           { text: "\"System\" follows your OS light/dark preference." },
           { text: "Dark mode is optimized for low-light environments." },
-          { text: "The animated background gradient adapts to light/dark mode." },
+          { text: "Plain-text emails follow the theme; HTML emails keep a light page so senders' colours stay readable." },
         ],
         relatedSettingsTab: "general",
       },
@@ -1130,7 +1132,7 @@ export const HELP_CATEGORIES: HelpCategory[] = [
         title: "Font size & email density",
         summary: "Adjust text size and list spacing.",
         description:
-          "Font scale adjusts the overall text size across the app: Small, Default, Large, or Extra Large. Email density controls the spacing in the email list: Compact (more threads visible), Default (balanced), or Comfortable (more breathing room). Both settings combine — use large font with comfortable density for accessibility, or small font with compact density to see more at once.",
+          "Font scale adjusts the overall text size across the app: Small, Default, Large, or Extra Large. Email density controls the spacing in the email list: Compact (the default, more threads visible), Default (balanced), or Comfortable (more breathing room). Both settings combine — use large font with comfortable density for accessibility, or small font with compact density to see more at once.",
         tips: [
           { text: "Font sizes: Small, Default, Large, Extra Large." },
           { text: "Density options: Compact, Default, Comfortable." },

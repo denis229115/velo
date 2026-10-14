@@ -19,6 +19,10 @@ vi.spyOn(console, "log").mockImplementation(() => {});
 async function rollBackToV23() {
   await db.execute("DROP TABLE IF EXISTS ai_audit_log");
   await db.execute("DROP TABLE IF EXISTS ai_result_cache");
+  // v25 columns on scheduled_emails must go too, or re-running v25 would add them twice.
+  for (const column of ["attempts", "next_attempt_at", "last_error"]) {
+    await db.execute(`ALTER TABLE scheduled_emails DROP COLUMN ${column}`);
+  }
   await db.execute("DELETE FROM _migrations WHERE version >= 24");
 }
 

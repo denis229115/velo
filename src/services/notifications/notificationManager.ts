@@ -193,3 +193,15 @@ export function notifySnoozeReturn(subject: string): void {
     actionTypeId: "default",
   });
 }
+
+/**
+ * Show a notification for a scheduled email that permanently failed to send.
+ */
+export function notifyScheduledSendFailed(subject: string, reason: string): void {
+  if (!notificationsEnabled) return;
+  sendNotification({
+    title: "Scheduled email not sent",
+    body: `${subject || "(No subject)"}: ${reason}`,
+    actionTypeId: "default",
+  });
+}

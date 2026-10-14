@@ -18,6 +18,7 @@ import { FromSelector } from "./FromSelector";
 import { useComposerStore } from "@/stores/composerStore";
 import { useAccountStore } from "@/stores/accountStore";
 import { useUIStore } from "@/stores/uiStore";
+import { useComposerShortcuts } from "@/hooks/useComposerShortcuts";
 import { sendEmail, archiveThread, deleteDraft as deleteDraftAction } from "@/services/emailActions";
 import { buildRawEmail } from "@/utils/emailBuilder";
 import { upsertContact } from "@/services/db/contacts";
@@ -306,14 +307,6 @@ export function Composer() {
 
     const html = getFullHtml();
 
-    const attachmentData = state.attachments.length > 0
-      ? JSON.stringify(state.attachments.map((a) => ({
-          filename: a.filename,
-          mimeType: a.mimeType,
-          content: a.content,
-        })))
-      : null;
-
     await insertScheduledEmail({
       accountId: activeAccountId,
       toAddresses: state.to.join(", "),
@@ -325,26 +318,12 @@ export function Composer() {
       threadId: state.threadId,
       scheduledAt,
       signatureId: null,
+      attachments: state.attachments.map((a) => ({
+        filename: a.filename,
+        mimeType: a.mimeType,
+        content: a.content,
+      })),
     });
-
-    // Store attachment data if present
-    if (attachmentData) {
-      // The insertScheduledEmail doesn't have an attachmentPaths param,
-      // so we update it separately via the existing column
-      const { getDb } = await import("@/services/db/connection");
-      const db = await getDb();
-      // Get the most recently inserted scheduled email for this account
-      const rows = await db.select<{ id: string }[]>(
-        "SELECT id FROM scheduled_emails WHERE account_id = $1 ORDER BY created_at DESC LIMIT 1",
-        [activeAccountId],
-      );
-      if (rows[0]) {
-        await db.execute(
-          "UPDATE scheduled_emails SET attachment_paths = $1 WHERE id = $2",
-          [attachmentData, rows[0].id],
-        );
-      }
-    }
 
     stopAutoSave();
     // Delete the draft if exists
@@ -357,6 +336,11 @@ export function Composer() {
     setShowSchedule(false);
     closeComposer();
   }, [activeAccountId, activeAccount, closeComposer, getFullHtml]);
+
+  useComposerShortcuts(
+    { onSend: handleSend, onSendLater: () => setShowSchedule(true) },
+    isOpen,
+  );
 
   const handleDiscard = useCallback(async () => {
     stopAutoSave();
@@ -439,7 +423,7 @@ export function Composer() {
 
       {/* Composer window */}
       <div
-        className={`relative bg-bg-primary border rounded-lg glass-modal pointer-events-auto flex flex-col slide-up-panel ${
+        className={`relative bg-surface-composer border rounded-lg overlay-shadow pointer-events-auto flex flex-col slide-up-panel ${
           isFullpage ? "w-full h-full max-w-5xl" : "w-full max-w-2xl max-h-[80vh]"
         } ${isDragging ? "border-accent border-2" : "border-border-primary"}`}
         onDragEnter={handleDragEnter}

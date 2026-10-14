@@ -14,29 +14,10 @@ import { getMessagesForThread } from "@/services/db/messages";
 import { parseUnsubscribeUrl } from "@/components/email/MessageItem";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { triggerSync } from "@/services/gmail/syncManager";
+import { matchesKey } from "@/utils/shortcutKeys";
+import { COMPOSER_SHORTCUT_IDS } from "@/constants/shortcuts";
 
-/**
- * Parse a key binding string and check if it matches a keyboard event.
- * Supports formats like: "j", "#", "Ctrl+K", "Ctrl+Shift+E", "Ctrl+Enter"
- */
-function matchesKey(binding: string, e: KeyboardEvent): boolean {
-  const parts = binding.split("+");
-  const key = parts[parts.length - 1]!;
-  const needsCtrl = parts.some((p) => p === "Ctrl" || p === "Cmd");
-  const needsShift = parts.some((p) => p === "Shift");
-  const needsAlt = parts.some((p) => p === "Alt");
-
-  const ctrlMatch = needsCtrl ? (e.ctrlKey || e.metaKey) : !(e.ctrlKey || e.metaKey);
-  const shiftMatch = needsShift ? e.shiftKey : !e.shiftKey;
-  const altMatch = needsAlt ? e.altKey : !e.altKey;
-
-  // For single character keys, compare case-insensitively
-  const keyMatch = key.length === 1
-    ? e.key === key || e.key === key.toLowerCase() || e.key === key.toUpperCase()
-    : e.key === key;
-
-  return ctrlMatch && shiftMatch && altMatch && keyMatch;
-}
+const composerShortcutIds = new Set<string>(COMPOSER_SHORTCUT_IDS);
 
 /**
  * Build a reverse map: key binding -> action ID.
@@ -52,6 +33,8 @@ function buildReverseMap(keyMap: Record<string, string>): {
   const ctrlCombos = new Map<string, string>();
 
   for (const [id, keys] of Object.entries(keyMap)) {
+    // Send now / send later are dispatched by the composer (useComposerShortcuts)
+    if (composerShortcutIds.has(id)) continue;
     if (keys.includes(" then ")) {
       // Two-key sequence like "g then i"
       const secondKey = keys.split(" then ")[1]!.trim();
@@ -120,10 +103,6 @@ export function useKeyboardShortcuts() {
             window.dispatchEvent(new Event("velo-toggle-command-palette"));
             return;
           }
-        }
-        if (e.key === "Enter") {
-          // Send email shortcut handled by composer
-          return;
         }
         return;
       }

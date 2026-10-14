@@ -13,5 +13,7 @@ export default defineConfig({
     environment: "jsdom",
     setupFiles: ["./src/test/setup.ts"],
     globals: true,
+    // Theme tests load the real token stylesheet into jsdom
+    css: { include: [/src\/styles\/theme\.css/] },
   },
 });

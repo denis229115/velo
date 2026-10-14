@@ -21,6 +21,10 @@ describe("uiStore", () => {
     });
   });
 
+  it("defaults the email list to compact rows until the user picks a density", () => {
+    expect(useUIStore.getInitialState().emailDensity).toBe("compact");
+  });
+
   it("should have correct default values", () => {
     const state = useUIStore.getState();
     expect(state.theme).toBe("system");
@@ -83,11 +87,11 @@ describe("uiStore", () => {
   });
 
   it("setEmailDensity should persist to DB and update state", () => {
-    expect(useUIStore.getState().emailDensity).toBe("default");
-
-    useUIStore.getState().setEmailDensity("compact");
-    expect(setSetting).toHaveBeenCalledWith("email_density", "compact");
     expect(useUIStore.getState().emailDensity).toBe("compact");
+
+    useUIStore.getState().setEmailDensity("default");
+    expect(setSetting).toHaveBeenCalledWith("email_density", "default");
+    expect(useUIStore.getState().emailDensity).toBe("default");
 
     useUIStore.getState().setEmailDensity("spacious");
     expect(setSetting).toHaveBeenCalledWith("email_density", "spacious");

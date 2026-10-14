@@ -132,7 +132,8 @@ Custom window events: `velo-sync-done`, `velo-toggle-command-palette`, `velo-tog
 | `?` | Shortcuts help |
 | `Escape` | Close composer → clear multi-select → deselect thread (hierarchical) |
 | `Ctrl+Shift+E` | Toggle sidebar |
-| `Ctrl+Enter` | Send email (in composer) |
+| `Ctrl+Enter` | Send now (in composer, works while typing) |
+| `Ctrl+Shift+L` | Send later: open the schedule picker (in composer, works while typing) |
 | `Ctrl+A` | Select all threads |
 | `Ctrl+Shift+A` | Select all threads from current position |
 | `g` then `i` | Go to Inbox |
@@ -153,13 +154,15 @@ Multi-select: click to toggle, Shift+click for range. All keyboard actions work 
 
 Tailwind CSS v4 — uses `@import "tailwindcss"`, `@theme {}` for custom properties, and `@custom-variant dark` in `src/styles/globals.css`. Dark mode toggles via `<html class="dark">` which swaps CSS custom properties. Font scaling via `font-scale-{small|default|large|xlarge}` classes on `<html>`.
 
-**Semantic color tokens**: `bg-bg-primary/secondary/tertiary/hover/selected`, `text-text-primary/secondary/tertiary`, `border-border-primary/secondary`, `bg-accent/accent-hover/accent-light`, `bg-danger/warning/success`, `bg-sidebar-bg`, `text-sidebar-text`.
+**Theme token layer** (`src/styles/theme.css`, plain CSS with light values on `:root` and dark values on `.dark`): surfaces `surface-base/sidebar/list/reader/composer/overlay/subtle`, text `text-primary/secondary/muted`, `separator`, states `state-hover/selected/focus`, `link`, `status-success/warning/error`. Exposed as Tailwind utilities in `globals.css` (`bg-surface-list`, `text-text-muted`, `border-separator`, `text-link`, `text-status-error`, …). Older names (`bg-bg-primary/secondary/tertiary/hover/selected`, `text-text-primary/secondary/tertiary`, `border-border-primary/secondary`, `bg-sidebar-bg`, `text-sidebar-text`) are aliases onto these tokens. `bg-accent/accent-hover/accent-light` follow the accent preset; `bg-danger/warning/success` are solid fills for white text. Use `.overlay-shadow` for menus, popovers and dialogs. `useAppearance()` (`src/hooks/useAppearance.ts`) applies theme, accent preset and reduced motion; mount it once per window.
 
-**Glass effects**: `.glass-panel`, `.glass-modal`, `.glass-backdrop` utility classes with blur and shadow properties.
+**Glass**: only the sidebar is translucent (`.glass-sidebar`). Lists, reader, composer, menus and dialogs use solid surfaces; `themeGuard.test.ts` fails on blur or gradients elsewhere.
+
+**Focus and motion**: an unlayered `:focus-visible` rule in `theme.css` draws the focus ring on every interactive element (Tailwind's `outline-none` can't remove it). `.reduce-motion` on `<html>` (macOS Reduce motion or the in-app setting) disables animations and transitions.
 
 **Color themes**: 8 accent color presets (Indigo, Rose, Emerald, Amber, Sky, Violet, Orange, Slate) defined in `src/constants/themes.ts`. Each has light & dark variants. Applied via CSS custom properties, independent of light/dark mode.
 
-**Background**: Animated gradient blobs (5 blobs with radial gradients, keyframe animations). Light mode uses blue→purple→pink→orange→cyan gradient; dark mode uses darker blues/purples.
+**Background**: solid `surface-base`; no gradients or animated blobs.
 
 **Icons**: `lucide-react` icon library.
 
@@ -203,6 +206,9 @@ Key tables (37 total): `accounts` (with `provider` "gmail_api"|"imap", IMAP/SMTP
 - **Thread deletion**: Two-stage — first trash, then permanent delete from DB if already in trash
 - **Snooze**: Removes INBOX label and adds SNOOZED label (not just a flag)
 - **Draft auto-save**: 3-second debounce, not configurable
+- **Send later**: `scheduledSendManager.ts` sends through `getEmailProvider` (Gmail and IMAP/SMTP), only while Velo runs and is online. Attachments are stored in the same INSERT as the row. Up to 5 attempts with 1m/5m/15m/1h backoff, then `failed` with `last_error` and an OS notification. Each scheduled email has a fixed Message-ID (`<scheduled.{id}@domain>`); rows left in `sending` are reconciled on startup against the local synced copy and never resent automatically
+- **Composer shortcuts**: `app.send` / `app.sendLater` are dispatched by `useComposerShortcuts` (capture phase, reads the registry at keypress time) in Composer and InlineReply, not by `useKeyboardShortcuts`. Settings > Shortcuts warns on duplicate bindings (`findShortcutConflicts`, Cmd = Ctrl)
+- **Service tests on real SQLite**: `src/test/sqliteTestDb.ts` (Node's built-in `node:sqlite`) runs the real migrations in memory; mock `@tauri-apps/plugin-sql` so `getDb()` returns it
 - **Gmail History API**: Expires after ~30 days, triggers automatic full sync fallback
 - **Vite HMR**: Uses port 1421 when `TAURI_DEV_HOST` is set
 - **Vite build**: Multi-page — `index.html` (main app) + `splashscreen.html`
