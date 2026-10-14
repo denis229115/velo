@@ -63,6 +63,7 @@ import {
   Tags,
   FolderInput,
   LifeBuoy,
+  ListChecks,
 } from "lucide-react";
 
 // ---------- Types ----------
@@ -99,7 +100,7 @@ export interface ContextualTip {
 
 const VALID_SETTINGS_TABS = [
   "general", "notifications", "composing", "mail-rules", "people",
-  "accounts", "shortcuts", "freshdesk", "ai", "about",
+  "accounts", "shortcuts", "freshdesk", "clickup", "ai", "about",
 ] as const;
 
 export type SettingsTabId = (typeof VALID_SETTINGS_TABS)[number];
@@ -1285,6 +1286,22 @@ export const HELP_CATEGORIES: HelpCategory[] = [
           { text: "Disconnect forgets the API key and returns to sample data." },
         ],
         relatedSettingsTab: "freshdesk",
+      },
+      {
+        id: "clickup-links",
+        icon: ListChecks,
+        title: "Link ClickUp tasks to tickets",
+        summary: "Connect one ClickUp workspace and see linked tasks on each ticket.",
+        description:
+          "In Settings > ClickUp, enter the personal API token from ClickUp. The token is stored encrypted on this Mac. Velo reads the workspace's lists with their statuses, its members and custom fields, using ClickUp's own names. Pick a default list, and select the Ticket-ID field: a custom field you create in ClickUp to hold the ticket ID. Until you connect, Velo shows sample lists, each marked Sample. On a ticket, the Related tasks panel lists its linked tasks with status, assignees, due date, when Velo last read them and an Open in ClickUp link. Choose Link task to find a task by name or paste its URL or ID; Velo checks it with ClickUp first and will not link the same task twice. One task can be linked from many tickets, and a ticket can link many tasks. Unlinking removes only the link, never the task. When a linked task is done in ClickUp, the panel shows a Done badge and a Follow-up cue; the ticket itself is never changed.",
+        tips: [
+          { text: "Linking and unlinking write nothing to ClickUp or Freshdesk." },
+          { text: "Linked tasks are read again when you open the ticket, every few minutes, and with Refresh tasks." },
+          { text: "The ticket list badges tickets with linked tasks; Linked work only shows just those." },
+          { text: "If ClickUp asks Velo to slow down, refresh waits until the time shown. If the token expires, reconnect in Settings > ClickUp." },
+          { text: "Connecting a different workspace clears the previous workspace's links and tasks." },
+        ],
+        relatedSettingsTab: "clickup",
       },
     ],
   },

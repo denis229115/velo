@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { MessageCircleWarning, RefreshCw, UserRound } from "lucide-react";
+import { ListChecks, MessageCircleWarning, RefreshCw, UserRound } from "lucide-react";
 import { ListHeader, type ListTab } from "@/components/list/ListHeader";
 import { ListRow } from "@/components/list/ListRow";
 import { DateGroupHeader } from "@/components/list/DateGroupHeader";
@@ -9,7 +9,7 @@ import { useUIStore } from "@/stores/uiStore";
 import { selectVisibleTickets, useTicketStore, type TicketFilter } from "@/stores/ticketStore";
 import { navigateToTicket } from "@/router/navigate";
 import type { TicketListItem } from "@/services/freshdesk/ticketSync";
-import { TicketPriorityBadge, TicketStatusBadge } from "./TicketBadges";
+import { LinkedWorkBadge, TicketPriorityBadge, TicketStatusBadge } from "./TicketBadges";
 import { TicketSyncBar } from "./TicketSyncBar";
 import { ActivityValue, activityText } from "./TicketActivity";
 import { useDisplayTimeZone } from "@/components/ui/Timestamp";
@@ -120,12 +120,18 @@ export function TicketList({ selectedTicketId, width }: { selectedTicketId: stri
   const data = useTicketStore((s) => s.data);
   const filter = useTicketStore((s) => s.filter);
   const setFilter = useTicketStore((s) => s.setFilter);
+  const linkedWork = useTicketStore((s) => s.linkedWork);
+  const linkedOnly = useTicketStore((s) => s.linkedOnly);
+  const setLinkedOnly = useTicketStore((s) => s.setLinkedOnly);
   const refresh = useTicketStore((s) => s.refresh);
   const refreshing = useTicketStore((s) => s.refreshing);
   const density = useUIStore((s) => s.emailDensity);
   const timeZone = useDisplayTimeZone();
 
-  const tickets = useMemo(() => selectVisibleTickets({ data, filter }), [data, filter]);
+  const tickets = useMemo(
+    () => selectVisibleTickets({ data, filter, linkedOnly, linkedWork }),
+    [data, filter, linkedOnly, linkedWork],
+  );
   const groups = useMemo(() => groupByDate(tickets, (t) => t.updatedAt), [tickets]);
 
   // Keep the keyboard-selected row in view
@@ -147,6 +153,16 @@ export function TicketList({ selectedTicketId, width }: { selectedTicketId: stri
         actions={
           data && !data.isSample ? (
             <>
+              <button
+                type="button"
+                onClick={() => setLinkedOnly(!linkedOnly)}
+                aria-pressed={linkedOnly}
+                aria-label="Linked work only"
+                title="Show only tickets with linked ClickUp tasks"
+                className={`p-1.5 rounded-md ${linkedOnly ? "text-accent bg-accent/10 ring-1 ring-accent/40" : "text-text-secondary hover:text-text-primary hover:bg-bg-hover"}`}
+              >
+                <ListChecks size={14} aria-hidden />
+              </button>
               <FindOlderTicket />
               <button
                 type="button"
@@ -169,7 +185,9 @@ export function TicketList({ selectedTicketId, width }: { selectedTicketId: stri
           <p className="px-4 py-8 text-center text-meta text-text-tertiary">
             {mineUnavailable
               ? "My open tickets needs a connected helpdesk, so Velo knows which agent you are."
-              : EMPTY_TEXT[filter]}
+              : linkedOnly
+                ? "No tickets here have linked ClickUp tasks."
+                : EMPTY_TEXT[filter]}
           </p>
         )}
         {groups.map((group) => (
@@ -191,6 +209,7 @@ export function TicketList({ selectedTicketId, width }: { selectedTicketId: stri
                       {t.activity.needsReply === true && <NeedsReplyBadge />}
                       <TicketStatusBadge status={t.status} />
                       {t.priority && <TicketPriorityBadge priority={t.priority} />}
+                      {linkedWork.has(t.id) && <LinkedWorkBadge summary={linkedWork.get(t.id)!} />}
                     </>
                   }
                   onClick={() => navigateToTicket(t.id)}

@@ -952,6 +952,100 @@ const MIGRATIONS = [
       CREATE INDEX IF NOT EXISTS idx_freshdesk_conversations_ticket ON freshdesk_conversations(tenant_id, ticket_id, created_at);
     `,
   },
+  {
+    version: 30,
+    description: "ClickUp workspace, metadata, task cache and ticket/email-to-task links",
+    sql: `
+      CREATE TABLE IF NOT EXISTS clickup_workspace (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        tenant_id TEXT NOT NULL,
+        workspace_id TEXT NOT NULL,
+        workspace_name TEXT NOT NULL,
+        me_user_id TEXT,
+        me_name TEXT,
+        me_email TEXT,
+        connected_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        metadata_refreshed_at INTEGER,
+        default_list_id TEXT,
+        ticket_id_field_id TEXT
+      );
+      CREATE TABLE IF NOT EXISTS clickup_lists (
+        tenant_id TEXT NOT NULL,
+        list_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        space_name TEXT NOT NULL,
+        folder_name TEXT,
+        position INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (tenant_id, list_id)
+      );
+      CREATE TABLE IF NOT EXISTS clickup_statuses (
+        tenant_id TEXT NOT NULL,
+        list_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        type TEXT NOT NULL,
+        color TEXT,
+        position INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (tenant_id, list_id, name)
+      );
+      CREATE TABLE IF NOT EXISTS clickup_members (
+        tenant_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        email TEXT,
+        PRIMARY KEY (tenant_id, user_id)
+      );
+      CREATE TABLE IF NOT EXISTS clickup_custom_fields (
+        tenant_id TEXT NOT NULL,
+        list_id TEXT NOT NULL,
+        field_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        type TEXT NOT NULL,
+        PRIMARY KEY (tenant_id, list_id, field_id)
+      );
+      CREATE TABLE IF NOT EXISTS clickup_tasks (
+        tenant_id TEXT NOT NULL,
+        task_id TEXT NOT NULL,
+        custom_id TEXT,
+        name TEXT NOT NULL,
+        status_name TEXT NOT NULL,
+        status_type TEXT NOT NULL,
+        status_color TEXT,
+        assignees_json TEXT NOT NULL DEFAULT '[]',
+        due_at INTEGER,
+        list_id TEXT,
+        list_name TEXT,
+        url TEXT NOT NULL,
+        updated_at INTEGER,
+        refreshed_at INTEGER NOT NULL,
+        missing INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (tenant_id, task_id)
+      );
+      CREATE TABLE IF NOT EXISTS clickup_sync_state (
+        tenant_id TEXT PRIMARY KEY,
+        state TEXT NOT NULL DEFAULT 'idle',
+        last_success_at INTEGER,
+        last_attempt_at INTEGER,
+        retry_after_until INTEGER,
+        consecutive_failures INTEGER NOT NULL DEFAULT 0,
+        error_message TEXT
+      );
+      CREATE TABLE IF NOT EXISTS task_links (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        item_kind TEXT NOT NULL CHECK (item_kind IN ('ticket', 'email')),
+        scope_id TEXT NOT NULL,
+        item_id TEXT NOT NULL,
+        workspace_id TEXT NOT NULL,
+        task_id TEXT NOT NULL,
+        created_by TEXT,
+        created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        origin TEXT NOT NULL,
+        state TEXT NOT NULL DEFAULT 'active',
+        backlinks_json TEXT NOT NULL DEFAULT '{}',
+        UNIQUE (item_kind, scope_id, item_id, workspace_id, task_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_task_links_task ON task_links(workspace_id, task_id);
+    `,
+  },
 ];
 
 /**
