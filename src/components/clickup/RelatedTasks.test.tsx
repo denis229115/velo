@@ -79,7 +79,14 @@ function renderFreshdesk(path: string) {
   return router;
 }
 
-const panel = () => screen.findByRole("region", { name: "Related tasks" });
+const linkedWork = async () => within(await screen.findByRole("region", { name: "Linked work" }));
+/** The full Related tasks list, opened from the ticket header's linked-work row */
+const panel = async () => {
+  fireEvent.click(await (await linkedWork()).findByRole("button", { name: "Show tasks" }));
+  return screen.findByRole("region", { name: "Related tasks" });
+};
+/** A ticket with no linked tasks: Link task from the linked-work row, which then opens the full list */
+const linkFromRow = async () => fireEvent.click(await (await linkedWork()).findByRole("button", { name: "Link task" }));
 const ticket = (ticketId: string) => ({ kind: "ticket" as const, ticketId });
 
 beforeEach(async () => {
@@ -125,10 +132,9 @@ describe("Related tasks on a ticket", () => {
 
   it("links a pasted task URL from the link dialog, and rejects an unknown ID and a duplicate", async () => {
     renderFreshdesk("/freshdesk/ticket/1002");
-    const region = await panel();
-    expect(await within(region).findByText(/No tasks linked/)).toBeInTheDocument();
+    expect(await (await linkedWork()).findByText("No linked tasks")).toBeInTheDocument();
 
-    fireEvent.click(within(region).getByRole("button", { name: "Link task" }));
+    await linkFromRow();
     const dialog = await screen.findByRole("dialog", { name: "Link a ClickUp task" });
     const field = within(dialog).getByLabelText("Search tasks or paste a task URL or ID");
 
@@ -139,6 +145,7 @@ describe("Related tasks on a ticket", () => {
     fireEvent.change(field, { target: { value: "https://app.clickup.com/t/86a0exp01" } });
     fireEvent.submit(field.closest("form")!);
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Link a ClickUp task" })).not.toBeInTheDocument());
+    const region = await screen.findByRole("region", { name: "Related tasks" });
     expect(await within(region).findByText("Fixture: export fails for large accounts")).toBeInTheDocument();
 
     fireEvent.click(within(region).getByRole("button", { name: "Link task" }));
@@ -151,8 +158,7 @@ describe("Related tasks on a ticket", () => {
 
   it("links a task found by name", async () => {
     renderFreshdesk("/freshdesk/ticket/1002");
-    const region = await panel();
-    fireEvent.click(await within(region).findByRole("button", { name: "Link task" }));
+    await linkFromRow();
     const dialog = await screen.findByRole("dialog", { name: "Link a ClickUp task" });
     const field = within(dialog).getByLabelText("Search tasks or paste a task URL or ID");
 
@@ -161,6 +167,7 @@ describe("Related tasks on a ticket", () => {
     const result = await within(dialog).findByRole("listitem", { name: /resend invoice copy/ });
     fireEvent.click(within(result).getByRole("button", { name: "Link" }));
 
+    const region = await screen.findByRole("region", { name: "Related tasks" });
     expect(await within(region).findByText("Fixture: resend invoice copy")).toBeInTheDocument();
   });
 

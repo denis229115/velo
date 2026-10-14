@@ -239,7 +239,19 @@ export interface TicketHistoryView {
   history: HistoryState;
   /** The original request, then conversations, oldest first */
   entries: HistoryEntry[];
+  /** How the ticket reached the helpdesk (Email, Portal, Phone…); null when not known */
+  channel: string | null;
 }
+
+// Freshdesk's ticket source IDs; any other source is shown as not known rather than guessed
+const CHANNELS: Record<number, string> = {
+  1: "Email",
+  2: "Portal",
+  3: "Phone",
+  7: "Chat",
+  9: "Feedback widget",
+  [TICKET_SOURCE_OUTBOUND_EMAIL]: "Outbound email",
+};
 
 function authorOf(
   kind: EntryKind,
@@ -271,13 +283,13 @@ async function readTicketHistory(ticketId: string): Promise<TicketHistoryView | 
   const account = await getIntegrationAccount("freshdesk");
   if (!account) {
     const sample = sampleHistory(ticketId, Date.now());
-    return sample ? { ticketId, isSample: true, ...sample } : null;
+    return sample ? { ticketId, isSample: true, ...sample, channel: null } : null;
   }
   const { tenantId } = account;
   const ticket = (await getCachedTickets(tenantId)).find((t) => t.ticketId === ticketId);
   if (!ticket) return null;
   const stored = await getStoredHistory(tenantId, ticketId);
-  if (!stored) return { ticketId, isSample: false, history: "not_loaded", entries: [] };
+  if (!stored) return { ticketId, isSample: false, history: "not_loaded", entries: [], channel: null };
 
   const agentNames = new Map((await getAgents(tenantId)).map((a) => [a.agentId, a.name]));
   const { history, conversations } = stored;
@@ -298,6 +310,7 @@ async function readTicketHistory(ticketId: string): Promise<TicketHistoryView | 
     ticketId,
     isSample: false,
     history: historyStateOf(ticket, history),
+    channel: history.ticketSource !== null ? (CHANNELS[history.ticketSource] ?? null) : null,
     entries: [
       request,
       ...conversations.map((c) => ({

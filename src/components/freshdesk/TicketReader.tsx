@@ -1,31 +1,18 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState } from "react";
 import { Lock, Paperclip } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ReadingPaneIllustration } from "@/components/ui/illustrations";
-import { SampleBadge } from "@/components/ui/SampleBadge";
 import { Timestamp } from "@/components/ui/Timestamp";
 import { EmailRenderer } from "@/components/email/EmailRenderer";
 import { useTicketStore } from "@/stores/ticketStore";
 import type { TicketListItem } from "@/services/freshdesk/ticketSync";
 import { getTicketHistory, type HistoryEntry, type TicketHistoryView } from "@/services/freshdesk/ticketHistory";
 import type { ConversationAttachment } from "@/services/freshdesk/activity";
-import { ActivityValue, EntryKindBadge, NeedsReplyValue } from "./TicketActivity";
-import { RelatedTasksPanel } from "@/components/clickup/RelatedTasksPanel";
+import { EntryKindBadge } from "./TicketActivity";
 import { TicketEditError, useTicketEditor } from "./useTicketEditor";
 import { useTicketEditControls } from "./TicketEditControls";
-
-const fieldId = (label: string) => `ticket-field-${label.toLowerCase().replace(/\W+/g, "-")}`;
-
-function Field({ label, children }: { label: string; children: ReactNode }) {
-  const id = fieldId(label);
-  return (
-    <div className="min-w-0">
-      <dt id={id} className="text-meta text-text-tertiary mb-0.5">{label}</dt>
-      <dd aria-labelledby={id} className="text-row text-text-primary min-w-0 truncate">{children}</dd>
-    </div>
-  );
-}
+import { TicketHeader } from "./TicketHeader";
 
 function formatSize(bytes: number | null): string | null {
   if (bytes === null) return null;
@@ -149,7 +136,7 @@ function useTicketHistory(ticketId: string | null): TicketHistoryView | null {
   return view && view.ticketId === ticketId ? view : null;
 }
 
-/** The ticket open on the right of the list. Status, priority and assignee are edited here; the rest is read-only. */
+/** The ticket open on the right of the list. Status, priority and assignee are edited in its header; the rest is read-only. */
 export function TicketReader({ ticket, ticketId }: { ticket: TicketListItem | null; ticketId: string | null }) {
   const view = useTicketHistory(ticket ? ticketId : null);
   const a = ticket?.activity;
@@ -166,47 +153,23 @@ export function TicketReader({ ticket, ticketId }: { ticket: TicketListItem | nu
         />
       ) : (
         <div className="overflow-y-auto px-8 py-6">
-          <div className="flex items-center gap-2 text-meta text-text-tertiary mb-1">
-            <span className="tabular-nums">#{ticket.id}</span>
-            {ticket.isSample && <SampleBadge />}
-            {ticket.fetchedOnDemand && <span>Fetched on demand: outside the downloaded scope</span>}
-          </div>
-          <h2 className="text-title font-semibold text-text-primary mb-5">{ticket.subject || "(no subject)"}</h2>
-          {(edit.blocked || editError) && (
-            <div className="mb-3 max-w-4xl space-y-1.5">
-              {edit.blocked && (
-                <p role="status" className="text-meta text-text-tertiary">
-                  {edit.blocked}
-                </p>
-              )}
-              {editError && <TicketEditError text={editError.text} onDismiss={editor.clearError} />}
-            </div>
-          )}
-          <dl className="grid grid-cols-[repeat(auto-fill,minmax(10rem,1fr))] gap-x-6 gap-y-3 max-w-4xl mb-6">
-            <Field label="Status">{edit.render("Status", fieldId("Status"))}</Field>
-            <Field label="Priority">{edit.render("Priority", fieldId("Priority"))}</Field>
-            <Field label="Customer">{ticket.customer ?? "Not loaded yet"}</Field>
-            <Field label="Assignee">{edit.render("Assignee", fieldId("Assignee"))}</Field>
-            <Field label="Needs reply">
-              <NeedsReplyValue value={a.needsReply} history={a.history} />
-            </Field>
-            <Field label="Last answered">
-              <ActivityValue time={a.lastAnswered} history={a.history} never="Never answered" />
-            </Field>
-            <Field label="Last customer message">
-              <ActivityValue time={a.lastCustomerMessage} history={a.history} never="None" />
-            </Field>
-            <Field label="Last internal note">
-              <ActivityValue time={a.lastInternalNote} history={a.history} never="None" />
-            </Field>
-            <Field label="Last activity">
-              <ActivityValue time={a.lastActivity} history={a.history} never="No conversations yet" />
-            </Field>
-            <Field label="Last updated">
-              <Timestamp at={ticket.updatedAt} />
-            </Field>
-          </dl>
-          <RelatedTasksPanel item={{ kind: "ticket", ticketId: ticket.id }} />
+          <TicketHeader
+            ticket={ticket}
+            channel={view?.channel ?? null}
+            edit={edit}
+            notice={
+              (edit.blocked || editError) && (
+                <div className="space-y-1.5">
+                  {edit.blocked && (
+                    <p role="status" className="text-meta text-text-tertiary">
+                      {edit.blocked}
+                    </p>
+                  )}
+                  {editError && <TicketEditError text={editError.text} onDismiss={editor.clearError} />}
+                </div>
+              )
+            }
+          />
           {editor.element}
           <HistoryNotice view={view} />
           {view && view.entries.length > 0 && <History key={view.ticketId} entries={view.entries} />}
