@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { ChevronDown } from "lucide-react";
 import { useTicketStore } from "@/stores/ticketStore";
-import { useUIStore } from "@/stores/uiStore";
 import {
   getHelpdeskMetadataSummary,
   getStatusClassification,
@@ -9,8 +8,8 @@ import {
 } from "@/services/freshdesk/connection";
 import type { FieldChoice, HelpdeskAgent } from "@/services/freshdesk/metadata";
 import type { TicketListItem } from "@/services/freshdesk/ticketSync";
-import { OFFLINE_MESSAGE, SAMPLE_MESSAGE } from "@/services/freshdesk/ticketEdits";
 import type { useTicketEditor } from "./useTicketEditor";
+import { useFreshdeskWritable, type FreshdeskWritable } from "./useFreshdeskWritable";
 
 interface EditOptions {
   statuses: ClassifiableStatus[];
@@ -45,13 +44,13 @@ function EditSelect({
   labelledBy,
   value,
   options,
-  blocked,
+  writable,
   onChange,
 }: {
   labelledBy: string;
   value: string;
   options: Option[];
-  blocked: string | null;
+  writable: FreshdeskWritable;
   onChange: (value: string) => void;
 }) {
   return (
@@ -59,8 +58,7 @@ function EditSelect({
       <select
         aria-labelledby={labelledBy}
         value={value}
-        disabled={blocked !== null}
-        title={blocked ?? undefined}
+        {...writable.controlProps}
         onChange={(e) => onChange(e.target.value)}
         className="max-w-full appearance-none truncate rounded-md border border-border-primary bg-transparent py-0.5 pl-1.5 pr-6 text-row text-text-primary hover:border-border-secondary hover:bg-bg-hover disabled:opacity-60 disabled:hover:bg-transparent focus-visible:outline-2 focus-visible:outline-accent"
       >
@@ -91,11 +89,12 @@ type FieldName = "Status" | "Priority" | "Assignee";
 /**
  * Status, priority and assignee of the open ticket as controls. A change goes to
  * Freshdesk at once (never queued) and is rolled back if Freshdesk refuses it.
+ * Offline, or while the helpdesk is unreachable, the controls are disabled with a
+ * reason (see useFreshdeskWritable); `writable` lets the host show that reason.
  */
 export function useTicketEditControls(ticket: TicketListItem | null, editor: Editor) {
   const options = useEditOptions();
-  const isOnline = useUIStore((s) => s.isOnline);
-  const blocked = ticket?.isSample ? SAMPLE_MESSAGE : !isOnline ? OFFLINE_MESSAGE : null;
+  const writable = useFreshdeskWritable({ isSample: ticket?.isSample });
 
   const render = (field: FieldName, labelledBy: string) => {
     if (!ticket) return null;
@@ -110,7 +109,7 @@ export function useTicketEditControls(ticket: TicketListItem | null, editor: Edi
           labelledBy={labelledBy}
           value={ticket.status.id}
           options={opts}
-          blocked={blocked}
+          writable={writable}
           onChange={(statusId) => {
             const target = options.statuses.find((s) => s.id === statusId);
             if (!target) return;
@@ -138,7 +137,7 @@ export function useTicketEditControls(ticket: TicketListItem | null, editor: Edi
           labelledBy={labelledBy}
           value={current?.id ?? ""}
           options={opts}
-          blocked={blocked}
+          writable={writable}
           onChange={(priorityId) => {
             const target = options.priorities.find((p) => p.choiceId === priorityId);
             if (!target) return;
@@ -162,7 +161,7 @@ export function useTicketEditControls(ticket: TicketListItem | null, editor: Edi
         labelledBy={labelledBy}
         value={ticket.assigneeId ?? ""}
         options={opts}
-        blocked={blocked}
+        writable={writable}
         onChange={(value) => {
           const agent = options.agents.find((a) => a.agentId === value);
           void editor.run({
@@ -177,5 +176,5 @@ export function useTicketEditControls(ticket: TicketListItem | null, editor: Edi
     );
   };
 
-  return { render, blocked };
+  return { render, writable, blocked: writable.reason };
 }

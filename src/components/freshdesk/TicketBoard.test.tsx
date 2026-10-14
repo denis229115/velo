@@ -304,13 +304,21 @@ describe("moving tickets on the board", () => {
     expect(within(reader()).getByText("Fixture: cannot sign in")).toBeInTheDocument();
   });
 
-  it("offline, moves explain that a connection is required and nothing is sent", async () => {
+  it("offline, drag and the Move menu are off with the reason, nothing is sent, and they return on reconnect", async () => {
     await boardReady();
+    const sent = stub.requests.length;
     act(() => useUIStore.setState({ isOnline: false }));
 
-    expect(screen.getByText("Changing a ticket needs a connection to Freshdesk.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Move ticket #1001" })).toBeDisabled();
+    expect(screen.getByRole("status")).toHaveTextContent("Needs a connection to Freshdesk");
+    const move = screen.getByRole("button", { name: "Move ticket #1001" });
+    expect(move).toBeDisabled();
+    expect(move).toHaveAccessibleDescription("Needs a connection to Freshdesk");
     act(() => dnd.onDragEnd!({ active: { id: "ticket:1001", data: { current: { ticketId: "1001" } } }, over: { id: "status:3" } }));
     expect(writes()).toEqual([]);
+    expect(stub.requests.length).toBe(sent);
+
+    act(() => useUIStore.setState({ isOnline: true }));
+    expect(screen.getByRole("button", { name: "Move ticket #1001" })).toBeEnabled();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 });

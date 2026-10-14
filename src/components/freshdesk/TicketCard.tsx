@@ -8,6 +8,7 @@ import type { ActivityTime } from "@/services/freshdesk/activity";
 import { navigateToTicket } from "@/router/navigate";
 import { LinkedWorkBadge, TicketPriorityBadge } from "./TicketBadges";
 import { formatAgo } from "./TicketSyncBar";
+import type { FreshdeskWritable } from "./useFreshdeskWritable";
 
 /** Age since Last answered; Unknown while the history is not fully read */
 export function lastAnsweredText(time: ActivityTime): string {
@@ -22,17 +23,17 @@ interface TicketCardProps {
   selected: boolean;
   /** Statuses a ticket can move to, in Freshdesk's order */
   statuses: ClassifiableStatus[];
-  /** Why moves are off (offline, sample data); null when they are on */
-  moveBlocked: string | null;
+  /** Whether moves are on; off while offline, with the helpdesk down, or on sample data */
+  writable: FreshdeskWritable;
   onMove: (ticket: TicketListItem, statusId: string) => void;
 }
 
 /** A ticket on the board. Drag it to a column, or use its Move menu. */
-export function TicketCard({ ticket, linkedWork, selected, statuses, moveBlocked, onMove }: TicketCardProps) {
+export function TicketCard({ ticket, linkedWork, selected, statuses, writable, onMove }: TicketCardProps) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `ticket:${ticket.id}`,
     data: { ticketId: ticket.id },
-    disabled: moveBlocked !== null,
+    disabled: !writable.writable,
   });
   return (
     <article
@@ -57,7 +58,7 @@ export function TicketCard({ ticket, linkedWork, selected, statuses, moveBlocked
           <span className="block text-micro text-text-tertiary tabular-nums">#{ticket.id}</span>
           <span className="block text-row font-medium text-text-primary line-clamp-2">{ticket.subject || "(no subject)"}</span>
         </button>
-        <MoveMenu ticket={ticket} statuses={statuses} blocked={moveBlocked} onMove={onMove} />
+        <MoveMenu ticket={ticket} statuses={statuses} writable={writable} onMove={onMove} />
       </div>
       <p className="mt-1 truncate text-meta text-text-secondary">{ticket.customer ?? "Customer not loaded"}</p>
       <div className="mt-1.5 flex flex-wrap items-center gap-1">
@@ -75,12 +76,12 @@ export function TicketCard({ ticket, linkedWork, selected, statuses, moveBlocked
 function MoveMenu({
   ticket,
   statuses,
-  blocked,
+  writable,
   onMove,
 }: {
   ticket: TicketListItem;
   statuses: ClassifiableStatus[];
-  blocked: string | null;
+  writable: FreshdeskWritable;
   onMove: (ticket: TicketListItem, statusId: string) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -91,6 +92,11 @@ function MoveMenu({
   useEffect(() => {
     if (open) menuRef.current?.querySelector<HTMLElement>('[role="menuitem"]:not([aria-disabled="true"])')?.focus();
   }, [open]);
+
+  // An open menu does not outlive the connection
+  useEffect(() => {
+    if (!writable.writable) setOpen(false);
+  }, [writable.writable]);
 
   const close = () => {
     setOpen(false);
@@ -122,8 +128,8 @@ function MoveMenu({
         aria-label={label}
         aria-haspopup="menu"
         aria-expanded={open}
-        disabled={blocked !== null}
-        title={blocked ?? "Move to another status"}
+        title="Move to another status"
+        {...writable.controlProps}
         onClick={() => setOpen((o) => !o)}
         className="rounded p-1 text-text-tertiary hover:bg-bg-hover hover:text-text-primary disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-accent"
       >

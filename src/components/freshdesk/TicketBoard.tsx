@@ -1,14 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { DndContext, DragOverlay, PointerSensor, useDroppable, useSensor, useSensors, type DragEndEvent, type DragStartEvent } from "@dnd-kit/core";
 import { ChevronsLeft, ChevronsRight, CircleHelp } from "lucide-react";
-import { useUIStore } from "@/stores/uiStore";
 import { useTicketStore } from "@/stores/ticketStore";
 import { getStatusClassification, type ClassifiableStatus } from "@/services/freshdesk/connection";
 import type { TicketListItem } from "@/services/freshdesk/ticketSync";
 import type { TicketView } from "@/services/freshdesk/ticketViews";
-import { OFFLINE_MESSAGE, SAMPLE_MESSAGE } from "@/services/freshdesk/ticketEdits";
 import { TicketCard } from "./TicketCard";
 import { TicketEditError, useTicketEditor } from "./useTicketEditor";
+import { FreshdeskWriteReason, useFreshdeskWritable } from "./useFreshdeskWritable";
 
 interface BoardColumn {
   statusId: string;
@@ -44,11 +43,10 @@ export function TicketBoard({
   view: TicketView;
   selectedTicketId: string | null;
 }) {
-  const data = useTicketStore((s) => s.data);
   const version = useTicketStore((s) => s.version);
   const linkedWork = useTicketStore((s) => s.linkedWork);
   const updateView = useTicketStore((s) => s.updateView);
-  const isOnline = useUIStore((s) => s.isOnline);
+  const writable = useFreshdeskWritable();
   const editor = useTicketEditor();
   const [statuses, setStatuses] = useState<ClassifiableStatus[]>([]);
   const [dragging, setDragging] = useState<TicketListItem | null>(null);
@@ -77,11 +75,9 @@ export function TicketBoard({
     void updateView(view.id, { board: { ...view.board, collapsedStatusIds: [...next] } });
   };
 
-  const moveBlocked = data?.isSample ? SAMPLE_MESSAGE : !isOnline ? OFFLINE_MESSAGE : null;
-
   const move = (ticket: TicketListItem, statusId: string) => {
     const target = statuses.find((s) => s.id === statusId);
-    if (!target || statusId === ticket.status.id || moveBlocked) return;
+    if (!target || statusId === ticket.status.id || !writable.writable) return;
     const from = ticket.status.label ?? `status ID ${ticket.status.id}`;
     void editor.run({
       ticket,
@@ -110,13 +106,9 @@ export function TicketBoard({
 
   return (
     <section aria-label="Ticket board" className="flex min-h-0 flex-1 flex-col">
-      {(moveBlocked || editor.error) && (
+      {(!writable.writable || editor.error) && (
         <div className="space-y-1.5 px-3 pt-2">
-          {moveBlocked && (
-            <p role="status" className="text-meta text-text-tertiary">
-              {moveBlocked}
-            </p>
-          )}
+          <FreshdeskWriteReason writable={writable} />
           {editor.error && <TicketEditError text={editor.error.text} onDismiss={editor.clearError} />}
         </div>
       )}
@@ -134,7 +126,7 @@ export function TicketBoard({
                     linkedWork={linkedWork.get(t.id)}
                     selected={t.id === selectedTicketId}
                     statuses={statuses}
-                    moveBlocked={moveBlocked}
+                    writable={writable}
                     onMove={move}
                   />
                 ))}

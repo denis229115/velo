@@ -205,12 +205,31 @@ describe("editing a ticket in the reader", () => {
     expect(control("Priority").value).toBe("3");
   });
 
-  it("offline, the edit controls explain that a connection is required", async () => {
+  it("offline, every edit control is disabled with the reason, nothing is sent, and they re-enable on reconnect", async () => {
     await readerOn("1001");
+    const sent = stub.requests.length;
     act(() => useUIStore.setState({ isOnline: false }));
 
-    for (const name of ["Status", "Priority", "Assignee"]) expect(control(name)).toBeDisabled();
-    expect(within(reader()).getByText("Changing a ticket needs a connection to Freshdesk.")).toBeInTheDocument();
+    for (const name of ["Status", "Priority", "Assignee"]) {
+      expect(control(name)).toBeDisabled();
+      expect(control(name)).toHaveAccessibleDescription("Needs a connection to Freshdesk");
+    }
+    expect(within(reader()).getByRole("status")).toHaveTextContent("Needs a connection to Freshdesk");
+    fireEvent.change(control("Priority"), { target: { value: "1" } });
     expect(writes()).toEqual([]);
+    expect(stub.requests.length).toBe(sent);
+
+    act(() => useUIStore.setState({ isOnline: true }));
+    for (const name of ["Status", "Priority", "Assignee"]) expect(control(name)).toBeEnabled();
+    expect(within(reader()).queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("disables the edit controls while the helpdesk connection is known to be unavailable", async () => {
+    await readerOn("1001");
+    act(() =>
+      useTicketStore.setState((s) => ({ data: s.data && { ...s.data, sync: { ...s.data.sync, state: "error" as const } } })),
+    );
+    for (const name of ["Status", "Priority", "Assignee"]) expect(control(name)).toBeDisabled();
+    expect(within(reader()).getByRole("status")).toHaveTextContent("Needs a connection to Freshdesk");
   });
 });
