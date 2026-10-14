@@ -1,4 +1,4 @@
-import { requestAi, testAiConnection, type AiSourceItem } from "./gateway";
+import { requestAi, senderDomain, testAiConnection, type AiSourceItem } from "./gateway";
 import type { DbMessage } from "@/services/db/messages";
 import {
   SUMMARIZE_PROMPT,
@@ -15,8 +15,9 @@ import {
 } from "./prompts";
 
 // Every function here builds its request through the AI gateway (gateway.ts),
-// which sends only allowlisted fields: sender, recipients, dates and message
-// IDs never leave Velo.
+// which sends only allowlisted fields: sender addresses and names, recipients,
+// dates and message IDs never leave Velo. Categorisation and smart labels add
+// the sender's domain only.
 
 /** A thread's messages as gateway source items: subject once, then each message's text. */
 export function threadItems(messages: DbMessage[]): AiSourceItem[] {
@@ -128,7 +129,11 @@ type ThreadForClassification = { id: string; subject: string; snippet: string; f
 
 /** Threads as source items; the AI refers to them by position, never by thread ID. */
 function classificationItems(threads: ThreadForClassification[]): AiSourceItem[] {
-  return threads.map((t) => ({ subject: t.subject, body: t.snippet }));
+  return threads.map((t) => ({
+    subject: t.subject,
+    body: t.snippet,
+    senderDomain: senderDomain(t.fromAddress),
+  }));
 }
 
 /** Parse "ITEM_ID:value" lines, mapping 1-based item ids back to thread IDs. */
