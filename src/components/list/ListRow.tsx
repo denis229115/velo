@@ -18,6 +18,8 @@ export interface ListRowProps {
   /** Shown before the subject, e.g. a ticket ID */
   subjectPrefix?: ReactNode;
   preview?: ReactNode;
+  /** Optional details on a line of their own under the subject; the row grows to hold them */
+  extraLine?: ReactNode;
   /** Unix ms */
   time: number;
   hasAttachment?: boolean;
@@ -80,6 +82,7 @@ export function ListRow({
   subject,
   subjectPrefix,
   preview,
+  extraLine,
   time,
   hasAttachment,
   selected,
@@ -113,6 +116,11 @@ export function ListRow({
   );
   // Reserves room under the absolutely positioned star so the time never sits beneath it
   const starSlot = onToggleStar && <span aria-hidden className="w-5 shrink-0" />;
+  const extra = extraLine && (
+    <span data-line className="flex items-center gap-x-3 min-w-0 text-preview text-text-tertiary">
+      {extraLine}
+    </span>
+  );
 
   return (
     <div
@@ -127,7 +135,7 @@ export function ListRow({
         onClick={onClick}
         aria-selected={selected}
         className={`w-full text-left flex items-center gap-2.5 px-3 -outline-offset-2 ${
-          compact ? "py-1.5 @2xl:py-0 @2xl:h-11" : density === "spacious" ? "py-3.5" : "py-2.5"
+          compact ? `py-1.5 ${extra ? "" : "@2xl:py-0 @2xl:h-11"}` : density === "spacious" ? "py-3.5" : "py-2.5"
         } ${className}`}
       >
         <UnreadDot unread={unread} />
@@ -135,19 +143,22 @@ export function ListRow({
 
         {compact ? (
           // One line once the list is wide (@2xl); a narrow list folds the subject under the sender
-          <span data-line className="flex-1 min-w-0 flex flex-wrap @2xl:flex-nowrap items-center gap-x-3 gap-y-0.5 text-row">
-            <span className={`truncate flex-1 min-w-0 @2xl:flex-none @2xl:w-44 ${weight}`}>{sender}</span>
-            <span className="order-3 @2xl:order-2 basis-full @2xl:basis-auto min-w-0 flex items-baseline gap-2 flex-1 overflow-hidden">
-              {subjectPrefix && <span className="shrink-0 text-meta tabular-nums text-text-tertiary">{subjectPrefix}</span>}
-              <span className={`truncate shrink-0 max-w-full @lg:max-w-[70%] ${subjectWeight}`}>{subject}</span>
-              {preview && <span className="hidden @lg:inline truncate text-preview text-text-tertiary min-w-0">{preview}</span>}
+          <span className="flex-1 min-w-0 flex flex-col gap-0.5">
+            <span data-line className="min-w-0 flex flex-wrap @2xl:flex-nowrap items-center gap-x-3 gap-y-0.5 text-row">
+              <span className={`truncate flex-1 min-w-0 @2xl:flex-none @2xl:w-44 ${weight}`}>{sender}</span>
+              <span className="order-3 @2xl:order-2 basis-full @2xl:basis-auto min-w-0 flex items-baseline gap-2 flex-1 overflow-hidden">
+                {subjectPrefix && <span className="shrink-0 text-meta tabular-nums text-text-tertiary">{subjectPrefix}</span>}
+                <span className={`truncate shrink-0 max-w-full @lg:max-w-[70%] ${subjectWeight}`}>{subject}</span>
+                {preview && <span className="hidden @lg:inline truncate text-preview text-text-tertiary min-w-0">{preview}</span>}
+              </span>
+              <span className="order-2 @2xl:order-3 flex items-center gap-2 shrink-0">
+                {indicators}
+                {attachment}
+                {timeEl}
+                {starSlot}
+              </span>
             </span>
-            <span className="order-2 @2xl:order-3 flex items-center gap-2 shrink-0">
-              {indicators}
-              {attachment}
-              {timeEl}
-              {starSlot}
-            </span>
+            {extra}
           </span>
         ) : (
           <span className="flex-1 min-w-0 flex flex-col gap-0.5">
@@ -163,6 +174,7 @@ export function ListRow({
               <span className={`truncate shrink-0 max-w-[70%] ${subjectWeight}`}>{subject}</span>
               {preview && <span className="truncate text-preview text-text-tertiary min-w-0">{preview}</span>}
             </span>
+            {extra}
           </span>
         )}
       </button>

@@ -35,7 +35,8 @@ export function TicketSyncBar({ data }: { data: TicketListData }) {
 
   const { sync } = data;
   const downloaded = data.tickets.length;
-  const coverage = coverageText(sync);
+  // Partial or unknown coverage is stated once, in the Partial results bar under this line
+  const coverage = sync.coverage.complete ? coverageText(sync) : null;
 
   const freshness =
     sync.lastSuccessAt === null ? "Not synced yet" : `Last synced ${formatAgo(sync.lastSuccessAt)}`;
@@ -44,7 +45,7 @@ export function TicketSyncBar({ data }: { data: TicketListData }) {
     <div className="border-b border-border-secondary">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 px-4 py-1.5 text-meta text-text-secondary">
         <span>
-          {downloaded} downloaded · {coverage}
+          {downloaded} downloaded{coverage && ` · ${coverage}`}
         </span>
         <span className="flex items-center gap-1">
           {sync.stale && (

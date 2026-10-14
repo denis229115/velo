@@ -294,6 +294,81 @@ describe("Freshdesk ticket views", () => {
     expect(coverage).toHaveTextContent("1 of 450 outstanding tickets downloaded");
     expect(coverage).not.toHaveTextContent(/\b6 tickets\b|of 6\b/);
     expect(within(coverage).getByRole("button", { name: "Refresh" })).toBeInTheDocument();
+
+    // The sync line keeps to downloads and freshness: the coverage is stated once, in the bar
+    expect(screen.getByText(/^\d+ downloaded/)).not.toHaveTextContent(/partial|of 450/i);
+    expect(screen.getAllByText(/1 of 450 outstanding/)).toHaveLength(1);
+    expect(screen.getByText(/Last synced/)).toBeInTheDocument();
+  });
+
+  it("keeps the all-outstanding coverage note on the sync line while no Partial results bar is shown", async () => {
+    await connectAndSync();
+    renderFreshdesk();
+    await screen.findByText("Fixture: export stuck");
+    expect(screen.queryByRole("status", { name: "Coverage" })).not.toBeInTheDocument();
+    expect(screen.getByText(/downloaded/)).toHaveTextContent("all outstanding + 90 days of done");
+  });
+
+  it("keeps the assignee readable on the row, with the optional columns on their own line after it", async () => {
+    await connectAndSync();
+    renderFreshdesk();
+    await screen.findByText("Fixture: export stuck");
+    fireEvent.click(screen.getByRole("button", { name: "Columns" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "SLA due" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Company / group" }));
+    const row = within(screen.getByRole("button", { name: /^Ticket #1002/ }));
+    await waitFor(() => expect(row.getByText(/^Due/)).toBeInTheDocument());
+
+    const assignee = row.getByText("Fixture Colleague");
+    expect(assignee.closest("[data-column=assignee]")).toHaveClass("shrink-0");
+    const sla = row.getByText(/^Due/);
+    expect(assignee.closest("[data-line]")).not.toBe(sla.closest("[data-line]"));
+    expect(sla.closest("[data-line]")).toBe(row.getByText(/Fixture/, { selector: "[data-column=company_group]" }).closest("[data-line]"));
+    // Assignee first, then the answer metrics, on the line that was squeezing it out
+    expect(assignee.closest("[data-line]")).toBe(row.getByText("Answered").closest("[data-line]"));
+    expect(assignee.compareDocumentPosition(row.getByText("Answered"))).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+
+  it("closes the Columns menu on Escape and returns focus to its button", async () => {
+    await connectAndSync();
+    const router = renderFreshdesk("/freshdesk/ticket/1001");
+    await screen.findByText("Fixture: export stuck");
+    const button = screen.getByRole("button", { name: "Columns" });
+
+    fireEvent.click(button);
+    expect(button).toHaveAttribute("aria-expanded", "true");
+    const checkbox = screen.getByRole("checkbox", { name: "SLA due" });
+    checkbox.focus();
+    fireEvent.keyDown(checkbox, { key: "Escape" });
+
+    expect(screen.queryByRole("group", { name: "Optional columns" })).not.toBeInTheDocument();
+    expect(button).toHaveAttribute("aria-expanded", "false");
+    expect(button).toHaveFocus();
+    // Escape closes only the menu; it must not also close the open ticket
+    expect(router.state.location.pathname).toBe("/freshdesk/ticket/1001");
+  });
+
+  it("closes the Columns menu on a click outside it, but not on a click inside", async () => {
+    await connectAndSync();
+    renderFreshdesk();
+    await screen.findByText("Fixture: export stuck");
+    const button = screen.getByRole("button", { name: "Columns" });
+
+    fireEvent.click(button);
+    fireEvent.mouseDown(screen.getByRole("checkbox", { name: "SLA due" }));
+    expect(screen.getByRole("group", { name: "Optional columns" })).toBeInTheDocument();
+
+    fireEvent.mouseDown(document.body);
+    expect(screen.queryByRole("group", { name: "Optional columns" })).not.toBeInTheDocument();
+    expect(button).toHaveAttribute("aria-expanded", "false");
+    expect(button).toHaveFocus();
+
+    // Clicking the button toggles it again, and a second click closes it
+    fireEvent.click(button);
+    expect(screen.getByRole("group", { name: "Optional columns" })).toBeInTheDocument();
+    fireEvent.mouseDown(button);
+    fireEvent.click(button);
+    expect(screen.queryByRole("group", { name: "Optional columns" })).not.toBeInTheDocument();
   });
 
   it("offers optional columns only when Freshdesk provides their data, hidden by default", async () => {
