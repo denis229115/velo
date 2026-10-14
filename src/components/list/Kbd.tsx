@@ -1,3 +1,5 @@
+import { formatShortcut } from "@/utils/shortcutLabel";
+
 const KEY_SYMBOLS: Record<string, string> = {
   Enter: "↵",
   Escape: "Esc",
@@ -14,6 +16,7 @@ export function formatKeyBinding(keys: string): string[] {
   if (!keys) return [];
   return keys
     .split(" then ")
+    .map((step) => formatShortcut(step))
     .flatMap((step) => (step.length > 1 && step.includes("+") ? step.split("+") : [step]))
     .map((part) => KEY_SYMBOLS[part] ?? (part.length === 1 ? part.toUpperCase() : part));
 }
