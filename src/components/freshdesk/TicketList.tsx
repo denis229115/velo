@@ -95,15 +95,11 @@ function NeedsReplyBadge() {
   );
 }
 
-/** Assignee, Last answered and Last customer message under the subject. */
+/** Last answered, Last customer message and the assignee under the subject. */
 function TicketRowDetails({ ticket: t }: { ticket: TicketListItem }) {
   const a = t.activity;
   return (
     <span className="inline-flex items-center gap-x-3 min-w-0">
-      <span className="inline-flex items-center gap-1 min-w-0">
-        <UserRound size={11} aria-hidden className="shrink-0" />
-        <span className="truncate">{t.assignee ?? "Unassigned"}</span>
-      </span>
       <span className="inline-flex items-center gap-1 shrink-0">
         <span className="text-text-tertiary">Answered</span>
         <ActivityValue time={a.lastAnswered} history={a.history} never="Never" focusable={false} />
@@ -111,6 +107,10 @@ function TicketRowDetails({ ticket: t }: { ticket: TicketListItem }) {
       <span className="inline-flex items-center gap-1 shrink-0">
         <span className="text-text-tertiary">Customer</span>
         <ActivityValue time={a.lastCustomerMessage} history={a.history} never="None" focusable={false} />
+      </span>
+      <span className="inline-flex items-center gap-1 min-w-0">
+        <UserRound size={11} aria-hidden className="shrink-0" />
+        <span className="truncate">{t.assignee ?? "Unassigned"}</span>
       </span>
     </span>
   );

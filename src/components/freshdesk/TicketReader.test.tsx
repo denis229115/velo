@@ -174,7 +174,13 @@ describe("ticket reader", () => {
     expect(metric("Last customer message")).toBe("Unknown");
     expect(metric("Needs reply")).toBe("Unknown");
     expect(reader().queryByText("Never answered")).not.toBeInTheDocument();
-  });
+
+    // The 100 loaded conversations: the request and the latest 20 show, earlier ones on request
+    expect(entries()).toHaveLength(21);
+    fireEvent.click(reader().getByRole("button", { name: "Show 80 earlier conversations" }));
+    expect(entries()).toHaveLength(101);
+    // Rendering 101 sandboxed frames in jsdom is slow under a loaded test run
+  }, 20_000);
 
   it("shows Loading for a ticket whose history has not been read yet", async () => {
     await connectAndSync();

@@ -16,9 +16,9 @@ import { ActivityValue, EntryKindBadge, NeedsReplyValue } from "./TicketActivity
 function Field({ label, children }: { label: string; children: ReactNode }) {
   const id = `ticket-field-${label.toLowerCase().replace(/\W+/g, "-")}`;
   return (
-    <div className="contents">
-      <dt id={id} className="text-meta text-text-tertiary">{label}</dt>
-      <dd aria-labelledby={id} className="text-row text-text-primary min-w-0">{children}</dd>
+    <div className="min-w-0">
+      <dt id={id} className="text-meta text-text-tertiary mb-0.5">{label}</dt>
+      <dd aria-labelledby={id} className="text-row text-text-primary min-w-0 truncate">{children}</dd>
     </div>
   );
 }
@@ -92,6 +92,34 @@ function Entry({ entry }: { entry: HistoryEntry }) {
   );
 }
 
+/** Long histories show the request and the latest conversations; earlier ones load on request. */
+const RECENT_ENTRIES = 20;
+
+function History({ entries }: { entries: HistoryEntry[] }) {
+  const [expanded, setExpanded] = useState(false);
+  const [request, ...conversations] = entries;
+  const hidden = expanded ? 0 : Math.max(0, conversations.length - RECENT_ENTRIES);
+  return (
+    <ol aria-label="Conversation history" className="flex flex-col gap-3 max-w-4xl">
+      {request && <Entry entry={request} />}
+      {hidden > 0 && (
+        <li>
+          <button
+            type="button"
+            onClick={() => setExpanded(true)}
+            className="w-full rounded-lg border border-dashed border-border-primary px-4 py-2 text-meta text-text-secondary hover:bg-bg-hover"
+          >
+            Show {hidden} earlier {hidden === 1 ? "conversation" : "conversations"}
+          </button>
+        </li>
+      )}
+      {conversations.slice(hidden).map((entry) => (
+        <Entry key={entry.id} entry={entry} />
+      ))}
+    </ol>
+  );
+}
+
 function HistoryNotice({ view }: { view: TicketHistoryView | null }) {
   if (view && view.history === "complete") return null;
   const text =
@@ -137,44 +165,34 @@ export function TicketReader({ ticket, ticketId }: { ticket: TicketListItem | nu
             {ticket.fetchedOnDemand && <span>Fetched on demand: outside the downloaded scope</span>}
           </div>
           <h2 className="text-title font-semibold text-text-primary mb-5">{ticket.subject || "(no subject)"}</h2>
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-x-10 gap-y-2.5 max-w-4xl mb-6">
-            <dl className="grid grid-cols-[8rem_1fr] gap-x-4 gap-y-2.5 items-center content-start">
-              <Field label="Status">
-                <TicketStatusBadge status={ticket.status} />
-              </Field>
-              <Field label="Priority">{ticket.priority ? <TicketPriorityBadge priority={ticket.priority} /> : "None"}</Field>
-              <Field label="Customer">{ticket.customer ?? "Not loaded yet"}</Field>
-              <Field label="Assignee">{ticket.assignee ?? "Unassigned"}</Field>
-              <Field label="Needs reply">
-                <NeedsReplyValue value={a.needsReply} history={a.history} />
-              </Field>
-            </dl>
-            <dl className="grid grid-cols-[10rem_1fr] gap-x-4 gap-y-2.5 items-center content-start">
-              <Field label="Last answered">
-                <ActivityValue time={a.lastAnswered} history={a.history} never="Never answered" />
-              </Field>
-              <Field label="Last customer message">
-                <ActivityValue time={a.lastCustomerMessage} history={a.history} never="None" />
-              </Field>
-              <Field label="Last internal note">
-                <ActivityValue time={a.lastInternalNote} history={a.history} never="None" />
-              </Field>
-              <Field label="Last activity">
-                <ActivityValue time={a.lastActivity} history={a.history} never="No conversations yet" />
-              </Field>
-              <Field label="Last updated">
-                <Timestamp at={ticket.updatedAt} />
-              </Field>
-            </dl>
-          </div>
+          <dl className="grid grid-cols-[repeat(auto-fill,minmax(10rem,1fr))] gap-x-6 gap-y-3 max-w-4xl mb-6">
+            <Field label="Status">
+              <TicketStatusBadge status={ticket.status} />
+            </Field>
+            <Field label="Priority">{ticket.priority ? <TicketPriorityBadge priority={ticket.priority} /> : "None"}</Field>
+            <Field label="Customer">{ticket.customer ?? "Not loaded yet"}</Field>
+            <Field label="Assignee">{ticket.assignee ?? "Unassigned"}</Field>
+            <Field label="Needs reply">
+              <NeedsReplyValue value={a.needsReply} history={a.history} />
+            </Field>
+            <Field label="Last answered">
+              <ActivityValue time={a.lastAnswered} history={a.history} never="Never answered" />
+            </Field>
+            <Field label="Last customer message">
+              <ActivityValue time={a.lastCustomerMessage} history={a.history} never="None" />
+            </Field>
+            <Field label="Last internal note">
+              <ActivityValue time={a.lastInternalNote} history={a.history} never="None" />
+            </Field>
+            <Field label="Last activity">
+              <ActivityValue time={a.lastActivity} history={a.history} never="No conversations yet" />
+            </Field>
+            <Field label="Last updated">
+              <Timestamp at={ticket.updatedAt} />
+            </Field>
+          </dl>
           <HistoryNotice view={view} />
-          {view && view.entries.length > 0 && (
-            <ol aria-label="Conversation history" className="flex flex-col gap-3 max-w-4xl">
-              {view.entries.map((entry) => (
-                <Entry key={entry.id} entry={entry} />
-              ))}
-            </ol>
-          )}
+          {view && view.entries.length > 0 && <History key={view.ticketId} entries={view.entries} />}
         </div>
       )}
     </section>
