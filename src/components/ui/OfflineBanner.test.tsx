@@ -31,6 +31,13 @@ describe("OfflineBanner", () => {
     expect(screen.queryByText(/will sync/)).not.toBeInTheDocument();
   });
 
+  it("takes its own space in the layout instead of floating over the page", async () => {
+    await renderAt("/freshdesk");
+    const banner = screen.getByText(/You're offline/).parentElement!;
+    expect(banner).not.toHaveClass("fixed", "absolute");
+    expect(banner).toHaveClass("shrink-0");
+  });
+
   it("follows the operator between pages", async () => {
     const router = await renderAt("/freshdesk");
     await act(() => router.navigate({ to: "/inbox" }));

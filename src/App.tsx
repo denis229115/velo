@@ -512,7 +512,6 @@ export default function App() {
 
   return (
     <div className="flex flex-col h-screen overflow-hidden text-text-primary">
-      <OfflineBanner />
       <DndProvider>
         <AppFrame
           sidebarCollapsed={sidebarCollapsed}
@@ -525,6 +524,7 @@ export default function App() {
             </ErrorBoundary>
           }
           footer={<StatusBar syncStatus={syncStatus} />}
+          banner={<OfflineBanner />}
         >
           <Outlet />
         </AppFrame>
