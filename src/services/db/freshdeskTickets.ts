@@ -11,6 +11,10 @@ export interface CachedTicket {
   customerEmail: string | null;
   responderId: string | null;
   groupId: string | null;
+  companyId: string | null;
+  tags: string[];
+  /** Resolution due (SLA), unix seconds; null when Freshdesk gives none */
+  dueBy: number | null;
   createdAt: number;
   updatedAt: number;
   /** Outside the default scope; fetched because the operator asked for it */
@@ -27,6 +31,9 @@ interface TicketRow {
   customer_email: string | null;
   responder_id: string | null;
   group_id: string | null;
+  company_id: string | null;
+  tags_json: string;
+  due_by: number | null;
   created_at: number;
   updated_at: number;
   fetched_on_demand: number;
@@ -73,6 +80,15 @@ const EMPTY_SYNC_STATE: TicketSyncState = {
   coverageComplete: false,
 };
 
+function parseTags(json: string): string[] {
+  try {
+    const tags: unknown = JSON.parse(json);
+    return Array.isArray(tags) ? tags.filter((t): t is string => typeof t === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
 function toTicket(row: TicketRow): CachedTicket {
   return {
     ticketId: row.ticket_id,
@@ -84,6 +100,9 @@ function toTicket(row: TicketRow): CachedTicket {
     customerEmail: row.customer_email,
     responderId: row.responder_id,
     groupId: row.group_id,
+    companyId: row.company_id,
+    tags: parseTags(row.tags_json),
+    dueBy: row.due_by,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     fetchedOnDemand: row.fetched_on_demand === 1,
@@ -101,8 +120,9 @@ export async function upsertTickets(tenantId: string, tickets: CachedTicket[]): 
     for (const t of tickets) {
       await db.execute(
         `INSERT INTO freshdesk_tickets (tenant_id, ticket_id, subject, status_id, priority_id, requester_id,
-           customer_name, customer_email, responder_id, group_id, created_at, updated_at, fetched_on_demand)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+           customer_name, customer_email, responder_id, group_id, created_at, updated_at, fetched_on_demand,
+           company_id, tags_json, due_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
          ON CONFLICT(tenant_id, ticket_id) DO UPDATE SET
            subject = excluded.subject, status_id = excluded.status_id, priority_id = excluded.priority_id,
            requester_id = excluded.requester_id,
@@ -111,12 +131,13 @@ export async function upsertTickets(tenantId: string, tickets: CachedTicket[]): 
            customer_email = CASE WHEN excluded.requester_id IS freshdesk_tickets.requester_id
              THEN COALESCE(excluded.customer_email, freshdesk_tickets.customer_email) ELSE excluded.customer_email END,
            responder_id = excluded.responder_id, group_id = excluded.group_id,
+           company_id = excluded.company_id, tags_json = excluded.tags_json, due_by = excluded.due_by,
            created_at = excluded.created_at, updated_at = excluded.updated_at,
            fetched_on_demand = MAX(freshdesk_tickets.fetched_on_demand, excluded.fetched_on_demand)`,
         [
           tenantId, t.ticketId, t.subject, t.statusId, t.priorityId, t.requesterId,
           t.customerName, t.customerEmail, t.responderId, t.groupId, t.createdAt, t.updatedAt,
-          t.fetchedOnDemand ? 1 : 0,
+          t.fetchedOnDemand ? 1 : 0, t.companyId, JSON.stringify(t.tags), t.dueBy,
         ],
       );
     }

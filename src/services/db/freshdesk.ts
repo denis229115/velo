@@ -41,6 +41,8 @@ const FRESHDESK_TENANT_TABLES = [
   "freshdesk_sync_state",
   "freshdesk_ticket_history",
   "freshdesk_conversations",
+  "freshdesk_ticket_views",
+  "freshdesk_view_selection",
 ] as const;
 
 export async function getIntegrationAccount(kind: IntegrationKind): Promise<IntegrationAccount | null> {

@@ -1,3 +1,4 @@
+import { FreshdeskViewNav } from "@/components/freshdesk/FreshdeskViewNav";
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { useDroppable } from "@dnd-kit/core";
 import { AccountSwitcher } from "../accounts/AccountSwitcher";
@@ -376,6 +377,7 @@ export function Sidebar({ collapsed, onAddAccount }: SidebarProps) {
             <LifeBuoy size={18} className="shrink-0" />
             {!collapsed && <span className="flex-1 truncate">Tickets</span>}
           </button>
+          <FreshdeskViewNav collapsed={collapsed} />
         </div>
 
         <div role="group" aria-label="Email">
