@@ -8,17 +8,9 @@ import {
 } from "./writingStyleService";
 import type { DbMessage } from "@/services/db/messages";
 
-vi.mock("./providerManager", () => ({
-  getActiveProvider: vi.fn().mockResolvedValue({
-    complete: vi.fn().mockResolvedValue("Mocked AI response"),
-    testConnection: vi.fn().mockResolvedValue(true),
-  }),
-}));
-
-vi.mock("@/services/db/aiCache", () => ({
-  getAiCache: vi.fn().mockResolvedValue(null),
-  setAiCache: vi.fn(),
-  deleteAiCache: vi.fn(),
+vi.mock("./gateway", () => ({
+  requestAi: vi.fn().mockResolvedValue("Mocked AI response"),
+  isAiAvailable: vi.fn().mockResolvedValue(true),
 }));
 
 vi.mock("@/services/db/writingStyleProfiles", () => ({
@@ -39,8 +31,7 @@ vi.mock("@/services/db/settings", () => ({
   getSetting: vi.fn().mockResolvedValue("true"),
 }));
 
-const { getActiveProvider } = await import("./providerManager");
-const { getAiCache, setAiCache, deleteAiCache } = await import("@/services/db/aiCache");
+const { requestAi, isAiAvailable } = await import("./gateway");
 const { getWritingStyleProfile, upsertWritingStyleProfile, deleteWritingStyleProfile } =
   await import("@/services/db/writingStyleProfiles");
 const { getRecentSentMessages } = await import("@/services/db/messages");
@@ -82,11 +73,8 @@ function makeSentMessage(overrides: Partial<DbMessage> = {}): DbMessage {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(getActiveProvider).mockResolvedValue({
-    complete: vi.fn().mockResolvedValue("Mocked AI response"),
-    testConnection: vi.fn().mockResolvedValue(true),
-  } as never);
-  vi.mocked(getAiCache).mockResolvedValue(null);
+  vi.mocked(requestAi).mockResolvedValue("Mocked AI response");
+  vi.mocked(isAiAvailable).mockResolvedValue(true);
   vi.mocked(getWritingStyleProfile).mockResolvedValue(null);
   vi.mocked(getAccount).mockResolvedValue({ id: "acc1", email: "user@example.com" } as never);
   vi.mocked(getSetting).mockResolvedValue("true");
@@ -149,29 +137,25 @@ describe("writingStyleService", () => {
   describe("generateAutoDraft", () => {
     const msgs = [makeSentMessage({ from_address: "other@test.com", from_name: "Other" })];
 
-    it("returns cached draft if available", async () => {
-      vi.mocked(getAiCache).mockResolvedValue("<p>Cached draft</p>");
-      const result = await generateAutoDraft("t1", "acc1", msgs, "reply");
-      expect(result).toBe("<p>Cached draft</p>");
-    });
-
-    it("generates and caches new draft", async () => {
-      const result = await generateAutoDraft("t1", "acc1", msgs, "reply");
+    it("asks the gateway with a cache key per thread and reply mode", async () => {
+      const result = await generateAutoDraft("t1", "acc1", msgs, "replyAll");
       expect(result).toBe("Mocked AI response");
-      expect(setAiCache).toHaveBeenCalledWith("acc1", "t1", "auto_draft_reply", "Mocked AI response");
-    });
-
-    it("uses correct cache type for replyAll", async () => {
-      await generateAutoDraft("t1", "acc1", msgs, "replyAll");
-      expect(getAiCache).toHaveBeenCalledWith("acc1", "t1", "auto_draft_replyAll");
+      expect(requestAi).toHaveBeenCalledWith(
+        expect.objectContaining({
+          feature: "auto_draft",
+          cache: { scope: "acc1", sourceId: "t1:replyAll", refresh: undefined },
+        }),
+      );
     });
   });
 
   describe("regenerateAutoDraft", () => {
-    it("clears cache before generating", async () => {
+    it("bypasses the cached draft", async () => {
       const msgs = [makeSentMessage()];
       await regenerateAutoDraft("t1", "acc1", msgs, "reply");
-      expect(deleteAiCache).toHaveBeenCalledWith("acc1", "t1", "auto_draft_reply");
+      expect(requestAi).toHaveBeenCalledWith(
+        expect.objectContaining({ cache: { scope: "acc1", sourceId: "t1:reply", refresh: true } }),
+      );
     });
   });
 
@@ -182,9 +166,15 @@ describe("writingStyleService", () => {
       expect(result).toBe(false);
     });
 
-    it("returns true when AI is configured and enabled", async () => {
+    it("returns true when AI is ready and enabled", async () => {
       const result = await isAutoDraftEnabled();
       expect(result).toBe(true);
+    });
+
+    it("returns false when AI is not ready", async () => {
+      vi.mocked(isAiAvailable).mockResolvedValue(false);
+      const result = await isAutoDraftEnabled();
+      expect(result).toBe(false);
     });
   });
 });

@@ -2,16 +2,9 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 const mockComplete = vi.fn();
 
-vi.mock("./providerManager", () => ({
-  getActiveProvider: vi.fn(() => ({
-    complete: mockComplete,
-    testConnection: vi.fn(() => Promise.resolve(true)),
-  })),
-}));
-
-vi.mock("@/services/db/aiCache", () => ({
-  getAiCache: vi.fn(() => Promise.resolve(null)),
-  setAiCache: vi.fn(),
+// The AI answers by source item position (1-based), never by thread ID.
+vi.mock("./gateway", () => ({
+  requestAi: (req: unknown) => mockComplete(req),
 }));
 
 import { classifyThreadsBySmartLabels } from "./aiService";
@@ -33,7 +26,7 @@ describe("classifyThreadsBySmartLabels", () => {
   ];
 
   it("parses valid AI response into assignments map", async () => {
-    mockComplete.mockResolvedValueOnce("t1:label-jobs\nt2:label-orders");
+    mockComplete.mockResolvedValueOnce("1:label-jobs\n2:label-orders");
 
     const result = await classifyThreadsBySmartLabels(threads, labelRules);
 
@@ -43,25 +36,25 @@ describe("classifyThreadsBySmartLabels", () => {
   });
 
   it("supports multi-label assignments", async () => {
-    mockComplete.mockResolvedValueOnce("t1:label-jobs,label-orders");
+    mockComplete.mockResolvedValueOnce("1:label-jobs,label-orders");
 
     const result = await classifyThreadsBySmartLabels(threads, labelRules);
 
     expect(result.get("t1")).toEqual(["label-jobs", "label-orders"]);
   });
 
-  it("ignores invalid thread IDs", async () => {
-    mockComplete.mockResolvedValueOnce("invalid-id:label-jobs\nt1:label-jobs");
+  it("ignores unknown item ids", async () => {
+    mockComplete.mockResolvedValueOnce("9:label-jobs\nx:label-orders\n1:label-jobs");
 
     const result = await classifyThreadsBySmartLabels(threads, labelRules);
 
     expect(result.size).toBe(1);
-    expect(result.has("invalid-id")).toBe(false);
+    expect(result.has("t3")).toBe(false);
     expect(result.get("t1")).toEqual(["label-jobs"]);
   });
 
   it("ignores invalid label IDs", async () => {
-    mockComplete.mockResolvedValueOnce("t1:label-jobs,fake-label");
+    mockComplete.mockResolvedValueOnce("1:label-jobs,fake-label");
 
     const result = await classifyThreadsBySmartLabels(threads, labelRules);
 
@@ -69,7 +62,7 @@ describe("classifyThreadsBySmartLabels", () => {
   });
 
   it("skips threads where all labels are invalid", async () => {
-    mockComplete.mockResolvedValueOnce("t1:fake-label");
+    mockComplete.mockResolvedValueOnce("1:fake-label");
 
     const result = await classifyThreadsBySmartLabels(threads, labelRules);
 
@@ -85,7 +78,7 @@ describe("classifyThreadsBySmartLabels", () => {
   });
 
   it("handles blank lines and whitespace in response", async () => {
-    mockComplete.mockResolvedValueOnce("\n  t1:label-jobs  \n\n  t2:label-orders\n");
+    mockComplete.mockResolvedValueOnce("\n  1:label-jobs  \n\n  2:label-orders\n");
 
     const result = await classifyThreadsBySmartLabels(threads, labelRules);
 
@@ -94,16 +87,19 @@ describe("classifyThreadsBySmartLabels", () => {
     expect(result.get("t2")).toEqual(["label-orders"]);
   });
 
-  it("passes label definitions and thread data to AI", async () => {
+  it("passes label definitions and thread subjects and previews, not senders", async () => {
     mockComplete.mockResolvedValueOnce("");
 
     await classifyThreadsBySmartLabels(threads, labelRules);
 
     expect(mockComplete).toHaveBeenCalledTimes(1);
-    const callArgs = mockComplete.mock.calls[0]![0] as { userContent: string };
-    expect(callArgs.userContent).toContain("label-jobs");
-    expect(callArgs.userContent).toContain("Job applications");
-    expect(callArgs.userContent).toContain("t1");
-    expect(callArgs.userContent).toContain("recruiter@company.com");
+    const req = mockComplete.mock.calls[0]![0] as { operatorText: string; items: unknown[] };
+    expect(req.operatorText).toContain("label-jobs");
+    expect(req.operatorText).toContain("Job applications");
+    expect(req.items).toEqual([
+      { subject: "Software Engineer Position", body: "We're hiring..." },
+      { subject: "Your order shipped", body: "Package tracking..." },
+      { subject: "Team standup notes", body: "Meeting recap..." },
+    ]);
   });
 });
