@@ -8,6 +8,7 @@
  * on rejected credentials until the operator reconnects or retries by hand.
  */
 import { createBackgroundChecker } from "@/services/backgroundCheckers";
+import { withReadSnapshot } from "@/services/db/connection";
 import {
   getAgents,
   getFieldChoices,
@@ -190,7 +191,11 @@ function sampleList(classes: Map<string, StatusClass>): TicketListData {
 }
 
 /** What the ticket list shows: cached tickets with exact labels, or marked sample data when not connected. */
-export async function getTicketList(): Promise<TicketListData> {
+export function getTicketList(): Promise<TicketListData> {
+  return withReadSnapshot(readTicketList);
+}
+
+async function readTicketList(): Promise<TicketListData> {
   const account = await getIntegrationAccount("freshdesk");
   if (!account) return sampleList(await getStatusClasses(SAMPLE_TENANT_ID));
 
@@ -285,7 +290,9 @@ async function runSync(trigger: TicketSyncTrigger): Promise<TicketSyncStatus> {
     const full = state.lastFullSyncAt === null || state.lastSuccessAt === null || now - state.lastFullSyncAt >= FULL_SYNC_INTERVAL_S;
     if (full) {
       const recent = await listTicketsUpdatedSince(credentials, now - DONE_WINDOW_DAYS * DAY_S);
-      const [statuses, classes] = await Promise.all([getFieldChoices(tenantId, "status"), getStatusClasses(tenantId)]);
+      const [statuses, classes] = await withReadSnapshot(() =>
+        Promise.all([getFieldChoices(tenantId, "status"), getStatusClasses(tenantId)]),
+      );
       const outstandingIds = statuses.filter((s) => classes.get(s.choiceId) !== "done").map((s) => s.choiceId);
       const doneIds = statuses.filter((s) => classes.get(s.choiceId) === "done").map((s) => s.choiceId);
       const outstanding = await searchTicketsByStatus(credentials, outstandingIds);

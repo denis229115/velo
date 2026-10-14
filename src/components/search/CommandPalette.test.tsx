@@ -26,6 +26,7 @@ vi.mock("@/services/email/providerFactory", () => ({ getEmailProvider: vi.fn() }
 vi.mock("@/services/db/pendingOperations", () => ({ enqueuePendingOperation: vi.fn(async () => "op-1") }));
 vi.mock("@/services/db/connection", () => ({
   getDb: vi.fn(async () => ({ execute: vi.fn(async () => undefined), select: vi.fn(async () => []) })),
+  withReadSnapshot: <T,>(fn: () => Promise<T>) => fn(),
 }));
 
 afterEach(restoreUserAgent);

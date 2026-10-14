@@ -1,4 +1,5 @@
 import { createBackgroundChecker } from "@/services/backgroundCheckers";
+import { withReadSnapshot } from "@/services/db/connection";
 import { deleteSetting, getSecureSetting, setSecureSetting } from "@/services/db/settings";
 import {
   deleteFreshdeskDataExcept,
@@ -141,7 +142,11 @@ async function currentTenantId(): Promise<string> {
   return (await getIntegrationAccount("freshdesk"))?.tenantId ?? SAMPLE_TENANT_ID;
 }
 
-export async function getStatusClassification(): Promise<StatusClassification> {
+export function getStatusClassification(): Promise<StatusClassification> {
+  return withReadSnapshot(readStatusClassification);
+}
+
+async function readStatusClassification(): Promise<StatusClassification> {
   const tenantId = await currentTenantId();
   const classes = await getStatusClasses(tenantId);
 
@@ -179,7 +184,11 @@ export async function classifyStatus(statusId: string, statusClass: StatusClass)
 }
 
 /** Priorities, agents, groups and ticket fields of the connected helpdesk. */
-export async function getHelpdeskMetadataSummary(): Promise<HelpdeskMetadataSummary | null> {
+export function getHelpdeskMetadataSummary(): Promise<HelpdeskMetadataSummary | null> {
+  return withReadSnapshot(readHelpdeskMetadataSummary);
+}
+
+async function readHelpdeskMetadataSummary(): Promise<HelpdeskMetadataSummary | null> {
   const account = await getIntegrationAccount("freshdesk");
   if (!account) return null;
   const [priorities, agents, groups, ticketFields] = await Promise.all([

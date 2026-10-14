@@ -9,6 +9,7 @@
  * stops the run and sets the shared Retry-After wait the ticket sync honours
  * too; a history cut short stays incomplete, so its metrics show Unknown.
  */
+import { withReadSnapshot } from "@/services/db/connection";
 import { getAgents, getIntegrationAccount, getStatusClasses } from "@/services/db/freshdesk";
 import { getCachedTickets, getTicketSyncState, saveTicketSyncState, upsertTickets, type CachedTicket } from "@/services/db/freshdeskTickets";
 import { getStoredHistories, getStoredHistory, saveTicketHistory, type StoredHistory } from "@/services/db/freshdeskHistory";
@@ -131,12 +132,14 @@ async function runHydration(): Promise<string[]> {
   if (state.state === "auth_error") return [];
   if (state.retryAfterUntil !== null && state.retryAfterUntil > now) return [];
 
-  const [tickets, histories, agents, classes] = await Promise.all([
-    getCachedTickets(tenantId),
-    getStoredHistories(tenantId),
-    getAgents(tenantId),
-    getStatusClasses(tenantId),
-  ]);
+  const [tickets, histories, agents, classes] = await withReadSnapshot(() =>
+    Promise.all([
+      getCachedTickets(tenantId),
+      getStoredHistories(tenantId),
+      getAgents(tenantId),
+      getStatusClasses(tenantId),
+    ]),
+  );
   const byId = new Map(tickets.map((t) => [t.ticketId, t]));
   const outstanding = tickets.filter((t) => classes.get(t.statusId) !== "done");
   const order = [
@@ -260,7 +263,11 @@ function authorOf(
 }
 
 /** The opened ticket's history as stored, or the marked sample history in sample mode. */
-export async function getTicketHistory(ticketId: string): Promise<TicketHistoryView | null> {
+export function getTicketHistory(ticketId: string): Promise<TicketHistoryView | null> {
+  return withReadSnapshot(() => readTicketHistory(ticketId));
+}
+
+async function readTicketHistory(ticketId: string): Promise<TicketHistoryView | null> {
   const account = await getIntegrationAccount("freshdesk");
   if (!account) {
     const sample = sampleHistory(ticketId, Date.now());
