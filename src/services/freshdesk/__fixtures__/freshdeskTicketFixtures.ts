@@ -71,3 +71,30 @@ export const alphaTenantWithTickets: FreshdeskFixtureTenant = {
 };
 
 export const rateLimited = { status: 429, body: { message: "You have exceeded the limit of requests per minute" }, headers: { "Retry-After": "42" } };
+
+/** 400 for a move to a done status while a field required for closure is empty. */
+export const closureFieldMissing = {
+  method: "PUT",
+  status: 400,
+  body: {
+    description: "Validation failed",
+    errors: [{ field: "cf_fixture_product", message: "It should not be blank as this is a mandatory field", code: "missing_field" }],
+  },
+};
+
+/** 403 for an agent whose role may not edit the ticket. */
+export const accessDenied = {
+  method: "PUT",
+  status: 403,
+  body: { code: "access_denied", message: "You are not authorized to perform this action." },
+};
+
+/** 400 for an assignee Freshdesk does not accept for this ticket. */
+export const invalidAssignee = {
+  method: "PUT",
+  status: 400,
+  body: {
+    description: "Validation failed",
+    errors: [{ field: "responder_id", message: "There is no agent matching the given responder_id", code: "invalid_value" }],
+  },
+};
