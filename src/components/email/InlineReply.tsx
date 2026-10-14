@@ -6,6 +6,7 @@ import { Reply, ReplyAll, Forward, Send, Maximize2, RotateCcw, X, Loader2 } from
 import { useAccountStore } from "@/stores/accountStore";
 import { useComposerStore } from "@/stores/composerStore";
 import { useUIStore } from "@/stores/uiStore";
+import { useComposerShortcuts } from "@/hooks/useComposerShortcuts";
 import { sendEmail, archiveThread } from "@/services/emailActions";
 import { buildRawEmail } from "@/utils/emailBuilder";
 import { upsertContact } from "@/services/db/contacts";
@@ -39,6 +40,7 @@ export function InlineReply({ thread, messages, accountId, noReply, onSent }: In
   const accounts = useAccountStore((s) => s.accounts);
   const activeAccount = accounts.find((a) => a.id === accountId);
   const openComposer = useComposerStore((s) => s.openComposer);
+  const composerOpen = useComposerStore((s) => s.isOpen);
   const containerRef = useRef<HTMLDivElement>(null);
   const focusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoDraftAbortRef = useRef(false);
@@ -284,14 +286,13 @@ export function InlineReply({ thread, messages, accountId, noReply, onSent }: In
     };
   }, []);
 
-  // Handle Ctrl+Enter to send, Escape to close
+  // Send now via the shortcut registry; the full composer takes precedence when open
+  useComposerShortcuts({ onSend: handleSend }, !!mode && !composerOpen);
+
+  // Handle Escape to close
   useEffect(() => {
     if (!mode) return;
     const handler = (e: KeyboardEvent) => {
-      if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-        e.preventDefault();
-        handleSend();
-      }
       if (e.key === "Escape") {
         e.preventDefault();
         editor?.commands.setContent("");

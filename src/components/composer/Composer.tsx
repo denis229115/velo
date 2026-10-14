@@ -18,6 +18,7 @@ import { FromSelector } from "./FromSelector";
 import { useComposerStore } from "@/stores/composerStore";
 import { useAccountStore } from "@/stores/accountStore";
 import { useUIStore } from "@/stores/uiStore";
+import { useComposerShortcuts } from "@/hooks/useComposerShortcuts";
 import { sendEmail, archiveThread, deleteDraft as deleteDraftAction } from "@/services/emailActions";
 import { buildRawEmail } from "@/utils/emailBuilder";
 import { upsertContact } from "@/services/db/contacts";
@@ -335,6 +336,11 @@ export function Composer() {
     setShowSchedule(false);
     closeComposer();
   }, [activeAccountId, activeAccount, closeComposer, getFullHtml]);
+
+  useComposerShortcuts(
+    { onSend: handleSend, onSendLater: () => setShowSchedule(true) },
+    isOpen,
+  );
 
   const handleDiscard = useCallback(async () => {
     stopAutoSave();
