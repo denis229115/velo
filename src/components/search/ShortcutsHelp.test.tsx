@@ -34,4 +34,12 @@ describe("Shortcuts help", () => {
 
     expect(screen.getByText("Option+Shift+K")).toBeInTheDocument();
   });
+
+  it("lists search with Cmd+K on macOS", () => {
+    pretendPlatform("mac");
+    render(<ShortcutsHelp isOpen onClose={() => {}} />);
+
+    const row = screen.getByText("Search mail and commands").parentElement!;
+    expect(row).toHaveTextContent("Cmd+K");
+  });
 });

@@ -52,6 +52,7 @@ export const SHORTCUTS: ShortcutCategory[] = [
     { id: "app.sendLater", keys: "Ctrl+Shift+L", desc: "Send later" },
   ]},
   { category: "App", items: [
+    { id: "app.search", keys: "Ctrl+K", desc: "Search mail and commands" },
     { id: "app.commandPalette", keys: "/", desc: "Command palette" },
     { id: "app.toggleSidebar", keys: "Ctrl+Shift+E", desc: "Toggle sidebar" },
     { id: "app.askInbox", keys: "i", desc: "Ask AI about your inbox" },

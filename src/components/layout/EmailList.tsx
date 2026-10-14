@@ -2,7 +2,7 @@ import { useEffect, useCallback, useMemo, useRef, useState } from "react";
 import { CSSTransition } from "react-transition-group";
 import { ThreadCard } from "../email/ThreadCard";
 import { CategoryTabs } from "../email/CategoryTabs";
-import { SearchBar } from "../search/SearchBar";
+import { ListSearchActions } from "../search/ListSearchActions";
 import { EmailListSkeleton } from "../ui/Skeleton";
 import { useThreadStore, type Thread } from "@/stores/threadStore";
 import { useAccountStore } from "@/stores/accountStore";
@@ -21,7 +21,7 @@ import { useComposerStore } from "@/stores/composerStore";
 import { getMessagesForThread } from "@/services/db/messages";
 import { getSmartFolderSearchQuery, mapSmartFolderRows, type SmartFolderRow } from "@/services/search/smartFolderQuery";
 import { getDb } from "@/services/db/connection";
-import { Archive, Trash2, X, Ban, Filter, ChevronRight, Package, FolderSearch } from "lucide-react";
+import { Archive, Trash2, X, Ban, Filter, ChevronRight, Package, FolderSearch, Search } from "lucide-react";
 import { EmptyState } from "../ui/EmptyState";
 import { ListHeader } from "../list/ListHeader";
 import { ReadFilterTabs } from "../list/ReadFilterTabs";
@@ -35,6 +35,8 @@ import {
 } from "../ui/illustrations";
 
 const PAGE_SIZE = 50;
+/** A search shown in the list loads all of its threads at once, up to this many. */
+const SEARCH_RESULT_LIMIT = 200;
 
 // Map sidebar labels to Gmail label IDs
 const LABEL_MAP: Record<string, string> = {
@@ -203,21 +205,17 @@ export function EmailList({ width, listRef }: { width?: number; listRef?: React.
     }
   };
 
-  const searchThreadIds = useThreadStore((s) => s.searchThreadIds);
   const searchQuery = useThreadStore((s) => s.searchQuery);
+  const activeSearch = searchQuery.trim();
 
   const filteredThreads = useMemo(() => {
     let filtered = threads;
-    // Apply search filter
-    if (searchThreadIds !== null) {
-      filtered = filtered.filter((t) => searchThreadIds.has(t.id));
-    }
     // Apply read filter
     if (readFilter === "unread") filtered = filtered.filter((t) => !t.isRead);
     else if (readFilter === "read") filtered = filtered.filter((t) => t.isRead);
     // Category filtering is now server-side (Phase 4) — no client-side filter needed
     return filtered;
-  }, [threads, readFilter, searchThreadIds]);
+  }, [threads, readFilter]);
 
   // Pre-compute bundled category Set for O(1) lookups in filter
   const bundledCategorySet = useMemo(
@@ -271,18 +269,37 @@ export function EmailList({ width, listRef }: { width?: number; listRef?: React.
 
   const clearSearch = useThreadStore((s) => s.clearSearch);
 
+  // A search from the palette lasts until the folder, category or account changes
+  const searchScope = `${activeAccountId}|${activeLabel}|${activeCategory}`;
+  const searchScopeRef = useRef(searchScope);
+  useEffect(() => {
+    if (searchScopeRef.current === searchScope) return;
+    searchScopeRef.current = searchScope;
+    clearSearch();
+  }, [searchScope, clearSearch]);
+
+  const loadSeqRef = useRef(0);
+
   const loadThreads = useCallback(async () => {
     if (!activeAccountId) {
       setThreads([]);
       return;
     }
 
-    clearSearch();
+    const seq = ++loadSeqRef.current;
     setLoading(true);
     setHasMore(true);
     try {
-      // Smart folder query path
-      if (isSmartFolder && activeSmartFolder) {
+      // Search results path (full list for a palette search)
+      if (activeSearch) {
+        const { sql, params } = getSmartFolderSearchQuery(activeSearch, activeAccountId, SEARCH_RESULT_LIMIT);
+        const db = await getDb();
+        const rows = await db.select<SmartFolderRow[]>(sql, params);
+        const mapped = await mapSmartFolderRows(rows);
+        if (seq !== loadSeqRef.current) return;
+        setThreads(mapped);
+        setHasMore(false);
+      } else if (isSmartFolder && activeSmartFolder) {
         const { sql, params } = getSmartFolderSearchQuery(
           activeSmartFolder.query,
           activeAccountId,
@@ -291,6 +308,7 @@ export function EmailList({ width, listRef }: { width?: number; listRef?: React.
         const db = await getDb();
         const rows = await db.select<SmartFolderRow[]>(sql, params);
         const mapped = await mapSmartFolderRows(rows);
+        if (seq !== loadSeqRef.current) return;
         setThreads(mapped);
         setHasMore(false); // Smart folders load all at once
       } else {
@@ -309,15 +327,16 @@ export function EmailList({ width, listRef }: { width?: number; listRef?: React.
         }
 
         const mapped = await mapDbThreads(dbThreads);
+        if (seq !== loadSeqRef.current) return;
         setThreads(mapped);
         setHasMore(dbThreads.length === PAGE_SIZE);
       }
     } catch (err) {
       console.error("Failed to load threads:", err);
     } finally {
-      setLoading(false);
+      if (seq === loadSeqRef.current) setLoading(false);
     }
-  }, [activeAccountId, activeLabel, activeCategory, isSmartFolder, activeSmartFolder, setThreads, setLoading, mapDbThreads, clearSearch]);
+  }, [activeAccountId, activeLabel, activeCategory, isSmartFolder, activeSmartFolder, activeSearch, setThreads, setLoading, mapDbThreads]);
 
   const loadMore = useCallback(async () => {
     if (!activeAccountId || loadingMore || !hasMore) return;
@@ -507,15 +526,15 @@ export function EmailList({ width, listRef }: { width?: number; listRef?: React.
       }`}
       style={readingPanePosition === "right" && width ? { width } : undefined}
     >
-      {/* Search */}
-      <div className="px-3 pt-2.5">
-        <SearchBar />
-      </div>
-
       <ListHeader
         breadcrumb={["Mail", ...(activeAccountEmail ? [activeAccountEmail] : [])]}
-        icon={isSmartFolder ? <FolderSearch size={16} className="text-accent shrink-0" /> : undefined}
+        icon={
+          activeSearch ? <Search size={16} className="text-accent shrink-0" />
+          : isSmartFolder ? <FolderSearch size={16} className="text-accent shrink-0" /> : undefined
+        }
+        actions={<ListSearchActions />}
         title={
+          activeSearch ? `“${activeSearch}”` :
           <span className="capitalize">
             {isSmartFolder
               ? activeSmartFolder?.name ?? "Smart Folder"

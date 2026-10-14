@@ -26,17 +26,16 @@ vi.mock("@/stores/composerStore", () => ({
 vi.mock("@/stores/accountStore", () => ({
   useAccountStore: { getState: () => ({ activeAccountId: null }) },
 }));
+const DEFAULT_TEST_KEYMAP: Record<string, string> = {
+  "app.askInbox": "i",
+  "app.commandPalette": "/",
+  "app.search": "Ctrl+K",
+  "app.toggleSidebar": "Ctrl+Shift+E",
+  "app.help": "?",
+};
+const shortcutState = vi.hoisted(() => ({ keyMap: {} as Record<string, string> }));
 vi.mock("@/stores/shortcutStore", () => ({
-  useShortcutStore: {
-    getState: () => ({
-      keyMap: {
-        "app.askInbox": "i",
-        "app.commandPalette": "/",
-        "app.toggleSidebar": "Ctrl+Shift+E",
-        "app.help": "?",
-      },
-    }),
-  },
+  useShortcutStore: { getState: () => shortcutState },
 }));
 vi.mock("@/stores/contextMenuStore", () => ({
   useContextMenuStore: { getState: () => ({ menuType: null, closeMenu: vi.fn() }) },
@@ -75,6 +74,7 @@ import { useKeyboardShortcuts } from "./useKeyboardShortcuts";
 describe("useKeyboardShortcuts", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    shortcutState.keyMap = DEFAULT_TEST_KEYMAP;
   });
 
   it("dispatches velo-toggle-ask-inbox when 'i' is pressed", () => {
@@ -120,5 +120,41 @@ describe("useKeyboardShortcuts", () => {
     expect(listener).toHaveBeenCalledTimes(1);
 
     window.removeEventListener("velo-toggle-shortcuts-help", listener);
+  });
+
+  describe("search (Cmd+K)", () => {
+    function pressInInput(init: KeyboardEventInit) {
+      const input = document.createElement("input");
+      document.body.appendChild(input);
+      input.focus();
+      input.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, ...init }));
+      input.remove();
+    }
+
+    it("opens the palette with Cmd+K even while typing in a field", () => {
+      renderHook(() => useKeyboardShortcuts());
+      const listener = vi.fn();
+      window.addEventListener("velo-toggle-command-palette", listener);
+
+      pressInInput({ key: "k", metaKey: true });
+      pressInInput({ key: "k", ctrlKey: true });
+
+      expect(listener).toHaveBeenCalledTimes(2);
+      window.removeEventListener("velo-toggle-command-palette", listener);
+    });
+
+    it("follows a rebound search shortcut", () => {
+      shortcutState.keyMap = { ...DEFAULT_TEST_KEYMAP, "app.search": "Ctrl+J" };
+      renderHook(() => useKeyboardShortcuts());
+      const listener = vi.fn();
+      window.addEventListener("velo-toggle-command-palette", listener);
+
+      pressInInput({ key: "k", metaKey: true });
+      expect(listener).not.toHaveBeenCalled();
+
+      pressInInput({ key: "j", metaKey: true });
+      expect(listener).toHaveBeenCalledTimes(1);
+      window.removeEventListener("velo-toggle-command-palette", listener);
+    });
   });
 });
