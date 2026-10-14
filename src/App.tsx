@@ -58,6 +58,7 @@ import {
   startFreshdeskMetadataRefresher,
   stopFreshdeskMetadataRefresher,
 } from "./services/freshdesk/connection";
+import { startTicketSync, stopTicketSync } from "./services/freshdesk/ticketSync";
 import {
   startUpdateChecker,
   stopUpdateChecker,
@@ -340,6 +341,7 @@ export default function App() {
         startQueueProcessor();
         startPreCacheManager();
         startFreshdeskMetadataRefresher();
+        startTicketSync();
 
         // Initialize notifications
         await initNotifications();
@@ -380,6 +382,7 @@ export default function App() {
       stopQueueProcessor();
       stopPreCacheManager();
       stopFreshdeskMetadataRefresher();
+      stopTicketSync();
       stopUpdateChecker();
       unregisterComposeShortcut();
       deepLinkCleanupRef.current?.();
