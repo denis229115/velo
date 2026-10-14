@@ -27,7 +27,10 @@ import {
 } from "@/services/db/freshdeskTickets";
 import { FreshdeskError, type HelpdeskCredentials } from "./client";
 import { SAMPLE_TENANT_ID, currentCredentials } from "./connection";
-import { SAMPLE_PRIORITIES, SAMPLE_STATUSES, SAMPLE_TICKETS } from "./sampleData";
+import { SAMPLE_PRIORITIES, SAMPLE_STATUSES, SAMPLE_TICKETS, sampleHistory } from "./sampleData";
+import { getStoredHistories } from "@/services/db/freshdeskHistory";
+import { activityFrom, summarizeHistory, type TicketActivity } from "./activity";
+import { historyStateOf, hydrateTicketHistories } from "./ticketHistory";
 import { fetchContactName, fetchTicketById, listTicketsUpdatedSince, searchTicketsByStatus } from "./tickets";
 
 const DAY_S = 86_400;
@@ -71,6 +74,8 @@ export interface TicketListItem {
   updatedAt: number;
   /** Not classified done; unknown statuses count as outstanding */
   outstanding: boolean;
+  /** Derived from the conversation history; Unknown until it is fully loaded */
+  activity: TicketActivity;
   fetchedOnDemand: boolean;
   isSample: boolean;
 }
@@ -124,6 +129,17 @@ function statusInfo(id: string, labels: Map<string, string>, classes: Map<string
   return { id, label, known: label !== null, statusClass: label !== null ? (classes.get(id) ?? null) : null };
 }
 
+function sampleActivity(ticketId: string, outstanding: boolean, now: number): TicketActivity {
+  const sample = sampleHistory(ticketId, now);
+  if (!sample) return activityFrom(null, "not_loaded", outstanding);
+  const [request, ...conversations] = sample.entries.map((e) => ({ kind: e.kind, createdAt: Math.floor(e.at / 1000) }));
+  const summary = summarizeHistory(
+    { createdAt: request?.createdAt ?? Math.floor(now / 1000), ticketSource: null },
+    conversations.filter((c): c is { kind: Exclude<typeof c.kind, "request">; createdAt: number } => c.kind !== "request"),
+  );
+  return activityFrom(summary, sample.history, outstanding);
+}
+
 function sampleList(classes: Map<string, StatusClass>): TicketListData {
   const statusLabels = new Map(SAMPLE_STATUSES.map((s) => [s.id, s.label]));
   const priorityLabels = new Map(SAMPLE_PRIORITIES.map((p) => [p.id, p.label]));
@@ -144,6 +160,7 @@ function sampleList(classes: Map<string, StatusClass>): TicketListData {
         assigneeId: null,
         updatedAt: now - t.updatedMinutesAgo * 60_000,
         outstanding: status.statusClass !== "done",
+        activity: sampleActivity(t.id, status.statusClass !== "done", now),
         fetchedOnDemand: false,
         isSample: true,
       };
@@ -165,13 +182,14 @@ export async function getTicketList(): Promise<TicketListData> {
   if (!account) return sampleList(await getStatusClasses(SAMPLE_TENANT_ID));
 
   const { tenantId } = account;
-  const [tickets, statuses, priorities, agents, classes, state] = await Promise.all([
+  const [tickets, statuses, priorities, agents, classes, state, histories] = await Promise.all([
     getCachedTickets(tenantId),
     getFieldChoices(tenantId, "status"),
     getFieldChoices(tenantId, "priority"),
     getAgents(tenantId),
     getStatusClasses(tenantId),
     getTicketSyncState(tenantId),
+    getStoredHistories(tenantId),
   ]);
   const statusLabels = new Map(statuses.map((c) => [c.choiceId, c.label]));
   const priorityLabels = new Map(priorities.map((c) => [c.choiceId, c.label]));
@@ -183,6 +201,8 @@ export async function getTicketList(): Promise<TicketListData> {
     tickets: tickets.map((t) => {
       const status = statusInfo(t.statusId, statusLabels, classes);
       const priorityLabel = t.priorityId !== null ? priorityLabels.get(t.priorityId) : undefined;
+      const outstanding = status.statusClass !== "done";
+      const stored = histories.get(t.ticketId);
       return {
         id: t.ticketId,
         subject: t.subject,
@@ -192,7 +212,8 @@ export async function getTicketList(): Promise<TicketListData> {
         assignee: t.responderId !== null ? (agentNames.get(t.responderId) ?? `Agent ${t.responderId}`) : null,
         assigneeId: t.responderId,
         updatedAt: t.updatedAt * 1000,
-        outstanding: status.statusClass !== "done",
+        outstanding,
+        activity: activityFrom(stored?.summary ?? null, historyStateOf(t, stored), outstanding),
         fetchedOnDemand: t.fetchedOnDemand,
         isSample: false,
       };
@@ -343,6 +364,7 @@ const ticketPoller = createBackgroundChecker(
   "FreshdeskTickets",
   async () => {
     await syncTickets({ trigger: "poll" });
+    await hydrateTicketHistories();
   },
   60_000,
 );

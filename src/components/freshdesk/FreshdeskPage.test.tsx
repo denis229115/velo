@@ -44,6 +44,7 @@ vi.mock("@/router", () => ({
 import { runMigrations } from "@/services/db/migrations";
 import { classifyStatus, connectHelpdesk } from "@/services/freshdesk/connection";
 import { syncTickets } from "@/services/freshdesk/ticketSync";
+import { hydrateTicketHistories, resetHydrationState } from "@/services/freshdesk/ticketHistory";
 import { getSelectedThreadId } from "@/router/navigate";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useTicketStore } from "@/stores/ticketStore";
@@ -92,7 +93,10 @@ beforeEach(async () => {
   useTicketStore.setState(useTicketStore.getInitialState(), true);
 });
 
-afterEach(() => {
+afterEach(async () => {
+  // Let background history reads finish before the database goes away
+  await hydrateTicketHistories().catch(() => {});
+  resetHydrationState();
   vi.useRealTimers();
   db.close();
 });
@@ -114,7 +118,8 @@ describe("Freshdesk ticket list", () => {
     expect(row.getByText("Fixture: With engineering")).toBeInTheDocument();
     expect(row.getByText("Medium")).toBeInTheDocument();
     expect(row.getByText("Fixture Colleague")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^Ticket #1002/ }).querySelector("time")).toHaveAttribute("dateTime", new Date(FIXTURE_NOW - 3 * 86_400_000).toISOString());
+    // The row's own time (last updated) comes after the activity times
+    expect(Array.from(screen.getByRole("button", { name: /^Ticket #1002/ }).querySelectorAll("time")).pop()).toHaveAttribute("dateTime", new Date(FIXTURE_NOW - 3 * 86_400_000).toISOString());
 
     // The unknown status is labelled, not hidden; an unassigned ticket says so
     expect(within(screen.getByRole("button", { name: /^Ticket #1003/ })).getByText("Unknown status")).toBeInTheDocument();

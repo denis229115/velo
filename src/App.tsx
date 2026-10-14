@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from "react";
+import { isValidTimeZone } from "@/utils/timeZone";
 import { AiSendPreviewHost } from "@/components/ai/AiSendPreview";
 import { Outlet } from "@tanstack/react-router";
 import { Sidebar } from "./components/layout/Sidebar";
@@ -239,6 +240,21 @@ export default function App() {
         const savedDensity = await getSetting("email_density");
         if (savedDensity === "compact" || savedDensity === "default" || savedDensity === "spacious") {
           ui.setEmailDensity(savedDensity);
+        }
+
+        // Restore time display: zone override and the extra zones shown on hover
+        const savedZone = await getSetting("time_zone_override");
+        if (savedZone && isValidTimeZone(savedZone)) ui.setTimeZoneOverride(savedZone);
+        const savedExtraZones = await getSetting("extra_time_zones");
+        if (savedExtraZones) {
+          try {
+            const zones: unknown = JSON.parse(savedExtraZones);
+            if (Array.isArray(zones)) {
+              ui.setExtraTimeZones(zones.filter((z): z is string => typeof z === "string" && isValidTimeZone(z)));
+            }
+          } catch {
+            // Keep the default list
+          }
         }
 
         // Restore default reply mode

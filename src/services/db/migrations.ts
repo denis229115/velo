@@ -913,6 +913,45 @@ const MIGRATIONS = [
       );
     `,
   },
+  {
+    version: 29,
+    description: "Freshdesk conversation history and ticket activity metrics",
+    sql: `
+      CREATE TABLE IF NOT EXISTS freshdesk_ticket_history (
+        tenant_id TEXT NOT NULL,
+        ticket_id TEXT NOT NULL,
+        ticket_source INTEGER,
+        description_html TEXT,
+        description_text TEXT,
+        attachments_json TEXT NOT NULL DEFAULT '[]',
+        history_complete INTEGER NOT NULL DEFAULT 0,
+        hydrated_for_updated_at INTEGER,
+        hydrated_at INTEGER,
+        last_answered_at INTEGER,
+        last_answered_unknown INTEGER NOT NULL DEFAULT 0,
+        unverified_reply_at INTEGER,
+        last_customer_message_at INTEGER,
+        last_internal_note_at INTEGER,
+        last_activity_at INTEGER,
+        PRIMARY KEY (tenant_id, ticket_id)
+      );
+      CREATE TABLE IF NOT EXISTS freshdesk_conversations (
+        tenant_id TEXT NOT NULL,
+        ticket_id TEXT NOT NULL,
+        conversation_id TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        user_id TEXT,
+        from_email TEXT,
+        body_html TEXT,
+        body_text TEXT,
+        attachments_json TEXT NOT NULL DEFAULT '[]',
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (tenant_id, ticket_id, conversation_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_freshdesk_conversations_ticket ON freshdesk_conversations(tenant_id, ticket_id, created_at);
+    `,
+  },
 ];
 
 /**
