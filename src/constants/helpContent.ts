@@ -310,6 +310,7 @@ export const HELP_CATEGORIES: HelpCategory[] = [
           "The composer uses a full rich text editor powered by TipTap. You can format text (bold, italic, lists, links, code blocks), add file attachments, insert a signature, and pick a template — all from one place. The composer opens as a panel at the bottom of the screen. Add recipients with autocomplete (ranked by how often you email them), set a subject, and compose your message.",
         tips: [
           { text: "Open the composer", shortcut: "c" },
+          { text: "Or click the pencil icon at the top of the sidebar (also there when the sidebar is collapsed)." },
           { text: "Send now", shortcut: "Ctrl+Enter" },
           { text: "Recipient autocomplete is ranked by contact frequency." },
           { text: "Use the toolbar or markdown-style shortcuts for formatting." },
@@ -450,7 +451,7 @@ export const HELP_CATEGORIES: HelpCategory[] = [
         title: "Search operators",
         summary: "Gmail-style operators to refine search results.",
         description:
-          "Search uses Gmail-style operators for precise filtering. Combine multiple operators to find exactly what you need. All searches run against your local database using FTS5 full-text indexing, so results are instant. Operators can be combined freely — they use AND logic, so each additional operator narrows the results further.",
+          "Search lives in the command palette: press Cmd+K (Ctrl+K on Windows and Linux) or click the search icon, then type. Search uses Gmail-style operators for precise filtering. Combine multiple operators to find exactly what you need. All searches run against your local database using FTS5 full-text indexing, so results are instant. Operators can be combined freely — they use AND logic, so each additional operator narrows the results further.",
         tips: [
           { text: "from:jane — emails from a specific sender" },
           { text: "to:team@ — emails sent to a specific address" },
@@ -465,16 +466,16 @@ export const HELP_CATEGORIES: HelpCategory[] = [
       {
         id: "command-palette",
         icon: Command,
-        title: "Command palette",
-        summary: "Keyboard-driven search, navigation, and actions.",
+        title: "Command palette and search",
+        summary: "One place to search your email and run commands.",
         description:
-          "The command palette is the fastest way to do anything in the app. Open it with a shortcut and start typing to search your email, jump to any label or folder, switch accounts, or trigger actions. Results update as you type. The palette searches across email content, sender names, subject lines, labels, and folders — all from one input.",
+          "The command palette replaces the old search bar. Open it from anywhere, even while typing in a field, with the shortcut or the search icon in the sidebar header and the list header. Type to see matching commands and matching email threads in two groups, Commands and Threads. Email search runs on your local database and understands the same Gmail-style operators (from:, to:, subject:, has:attachment, is:unread, before:, after:, label:). Choose “Show all results” to see every match in the mail list, where you can save the search as a smart folder or clear it. Smart folders are also listed in the palette.",
         tips: [
-          { text: "Open the command palette", shortcut: "Ctrl+K" },
+          { text: "Open search and commands", shortcut: "Ctrl+K" },
           { text: "Also opens with", shortcut: "/" },
-          { text: "Type to search email, labels, folders, and actions." },
-          { text: "Results update instantly as you type." },
-          { text: "Press Enter to open the first result, or arrow keys to navigate." },
+          { text: "Use the arrow keys to move, Enter to open a thread or run a command, Escape to close." },
+          { text: "With an operator query such as from:jane, Enter opens the full results list." },
+          { text: "Searching never contacts a server or an AI service: it reads only the email stored on this computer." },
         ],
       },
       {

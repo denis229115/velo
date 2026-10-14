@@ -95,15 +95,6 @@ export function useKeyboardShortcuts() {
             return;
           }
         }
-        // Ctrl+K for command palette (also check binding)
-        if (e.key === "k" && !e.shiftKey) {
-          const paletteBinding = keyMap["app.commandPalette"];
-          if (paletteBinding === "Ctrl+K" || paletteBinding === "/" || !paletteBinding) {
-            e.preventDefault();
-            window.dispatchEvent(new Event("velo-toggle-command-palette"));
-            return;
-          }
-        }
         return;
       }
 
@@ -444,6 +435,7 @@ async function executeAction(actionId: string): Promise<void> {
       break;
     }
     case "app.commandPalette":
+    case "app.search":
       window.dispatchEvent(new Event("velo-toggle-command-palette"));
       break;
     case "app.toggleSidebar":

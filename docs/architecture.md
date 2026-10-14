@@ -59,7 +59,7 @@ velo/
 │   │   │                     # LinkConfirmDialog, CategoryTabs
 │   │   ├── composer/         # Composer, AddressInput, EditorToolbar,
 │   │   │                     # AiAssistPanel, ScheduleSendDialog, FromSelector
-│   │   ├── search/           # CommandPalette, SearchBar, ShortcutsHelp, AskInbox
+│   │   ├── search/           # CommandPalette (search + commands), ListSearchActions, ShortcutsHelp, AskInbox
 │   │   ├── settings/         # SettingsPage, FilterEditor, LabelEditor,
 │   │   │                     # SubscriptionManager, ContactEditor,
 │   │   │                     # QuickStepEditor, SmartFolderEditor
