@@ -44,8 +44,11 @@ function renderSidebar(path: string) {
   const page = (name: string) => () => <main aria-label={name} />;
   const mailRoute = createRoute({ getParentRoute: () => rootRoute, path: "mail/$label", component: page("mail") });
   const freshdeskRoute = createRoute({ getParentRoute: () => rootRoute, path: "freshdesk", component: page("freshdesk") });
+  const pageRoutes = ["tasks", "attachments", "scheduled"].map((path) =>
+    createRoute({ getParentRoute: () => rootRoute, path, component: page(path) }),
+  );
   const router = createRouter({
-    routeTree: rootRoute.addChildren([mailRoute, freshdeskRoute]),
+    routeTree: rootRoute.addChildren([mailRoute, freshdeskRoute, ...pageRoutes]),
     history: createMemoryHistory({ initialEntries: [path] }),
   });
   testRouter.current = router;
@@ -76,5 +79,47 @@ describe("Sidebar sections", () => {
     expect(await screen.findByRole("main", { name: "freshdesk" })).toBeInTheDocument();
     expect(router.state.location.pathname).toBe("/freshdesk");
     expect(within(freshdesk).getByRole("button", { name: /Tickets/ })).toHaveAttribute("aria-current", "page");
+  });
+});
+
+describe("Sidebar active item", () => {
+  afterEach(() => {
+    document.documentElement.classList.remove("dark");
+  });
+
+  async function activeItems() {
+    const email = await screen.findByRole("group", { name: "Email" });
+    return within(email)
+      .getAllByRole("button")
+      .filter((b) => b.getAttribute("aria-current") === "page")
+      .map((b) => b.textContent?.trim());
+  }
+
+  describe.each([["light"], ["dark"]])("in the %s theme", (theme) => {
+    beforeEach(() => {
+      document.documentElement.classList.toggle("dark", theme === "dark");
+    });
+
+    it.each([
+      ["/tasks", "Tasks"],
+      ["/attachments", "Attachments"],
+      ["/scheduled", "Scheduled"],
+      ["/mail/inbox", "Inbox"],
+      ["/mail/trash", "Trash"],
+    ])("highlights only the matching item on %s", async (path, label) => {
+      renderSidebar(path);
+
+      expect(await activeItems()).toEqual([label]);
+      const email = screen.getByRole("group", { name: "Email" });
+      expect(within(email).getByRole("button", { name: label })).toHaveClass("bg-accent/10", "text-accent");
+    });
+
+    it("highlights Freshdesk Tickets and no email item on the ticket list", async () => {
+      renderSidebar("/freshdesk");
+
+      expect(await activeItems()).toEqual([]);
+      const freshdesk = screen.getByRole("group", { name: "Freshdesk" });
+      expect(within(freshdesk).getByRole("button", { name: /Tickets/ })).toHaveAttribute("aria-current", "page");
+    });
   });
 });

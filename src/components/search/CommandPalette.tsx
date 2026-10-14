@@ -6,7 +6,7 @@ import { useComposerStore } from "@/stores/composerStore";
 import { useThreadStore } from "@/stores/threadStore";
 import { useAccountStore } from "@/stores/accountStore";
 import { useSmartFolderStore } from "@/stores/smartFolderStore";
-import { getGmailClient } from "@/services/gmail/tokenManager";
+import { spamThread } from "@/services/emailActions";
 import { getTemplatesForAccount, type DbTemplate } from "@/services/db/templates";
 import { searchMessages, type SearchResult } from "@/services/db/search";
 import { hasSearchOperators } from "@/services/search/searchParser";
@@ -130,17 +130,7 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
       const selectedId = getSelectedThreadId();
       const accountId = useAccountStore.getState().activeAccountId;
       if (!selectedId || !accountId) return;
-      try {
-        const client = await getGmailClient(accountId);
-        if (activeLabel === "spam") {
-          await client.modifyThread(selectedId, ["INBOX"], ["SPAM"]);
-        } else {
-          await client.modifyThread(selectedId, ["SPAM"], ["INBOX"]);
-        }
-        useThreadStore.getState().removeThread(selectedId);
-      } catch (err) {
-        console.error("Spam action failed:", err);
-      }
+      await spamThread(accountId, selectedId, [], activeLabel !== "spam");
     } },
 
     // Tasks
