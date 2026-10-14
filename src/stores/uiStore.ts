@@ -68,7 +68,7 @@ export const useUIStore = create<UIState>((set) => ({
   readingPanePosition: "right",
   readFilter: "all",
   emailListWidth: 320,
-  emailDensity: "default",
+  emailDensity: "compact",
   defaultReplyMode: "reply",
   markAsReadBehavior: "instant",
   fontScale: "default",
