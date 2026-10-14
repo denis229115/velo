@@ -160,7 +160,7 @@ Tailwind CSS v4 — uses `@import "tailwindcss"`, `@theme {}` for custom propert
 
 **Focus and motion**: an unlayered `:focus-visible` rule in `theme.css` draws the focus ring on every interactive element (Tailwind's `outline-none` can't remove it). `.reduce-motion` on `<html>` (macOS Reduce motion or the in-app setting) disables animations and transitions.
 
-**Color themes**: 8 accent color presets (Indigo, Rose, Emerald, Amber, Sky, Violet, Orange, Slate) defined in `src/constants/themes.ts`. Each has light & dark variants. Applied via CSS custom properties, independent of light/dark mode.
+**Color themes**: 9 accent color presets (Blue is the default; Indigo, Rose, Emerald, Amber, Sky, Violet, Orange, Slate) defined in `src/constants/themes.ts`. Each has light & dark variants. Applied via CSS custom properties, independent of light/dark mode.
 
 **Background**: solid `surface-base`; no gradients or animated blobs.
 

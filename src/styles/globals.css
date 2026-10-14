@@ -41,12 +41,12 @@
   --color-sidebar-bg: var(--surface-sidebar);
   --color-sidebar-text: var(--text-primary);
   --color-sidebar-hover: var(--sidebar-hover);
-  --color-sidebar-active: #4f46e5;
+  --color-sidebar-active: #1d4ed8;
 
-  /* Accent (overridable per colour preset) */
-  --color-accent: #4f46e5;
-  --color-accent-hover: #4338ca;
-  --color-accent-light: #e0e7ff;
+  /* Accent: the default Blue preset (overridden inline by useAppearance) */
+  --color-accent: #1d4ed8;
+  --color-accent-hover: #1e40af;
+  --color-accent-light: #dbeafe;
 
   /* Solid fills used behind white text */
   --color-danger: #dc2626;
@@ -61,10 +61,10 @@
 
 /* Dark accent — applied when <html class="dark"> */
 .dark {
-  --color-accent: #818cf8;
-  --color-accent-hover: #6366f1;
-  --color-accent-light: #312e81;
-  --color-sidebar-active: #818cf8;
+  --color-accent: #5192f2;
+  --color-accent-hover: #3b82f6;
+  --color-accent-light: #1e3a5f;
+  --color-sidebar-active: #5192f2;
   --overlay-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
 }
 
