@@ -101,6 +101,7 @@ function DroppableNavItem({
       onClick={onClick}
       onContextMenu={onContextMenu}
       title={title}
+      aria-current={isActive ? "page" : undefined}
       className={`flex items-center w-full py-2 text-sm transition-colors press-scale ${
         collapsed ? "justify-center px-0" : "gap-3 px-3 text-left"
       } ${
