@@ -199,11 +199,28 @@ export const invalidStatusValue = {
   ],
 };
 
+export interface FixtureTicket {
+  id: number;
+  subject: string;
+  status: number;
+  priority: number;
+  requester_id: number;
+  responder_id: number | null;
+  group_id: number | null;
+  created_at: string;
+  updated_at: string;
+  [key: string]: unknown;
+}
+
 export interface FreshdeskFixtureTenant {
   me: unknown;
   agents: unknown[];
   groups: unknown[];
   ticketFields: unknown[];
+  /** GET /tickets payloads (requester embedded only on `include=requester`) */
+  tickets?: FixtureTicket[];
+  /** GET /contacts/:id payloads */
+  contacts?: { id: number; name: string; email: string | null }[];
 }
 
 export const alphaTenant: FreshdeskFixtureTenant = {

@@ -877,6 +877,42 @@ const MIGRATIONS = [
       ALTER TABLE scheduled_emails ADD COLUMN from_email TEXT;
     `,
   },
+  {
+    version: 28,
+    description: "Freshdesk ticket cache and sync state",
+    sql: `
+      CREATE TABLE IF NOT EXISTS freshdesk_tickets (
+        tenant_id TEXT NOT NULL,
+        ticket_id TEXT NOT NULL,
+        subject TEXT NOT NULL,
+        status_id TEXT NOT NULL,
+        priority_id TEXT,
+        requester_id TEXT,
+        customer_name TEXT,
+        customer_email TEXT,
+        responder_id TEXT,
+        group_id TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        fetched_on_demand INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (tenant_id, ticket_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_freshdesk_tickets_updated ON freshdesk_tickets(tenant_id, updated_at DESC);
+      CREATE TABLE IF NOT EXISTS freshdesk_sync_state (
+        tenant_id TEXT PRIMARY KEY,
+        state TEXT NOT NULL DEFAULT 'idle',
+        last_success_at INTEGER,
+        last_full_sync_at INTEGER,
+        last_attempt_at INTEGER,
+        retry_after_until INTEGER,
+        consecutive_failures INTEGER NOT NULL DEFAULT 0,
+        error_message TEXT,
+        outstanding_total INTEGER,
+        outstanding_downloaded INTEGER,
+        coverage_complete INTEGER NOT NULL DEFAULT 0
+      );
+    `,
+  },
 ];
 
 /**
