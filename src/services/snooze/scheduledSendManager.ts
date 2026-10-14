@@ -1,5 +1,6 @@
 import {
   getPendingScheduledEmails,
+  getScheduledEmail,
   getScheduledEmailsInStatus,
   claimScheduledEmail,
   recordScheduledEmailFailure,
@@ -14,6 +15,13 @@ import { createBackgroundChecker } from "../backgroundCheckers";
 import { notifyScheduledSendFailed } from "../notifications/notificationManager";
 import { getCurrentUnixTimestamp } from "@/utils/timestamp";
 import { useUIStore } from "@/stores/uiStore";
+
+/** Window event fired whenever scheduled emails are added or change status. */
+export const SCHEDULED_EMAILS_CHANGED_EVENT = "velo-scheduled-emails-changed";
+
+export function announceScheduledEmailsChanged(): void {
+  window.dispatchEvent(new Event(SCHEDULED_EMAILS_CHANGED_EVENT));
+}
 
 /** Total send attempts before a scheduled email is marked failed. */
 export const MAX_SEND_ATTEMPTS = 5;
@@ -59,6 +67,24 @@ async function failPermanently(email: DbScheduledEmail, reason: string): Promise
   notifyScheduledSendFailed(email.subject ?? "", reason);
 }
 
+/** Build the message from the stored row and hand it to the account's provider. */
+async function deliver(email: DbScheduledEmail, from: string): Promise<void> {
+  const provider = await getEmailProvider(email.account_id);
+  const raw = buildRawEmail({
+    from,
+    to: splitAddresses(email.to_addresses) ?? [],
+    cc: splitAddresses(email.cc_addresses),
+    bcc: splitAddresses(email.bcc_addresses),
+    subject: email.subject ?? "",
+    htmlBody: email.body_html,
+    inReplyTo: email.reply_to_message_id ?? undefined,
+    threadId: email.thread_id ?? undefined,
+    attachments: parseAttachments(email),
+    messageId: scheduledMessageId(email, from),
+  });
+  await provider.sendMessage(raw, email.thread_id ?? undefined);
+}
+
 async function sendScheduledEmail(email: DbScheduledEmail): Promise<void> {
   const account = await getAccount(email.account_id);
   if (!account) {
@@ -78,21 +104,7 @@ async function sendScheduledEmail(email: DbScheduledEmail): Promise<void> {
   const attemptsMade = email.attempts + 1;
 
   try {
-    const provider = await getEmailProvider(email.account_id);
-    const raw = buildRawEmail({
-      from,
-      to: splitAddresses(email.to_addresses) ?? [],
-      cc: splitAddresses(email.cc_addresses),
-      bcc: splitAddresses(email.bcc_addresses),
-      subject: email.subject ?? "",
-      htmlBody: email.body_html,
-      inReplyTo: email.reply_to_message_id ?? undefined,
-      threadId: email.thread_id ?? undefined,
-      attachments: parseAttachments(email),
-      messageId: scheduledMessageId(email, from),
-    });
-
-    await provider.sendMessage(raw, email.thread_id ?? undefined);
+    await deliver(email, from);
     await updateScheduledEmailStatus(email.id, "sent");
   } catch (err) {
     console.error(`Failed to send scheduled email ${email.id}:`, err);
@@ -116,6 +128,7 @@ export async function processDueScheduledEmails(): Promise<void> {
   for (const email of due) {
     await sendScheduledEmail(email);
   }
+  if (due.length > 0) announceScheduledEmailsChanged();
 }
 
 /**
@@ -135,6 +148,55 @@ export async function recoverInterruptedScheduledSends(): Promise<void> {
         "Velo closed while this email was sending, so it may not have gone out. Check your Sent folder before sending it again.",
       );
     }
+  }
+  if (interrupted.length > 0) announceScheduledEmailsChanged();
+}
+
+export type RetryOutcome =
+  | { status: "sent" }
+  | { status: "failed"; error: string }
+  /** Nothing was attempted; the email is left as it was */
+  | { status: "not-retried"; reason: string };
+
+/**
+ * The operator's manual retry of a failed scheduled email: one attempt, with
+ * the same Message-ID as before. If an earlier attempt is found to have gone
+ * out, it is marked sent instead. A failed retry stays failed; it is never
+ * retried automatically.
+ */
+export async function retryFailedScheduledEmail(id: string): Promise<RetryOutcome> {
+  if (!useUIStore.getState().isOnline) {
+    return { status: "not-retried", reason: "You're offline. Retry once you're back online." };
+  }
+  const email = await getScheduledEmail(id);
+  if (!email || email.status !== "failed") {
+    return { status: "not-retried", reason: "This email is no longer failed, so there is nothing to retry." };
+  }
+  const account = await getAccount(email.account_id);
+  if (!account) {
+    const error = "The email account no longer exists in Velo.";
+    await recordScheduledEmailFailure(id, error, null);
+    return { status: "failed", error };
+  }
+
+  const from = senderOf(email, account.email);
+  if (email.attempts > 0 && (await wentOut(email, from))) {
+    await updateScheduledEmailStatus(id, "sent");
+    return { status: "sent" };
+  }
+
+  if (!(await claimScheduledEmail(id, "failed"))) {
+    return { status: "not-retried", reason: "This email is already being retried." };
+  }
+  try {
+    await deliver(email, from);
+    await updateScheduledEmailStatus(id, "sent");
+    return { status: "sent" };
+  } catch (err) {
+    console.error(`Retry of scheduled email ${id} failed:`, err);
+    const error = err instanceof Error ? err.message : String(err);
+    await recordScheduledEmailFailure(id, error, null);
+    return { status: "failed", error };
   }
 }
 
