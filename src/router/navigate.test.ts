@@ -51,6 +51,11 @@ describe("navigate", () => {
       });
     });
 
+    it("should navigate to the scheduled emails screen", () => {
+      navigateToLabel("scheduled");
+      expect(mockNavigate).toHaveBeenCalledWith({ to: "/scheduled" });
+    });
+
     it("should navigate to settings", () => {
       navigateToLabel("settings");
       expect(mockNavigate).toHaveBeenCalledWith({
@@ -241,6 +246,11 @@ describe("navigate", () => {
   });
 
   describe("getActiveLabel", () => {
+    it("should report scheduled on the scheduled emails screen", () => {
+      mockState.matches = [{ routeId: "/scheduled", params: {} }];
+      expect(getActiveLabel()).toBe("scheduled");
+    });
+
     it("should return label from mail route", () => {
       mockState.matches = [
         { routeId: "/mail/$label", params: { label: "starred" } },

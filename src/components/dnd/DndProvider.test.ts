@@ -2,6 +2,10 @@ import { describe, it, expect } from "vitest";
 import { resolveLabelChange } from "./DndProvider";
 
 describe("resolveLabelChange", () => {
+  it("changes no labels when threads are dropped on the Scheduled screen", () => {
+    expect(resolveLabelChange("scheduled", "INBOX")).toBeNull();
+  });
+
   it("returns null when target equals source (sidebar IDs)", () => {
     expect(resolveLabelChange("inbox", "inbox")).toBeNull();
   });

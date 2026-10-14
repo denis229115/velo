@@ -68,7 +68,7 @@ Tauri v2 desktop app: Rust backend + React 19 frontend communicating via Tauri I
 
 ### Component organization
 
-14 groups, ~94 component files:
+15 groups, ~96 component files:
 - `layout/` — Sidebar, EmailList, ReadingPane, TitleBar
 - `email/` — ThreadView, ThreadCard, MessageItem, EmailRenderer, ActionBar, AttachmentList, SnoozeDialog, ContactSidebar, FollowUpDialog, InlineAttachmentPreview, InlineReply, SmartReplySuggestions, ThreadSummary, AuthBadge, AuthWarningBanner, PhishingBanner, LinkConfirmDialog, CategoryTabs, MoveToFolderDialog
 - `composer/` — Composer (TipTap v3 rich text editor), AddressInput, EditorToolbar, AttachmentPicker, ScheduleSendDialog, SignatureSelector, TemplatePicker, UndoSendToast, AiAssistPanel, FromSelector
@@ -77,6 +77,7 @@ Tauri v2 desktop app: Rust backend + React 19 frontend communicating via Tauri I
 - `accounts/` — AddAccount, AddImapAccount, AccountSwitcher, SetupClientId
 - `calendar/` — CalendarPage, CalendarReauthBanner, CalendarToolbar, DayView, WeekView, MonthView, EventCard, EventCreateModal
 - `attachments/` — AttachmentLibrary, AttachmentGridItem, AttachmentListItem
+- `scheduled/` — ScheduledEmailsPage (`/scheduled`), ScheduledList (generic scheduled-sends list, reusable for scheduled ticket replies)
 - `tasks/` — TasksPage, TaskItem, TaskQuickAdd, TaskSidebar, AiTaskExtractDialog
 - `help/` — HelpPage, HelpSidebar, HelpSearchBar, HelpCard, HelpCardGrid, HelpTooltip
 - `labels/` — LabelForm
@@ -105,7 +106,7 @@ Thread pop-out windows via `ThreadWindow.tsx`. Entry point in `main.tsx` checks 
 
 ### Cross-component communication
 
-Custom window events: `velo-sync-done`, `velo-toggle-command-palette`, `velo-toggle-shortcuts-help`, `velo-toggle-ask-inbox`, `velo-move-to-folder`. Tray emits `tray-check-mail` via Tauri event system. `single-instance-args` event for deep link forwarding.
+Custom window events: `velo-sync-done`, `velo-toggle-command-palette`, `velo-toggle-shortcuts-help`, `velo-toggle-ask-inbox`, `velo-move-to-folder`, `velo-scheduled-emails-changed`. Tray emits `tray-check-mail` via Tauri event system. `single-instance-args` event for deep link forwarding.
 
 ### Keyboard shortcuts
 
@@ -147,6 +148,7 @@ Custom window events: `velo-sync-done`, `velo-toggle-command-palette`, `velo-tog
 | `g` then `n` | Go to Newsletters |
 | `g` then `k` | Go to Tasks |
 | `g` then `a` | Go to Attachments |
+| `g` then `l` | Go to Scheduled emails |
 
 Multi-select: click to toggle, Shift+click for range. All keyboard actions work on multi-selected threads.
 
@@ -174,7 +176,7 @@ Vitest + jsdom. Setup file: `src/test/setup.ts` (imports `@testing-library/jest-
 
 SQLite via Tauri SQL plugin. 19 migrations (version-tracked in `_migrations` table, transactional). Custom `splitStatements()` handles BEGIN...END blocks in triggers.
 
-Key tables (37 total): `accounts` (with `provider` "gmail_api"|"imap", IMAP/SMTP host/port/security fields, `auth_method`, encrypted `imap_password`, optional `imap_username`), `messages` (with FTS5 index `messages_fts`, `auth_results`, `message_id_header`, `references_header`, `in_reply_to_header`, `imap_uid`, `imap_folder`), `threads` (with `is_pinned`, `is_muted`), `thread_labels`, `labels` (with `imap_folder_path`, `imap_special_use`), `contacts` (frequency-ranked for autocomplete, with `first_contacted_at`), `attachments` (with `cached_at`, `cache_size`, `imap_part_id`), `filter_rules` (criteria/actions as JSON), `scheduled_emails` (status: pending/sent/failed), `templates` (with optional keyboard shortcut), `signatures`, `image_allowlist`, `settings` (key-value store), `ai_cache`, `thread_categories`, `calendar_events`, `follow_up_reminders`, `notification_vips`, `unsubscribe_actions`, `bundle_rules`, `bundled_threads`, `send_as_aliases`, `smart_folders`, `link_scan_results`, `phishing_allowlist`, `quick_steps`, `folder_sync_state` (IMAP UIDVALIDITY/last_uid/modseq tracking per folder), `pending_operations` (offline action queue with retry/backoff), `local_drafts` (offline draft persistence), `writing_style_profiles` (AI writing style per account), `tasks` (full task management with priorities, subtasks, recurrence), `task_tags` (custom task tag colors), `smart_label_rules` (AI auto-labeling rules with optional criteria), `_migrations`.
+Key tables (37 total): `accounts` (with `provider` "gmail_api"|"imap", IMAP/SMTP host/port/security fields, `auth_method`, encrypted `imap_password`, optional `imap_username`), `messages` (with FTS5 index `messages_fts`, `auth_results`, `message_id_header`, `references_header`, `in_reply_to_header`, `imap_uid`, `imap_folder`), `threads` (with `is_pinned`, `is_muted`), `thread_labels`, `labels` (with `imap_folder_path`, `imap_special_use`), `contacts` (frequency-ranked for autocomplete, with `first_contacted_at`), `attachments` (with `cached_at`, `cache_size`, `imap_part_id`), `filter_rules` (criteria/actions as JSON), `scheduled_emails` (status: pending/sending/sent/failed, `from_email` send-as alias), `templates` (with optional keyboard shortcut), `signatures`, `image_allowlist`, `settings` (key-value store), `ai_cache`, `thread_categories`, `calendar_events`, `follow_up_reminders`, `notification_vips`, `unsubscribe_actions`, `bundle_rules`, `bundled_threads`, `send_as_aliases`, `smart_folders`, `link_scan_results`, `phishing_allowlist`, `quick_steps`, `folder_sync_state` (IMAP UIDVALIDITY/last_uid/modseq tracking per folder), `pending_operations` (offline action queue with retry/backoff), `local_drafts` (offline draft persistence), `writing_style_profiles` (AI writing style per account), `tasks` (full task management with priorities, subtasks, recurrence), `task_tags` (custom task tag colors), `smart_label_rules` (AI auto-labeling rules with optional criteria), `_migrations`.
 
 ## Key Gotchas
 
@@ -204,7 +206,7 @@ Key tables (37 total): `accounts` (with `provider` "gmail_api"|"imap", IMAP/SMTP
 - **Thread deletion**: Two-stage — first trash, then permanent delete from DB if already in trash
 - **Snooze**: Removes INBOX label and adds SNOOZED label (not just a flag)
 - **Draft auto-save**: 3-second debounce, not configurable
-- **Send later**: `scheduledSendManager.ts` sends through `getEmailProvider` (Gmail and IMAP/SMTP), only while Velo runs and is online. Attachments are stored in the same INSERT as the row. Up to 5 attempts with 1m/5m/15m/1h backoff, then `failed` with `last_error` and an OS notification. Each scheduled email has a fixed Message-ID (`<scheduled.{id}@domain>`); rows left in `sending` are reconciled on startup against the local synced copy and never resent automatically
+- **Send later**: `scheduledSendManager.ts` sends through `getEmailProvider` (Gmail and IMAP/SMTP), only while Velo runs and is online. Attachments are stored in the same INSERT as the row. Up to 5 attempts with 1m/5m/15m/1h backoff, then `failed` with `last_error` and an OS notification. Each scheduled email has a fixed Message-ID (`<scheduled.{id}@domain>`); rows left in `sending` are reconciled on startup against the local synced copy and never resent automatically. The Scheduled screen (`g` then `l`) lists them; cancel deletes only a still-`pending` row, retry (`retryFailedScheduledEmail`) makes one attempt on a `failed` row with the same Message-ID. The composer's From alias is stored in `from_email` and used as the From header. Status changes fire the `velo-scheduled-emails-changed` window event
 - **Composer shortcuts**: `app.send` / `app.sendLater` are dispatched by `useComposerShortcuts` (capture phase, reads the registry at keypress time) in Composer and InlineReply, not by `useKeyboardShortcuts`. Settings > Shortcuts warns on duplicate bindings (`findShortcutConflicts`, Cmd = Ctrl)
 - **Service tests on real SQLite**: `src/test/sqliteTestDb.ts` (Node's built-in `node:sqlite`) runs the real migrations in memory; mock `@tauri-apps/plugin-sql` so `getDb()` returns it
 - **Gmail History API**: Expires after ~30 days, triggers automatic full sync fallback
