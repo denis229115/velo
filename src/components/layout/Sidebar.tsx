@@ -363,9 +363,30 @@ export function Sidebar({ collapsed, onAddAccount }: SidebarProps) {
       </div>
 
       <nav className="flex-1 overflow-y-auto py-2">
+        {/* Freshdesk: tickets live apart from email */}
+        <div role="group" aria-label="Freshdesk" className="pb-2">
+          {!collapsed && (
+            <div className="px-3 pb-1">
+              <span className="text-xs font-medium text-sidebar-text/60 uppercase tracking-wider">Freshdesk</span>
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={() => navigateToLabel("freshdesk")}
+            title={collapsed ? "Freshdesk tickets" : undefined}
+            aria-current={activeLabel === "freshdesk" ? "page" : undefined}
+            className={`flex items-center w-full py-2 text-sm transition-colors press-scale ${
+              collapsed ? "justify-center px-0" : "gap-3 px-3 text-left"
+            } ${activeLabel === "freshdesk" ? "bg-accent/10 text-accent font-medium" : "hover:bg-sidebar-hover text-sidebar-text"}`}
+          >
+            <LifeBuoy size={18} className="shrink-0" />
+            {!collapsed && <span className="flex-1 truncate">Tickets</span>}
+          </button>
+        </div>
+
         <div role="group" aria-label="Email">
         {!collapsed && (
-          <div className="px-3 pb-1">
+          <div className="px-3 pt-2 pb-1">
             <span className="text-xs font-medium text-sidebar-text/60 uppercase tracking-wider">Email</span>
           </div>
         )}
@@ -610,26 +631,6 @@ export function Sidebar({ collapsed, onAddAccount }: SidebarProps) {
         )}
         </div>
 
-        {/* Freshdesk: tickets live apart from email */}
-        <div role="group" aria-label="Freshdesk" className={collapsed ? "pt-2" : ""}>
-          {!collapsed && (
-            <div className="px-3 pt-4 pb-1">
-              <span className="text-xs font-medium text-sidebar-text/60 uppercase tracking-wider">Freshdesk</span>
-            </div>
-          )}
-          <button
-            type="button"
-            onClick={() => navigateToLabel("freshdesk")}
-            title={collapsed ? "Freshdesk tickets" : undefined}
-            aria-current={activeLabel === "freshdesk" ? "page" : undefined}
-            className={`flex items-center w-full py-2 text-sm transition-colors press-scale ${
-              collapsed ? "justify-center px-0" : "gap-3 px-3 text-left"
-            } ${activeLabel === "freshdesk" ? "bg-accent/10 text-accent font-medium" : "hover:bg-sidebar-hover text-sidebar-text"}`}
-          >
-            <LifeBuoy size={18} className="shrink-0" />
-            {!collapsed && <span className="flex-1 truncate">Tickets</span>}
-          </button>
-        </div>
       </nav>
 
       {/* Bottom bar: Settings + collapse toggle */}
