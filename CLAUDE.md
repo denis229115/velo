@@ -73,7 +73,7 @@ Tauri v2 desktop app: Rust backend + React 19 frontend communicating via Tauri I
 - `layout/` — Sidebar, EmailList, ReadingPane, TitleBar
 - `email/` — ThreadView, ThreadCard, MessageItem, EmailRenderer, ActionBar, AttachmentList, SnoozeDialog, ContactSidebar, FollowUpDialog, InlineAttachmentPreview, InlineReply, SmartReplySuggestions, ThreadSummary, AuthBadge, AuthWarningBanner, PhishingBanner, LinkConfirmDialog, CategoryTabs, MoveToFolderDialog
 - `composer/` — Composer (TipTap v3 rich text editor), AddressInput, EditorToolbar, AttachmentPicker, ScheduleSendDialog, SignatureSelector, TemplatePicker, UndoSendToast, AiAssistPanel, FromSelector
-- `search/` — CommandPalette, SearchBar, ShortcutsHelp, AskInbox
+- `search/` — CommandPalette (search + commands), ListSearchActions, ShortcutsHelp, AskInbox
 - `settings/` — SettingsPage, FilterEditor, LabelEditor, SignatureEditor, TemplateEditor, ContactEditor, SubscriptionManager, QuickStepEditor, SmartFolderEditor
 - `accounts/` — AddAccount, AddImapAccount, AccountSwitcher, SetupClientId
 - `calendar/` — CalendarPage, CalendarReauthBanner, CalendarToolbar, DayView, WeekView, MonthView, EventCard, EventCreateModal

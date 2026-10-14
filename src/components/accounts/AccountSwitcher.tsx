@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { type ReactNode, useState, useRef, useCallback } from "react";
 import { useAccountStore, type Account } from "@/stores/accountStore";
 import { ChevronDown, Check, Plus, UserPlus, Calendar } from "lucide-react";
 import { useClickOutside } from "@/hooks/useClickOutside";
@@ -6,11 +6,14 @@ import { useClickOutside } from "@/hooks/useClickOutside";
 interface AccountSwitcherProps {
   collapsed: boolean;
   onAddAccount: () => void;
+  /** Icon buttons beside the account (below it when collapsed) */
+  actions?: ReactNode;
 }
 
 export function AccountSwitcher({
   collapsed,
   onAddAccount,
+  actions,
 }: AccountSwitcherProps) {
   const { accounts, activeAccountId, setActiveAccount } = useAccountStore();
   const [open, setOpen] = useState(false);
@@ -54,10 +57,11 @@ export function AccountSwitcher({
 
   return (
     <div className="relative p-2" ref={dropdownRef}>
+      <div className={`flex items-center gap-1 ${collapsed ? "flex-col" : ""}`}>
       {/* Trigger button */}
       <button
         onClick={() => setOpen((v) => !v)}
-        className={`flex items-center w-full rounded-lg p-1.5 hover:bg-sidebar-hover transition-colors ${
+        className={`flex items-center w-full min-w-0 rounded-lg p-1.5 hover:bg-sidebar-hover transition-colors ${
           collapsed ? "justify-center" : "gap-2.5"
         } ${open ? "bg-sidebar-hover" : ""}`}
       >
@@ -81,6 +85,8 @@ export function AccountSwitcher({
           </>
         )}
       </button>
+      {actions}
+      </div>
 
       {/* Dropdown */}
       {open && (
