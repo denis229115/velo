@@ -62,6 +62,7 @@ import {
   Paperclip,
   Tags,
   FolderInput,
+  LifeBuoy,
 } from "lucide-react";
 
 // ---------- Types ----------
@@ -98,7 +99,7 @@ export interface ContextualTip {
 
 const VALID_SETTINGS_TABS = [
   "general", "notifications", "composing", "mail-rules", "people",
-  "accounts", "shortcuts", "ai", "about",
+  "accounts", "shortcuts", "freshdesk", "ai", "about",
 ] as const;
 
 export type SettingsTabId = (typeof VALID_SETTINGS_TABS)[number];
@@ -1267,6 +1268,20 @@ export const HELP_CATEGORIES: HelpCategory[] = [
           { text: "Failed operations can be retried or cleared from Settings." },
         ],
         relatedSettingsTab: "accounts",
+      },
+      {
+        id: "freshdesk-connection",
+        icon: LifeBuoy,
+        title: "Connect your helpdesk",
+        summary: "Connect one Freshdesk helpdesk and classify its statuses.",
+        description:
+          "In Settings > Freshdesk, enter your helpdesk address and the API key from your Freshdesk profile settings. The key is stored encrypted on this Mac. Velo reads your helpdesk's exact statuses, priorities, agents, groups and ticket fields, and recognises you from the agent Freshdesk signs you in as. Classify each status as Open (we are expected to act), Waiting (the ball is in someone else's court) or Done (no further work expected). Classes are kept by status ID, so a status renamed in Freshdesk keeps its class. Until you connect, Velo shows sample statuses and tickets, each marked Sample. Connecting a different helpdesk clears everything from the previous one.",
+        tips: [
+          { text: "Metadata is read again on connect, every few hours, and when Freshdesk rejects a value." },
+          { text: "Use Refresh metadata after renaming or adding statuses in Freshdesk." },
+          { text: "Disconnect forgets the API key and returns to sample data." },
+        ],
+        relatedSettingsTab: "freshdesk",
       },
     ],
   },
