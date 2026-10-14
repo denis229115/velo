@@ -123,7 +123,7 @@ async function connectAndSync(tenant: FreshdeskFixtureTenant = alphaTenantWithHi
 
 const reader = () => within(screen.getByRole("region", { name: "Ticket reader" }));
 const header = () => within(reader().getByRole("group", { name: "Ticket header" }));
-const attention = () => reader().queryByRole("status", { name: "Attention" });
+const attention = () => reader().queryByRole("note", { name: "Attention" });
 const text = (el: HTMLElement | null) => el?.textContent?.replace(/\s+/g, " ").trim();
 const metric = (label: string) => text(reader().getByRole("definition", { name: label }));
 const opened1001 = async () => {

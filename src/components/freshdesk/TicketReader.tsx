@@ -13,6 +13,7 @@ import { EntryKindBadge } from "./TicketActivity";
 import { TicketEditError, useTicketEditor } from "./useTicketEditor";
 import { useTicketEditControls } from "./TicketEditControls";
 import { TicketHeader } from "./TicketHeader";
+import { FreshdeskWriteReason } from "./useFreshdeskWritable";
 
 function formatSize(bytes: number | null): string | null {
   if (bytes === null) return null;
@@ -160,11 +161,7 @@ export function TicketReader({ ticket, ticketId }: { ticket: TicketListItem | nu
             notice={
               (edit.blocked || editError) && (
                 <div className="space-y-1.5">
-                  {edit.blocked && (
-                    <p role="status" className="text-meta text-text-tertiary">
-                      {edit.blocked}
-                    </p>
-                  )}
+                  <FreshdeskWriteReason writable={edit.writable} />
                   {editError && <TicketEditError text={editError.text} onDismiss={editor.clearError} />}
                 </div>
               )

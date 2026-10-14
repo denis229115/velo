@@ -6,6 +6,8 @@ interface AppFrameProps {
   sidebarCollapsed: boolean;
   /** Status bar shown at the bottom of the content panel */
   footer?: ReactNode;
+  /** Shown above the routed content, in the layout's flow so it pushes the page down instead of covering it */
+  banner?: ReactNode;
   children: ReactNode;
   isMac?: boolean;
 }
@@ -16,7 +18,7 @@ interface AppFrameProps {
  * macOS draws its own traffic lights over a drag area above the sidebar; other
  * platforms keep the title bar row with window controls.
  */
-export function AppFrame({ sidebar, sidebarCollapsed, footer, children, isMac = IS_MAC }: AppFrameProps) {
+export function AppFrame({ sidebar, sidebarCollapsed, footer, banner, children, isMac = IS_MAC }: AppFrameProps) {
   const panelTop = !isMac ? "none" : sidebarCollapsed ? "titlebar" : "gap";
   return (
     <div className="app-frame glass-sidebar flex flex-col flex-1 min-h-0 h-full">
@@ -34,6 +36,7 @@ export function AppFrame({ sidebar, sidebarCollapsed, footer, children, isMac = 
             />
           )}
           <main data-top={panelTop} className="app-panel flex flex-col flex-1 min-w-0 min-h-0">
+            {banner}
             <div className="flex flex-1 min-w-0 min-h-0">{children}</div>
             {footer}
           </main>

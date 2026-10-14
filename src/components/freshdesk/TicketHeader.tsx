@@ -187,7 +187,7 @@ function AttentionLine({ ticket }: { ticket: TicketListItem }) {
   const icon = "shrink-0 mt-px";
   if (a.needsReply === true) {
     return (
-      <div role="status" aria-label="Attention" className={`${base} border-status-warning/40 bg-status-warning/10 text-status-warning`}>
+      <div role="note" aria-label="Attention" className={`${base} border-status-warning/40 bg-status-warning/10 text-status-warning`}>
         <CircleAlert size={14} aria-hidden className={icon} />
         {/* A narrow reader wraps between the parts, never inside one */}
         <p className="min-w-0">
@@ -213,7 +213,7 @@ function AttentionLine({ ticket }: { ticket: TicketListItem }) {
   const quiet = `${base} border-border-primary bg-surface-subtle text-text-secondary`;
   if (a.needsReply === null) {
     return (
-      <div role="status" aria-label="Attention" className={quiet}>
+      <div role="note" aria-label="Attention" className={quiet}>
         <p className="min-w-0">
           Needs reply: <NeedsReplyValue value={null} history={a.history} />
         </p>
@@ -221,7 +221,7 @@ function AttentionLine({ ticket }: { ticket: TicketListItem }) {
     );
   }
   return (
-    <div role="status" aria-label="Attention" className={quiet}>
+    <div role="note" aria-label="Attention" className={quiet}>
       <CircleCheck size={14} aria-hidden className={`${icon} text-status-success`} />
       <p className="min-w-0">
         {a.lastAnswered.state === "known" ? (

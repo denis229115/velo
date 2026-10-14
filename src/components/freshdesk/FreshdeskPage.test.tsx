@@ -135,8 +135,11 @@ describe("Freshdesk ticket list", () => {
     expect(row.getByText("Fixture: With engineering")).toBeInTheDocument();
     expect(row.getByText("Medium")).toBeInTheDocument();
     expect(row.getByText("Fixture Colleague")).toBeInTheDocument();
-    // The row's own time (last updated) comes after the activity times
-    expect(Array.from(screen.getByRole("button", { name: /^Ticket #1002/ }).querySelectorAll("time")).pop()).toHaveAttribute("dateTime", new Date(FIXTURE_NOW - 3 * 86_400_000).toISOString());
+    // The row's own time (last updated) sits on the first line, apart from the activity times
+    expect(row.getByText("Fixture Customer Bo").closest("[data-line]")?.querySelector("time")).toHaveAttribute(
+      "dateTime",
+      new Date(FIXTURE_NOW - 3 * 86_400_000).toISOString(),
+    );
 
     // The unknown status is labelled, not hidden; an unassigned ticket says so
     expect(within(screen.getByRole("button", { name: /^Ticket #1003/ })).getByText("Unknown status")).toBeInTheDocument();
@@ -327,6 +330,21 @@ describe("Freshdesk ticket views", () => {
     // Assignee first, then the answer metrics, on the line that was squeezing it out
     expect(assignee.closest("[data-line]")).toBe(row.getByText("Answered").closest("[data-line]"));
     expect(assignee.compareDocumentPosition(row.getByText("Answered"))).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+
+  it("gives the assignee, last answer and last customer message a line of their own, so the customer text is not clipped by the subject", async () => {
+    await connectAndSync();
+    renderFreshdesk();
+    await screen.findByText("Fixture: export stuck");
+    const row = within(screen.getByRole("button", { name: /^Ticket #1002/ }));
+
+    const details = row.getByText("Fixture Colleague").closest("[data-line]");
+    expect(details).not.toBe(row.getByText("Fixture: export stuck").closest("[data-line]"));
+    // Whole items, most important first; the customer fact is the first to go when the list is narrow
+    expect(details).toHaveClass("flex-wrap", "overflow-hidden");
+    expect(details).toContainElement(row.getByText("Answered"));
+    expect(details).toContainElement(row.getByText("Customer"));
+    expect(row.getByText("Answered").compareDocumentPosition(row.getByText("Customer"))).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   });
 
   it("closes the Columns menu on Escape and returns focus to its button", async () => {

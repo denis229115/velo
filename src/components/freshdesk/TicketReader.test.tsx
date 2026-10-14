@@ -87,7 +87,7 @@ async function connectAndSync() {
 const reader = () => within(screen.getByRole("region", { name: "Ticket reader" }));
 const entries = () => within(reader().getByRole("list", { name: "Conversation history" })).getAllByRole("article");
 const metric = (label: string) => reader().getByRole("definition", { name: label }).textContent?.replace(/\s+/g, " ").trim();
-const needsReply = () => reader().getByRole("status", { name: "Attention" }).textContent?.replace(/\s+/g, " ").trim();
+const needsReply = () => reader().getByRole("note", { name: "Attention" }).textContent?.replace(/\s+/g, " ").trim();
 
 beforeEach(async () => {
   vi.useFakeTimers({ toFake: ["Date"] });

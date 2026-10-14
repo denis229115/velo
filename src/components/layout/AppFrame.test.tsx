@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { render, screen } from "@testing-library/react";
 import { AppFrame } from "./AppFrame";
 import { declaredStyle, injectThemeCss, parseColor, readToken } from "@/test/themeTestUtils";
@@ -12,13 +13,14 @@ vi.mock("@tauri-apps/api/window", () => ({
   }),
 }));
 
-function renderFrame(isMac: boolean, sidebarCollapsed = false) {
+function renderFrame(isMac: boolean, sidebarCollapsed = false, banner?: ReactNode) {
   return render(
     <AppFrame
       isMac={isMac}
       sidebarCollapsed={sidebarCollapsed}
       sidebar={<aside aria-label="Sidebar">nav</aside>}
       footer={<footer>status</footer>}
+      banner={banner}
     >
       <div>mail list</div>
     </AppFrame>,
@@ -27,6 +29,15 @@ function renderFrame(isMac: boolean, sidebarCollapsed = false) {
 
 describe("AppFrame", () => {
   beforeAll(() => injectThemeCss());
+
+  it.each([true, false])("holds a banner in the panel's flow above the content, so it covers nothing (mac: %s)", (isMac) => {
+    renderFrame(isMac, false, <div role="status">You're offline</div>);
+    const banner = screen.getByRole("status");
+    const content = screen.getByText("mail list");
+    expect(banner.closest("main")).not.toBeNull();
+    expect(banner.compareDocumentPosition(content)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(banner.closest(".fixed, .absolute")).toBeNull();
+  });
 
   describe.each(["light", "dark"] as const)("in the %s theme", (theme) => {
     beforeEach(() => {
