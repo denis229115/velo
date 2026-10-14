@@ -60,6 +60,7 @@ import {
   stopFreshdeskMetadataRefresher,
 } from "./services/freshdesk/connection";
 import { startTicketSync, stopTicketSync } from "./services/freshdesk/ticketSync";
+import { startLinkedTaskRefresh, stopLinkedTaskRefresh } from "./services/clickup/links";
 import {
   startUpdateChecker,
   stopUpdateChecker,
@@ -358,6 +359,7 @@ export default function App() {
         startPreCacheManager();
         startFreshdeskMetadataRefresher();
         startTicketSync();
+        startLinkedTaskRefresh();
 
         // Initialize notifications
         await initNotifications();
@@ -398,6 +400,7 @@ export default function App() {
       stopQueueProcessor();
       stopPreCacheManager();
       stopFreshdeskMetadataRefresher();
+      stopLinkedTaskRefresh();
       stopTicketSync();
       stopUpdateChecker();
       unregisterComposeShortcut();

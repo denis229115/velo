@@ -20,6 +20,7 @@ export function FreshdeskPage() {
   const views = useTicketStore((s) => s.views);
   const selectedViewId = useTicketStore((s) => s.selectedViewId);
   const draftFilter = useTicketStore((s) => s.draftFilter);
+  const loadLinkedWork = useTicketStore((s) => s.loadLinkedWork);
   const focusHistory = useTicketStore((s) => s.focusHistory);
   // Histories load for the opened ticket first, then the top of the list; keyed by IDs so reloads don't re-trigger
   const visibleKey = useMemo(
@@ -34,9 +35,14 @@ export function FreshdeskPage() {
   useEffect(() => {
     void load();
     const reload = () => void load();
+    const reloadLinks = () => void loadLinkedWork();
     window.addEventListener("velo-tickets-synced", reload);
-    return () => window.removeEventListener("velo-tickets-synced", reload);
-  }, [load]);
+    window.addEventListener("velo-task-links-changed", reloadLinks);
+    return () => {
+      window.removeEventListener("velo-tickets-synced", reload);
+      window.removeEventListener("velo-task-links-changed", reloadLinks);
+    };
+  }, [load, loadLinkedWork]);
 
   const live = data !== null && !data.isSample;
   useEffect(() => {

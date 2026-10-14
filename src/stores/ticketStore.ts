@@ -20,6 +20,7 @@ import {
   type TicketViewChanges,
   type TicketViewFilter,
 } from "@/services/freshdesk/ticketViews";
+import { getLinkedTicketSummary, type LinkedWorkSummary } from "@/services/clickup/links";
 
 interface TicketState {
   data: TicketListData | null;
@@ -30,7 +31,14 @@ interface TicketState {
   selectedViewId: string;
   /** Filters being edited on the selected view, not saved yet */
   draftFilter: TicketViewFilter | null;
+  /** Linked ClickUp tasks per ticket ID */
+  linkedWork: Map<string, LinkedWorkSummary>;
+  /** Show only tickets with linked ClickUp work, within the current view */
+  linkedOnly: boolean;
   refreshing: boolean;
+  setLinkedOnly: (linkedOnly: boolean) => void;
+  /** Re-reads linked-task badges after links or task states change */
+  loadLinkedWork: () => Promise<void>;
   load: () => Promise<void>;
   loadViews: () => Promise<void>;
   selectView: (viewId: string) => Promise<void>;
@@ -54,10 +62,12 @@ export const useTicketStore = create<TicketState>((set, get) => ({
   views: presetViews(false),
   selectedViewId: DEFAULT_VIEW_ID,
   draftFilter: null,
+  linkedWork: new Map(),
+  linkedOnly: false,
   refreshing: false,
   load: async () => {
-    const data = await getTicketList();
-    set((s) => ({ data, version: s.version + 1 }));
+    const [data, linkedWork] = await Promise.all([getTicketList(), getLinkedTicketSummary()]);
+    set((s) => ({ data, linkedWork, version: s.version + 1 }));
   },
   loadViews: async () => {
     const { views, selectedViewId } = await getTicketViews();
@@ -91,6 +101,8 @@ export const useTicketStore = create<TicketState>((set, get) => ({
     await get().loadViews();
   },
   setDraftFilter: (draftFilter) => set({ draftFilter }),
+  setLinkedOnly: (linkedOnly) => set({ linkedOnly }),
+  loadLinkedWork: async () => set({ linkedWork: await getLinkedTicketSummary() }),
   refresh: async () => {
     set({ refreshing: true });
     try {
@@ -113,10 +125,13 @@ export const useTicketStore = create<TicketState>((set, get) => ({
 
 /** The tickets the list shows, in order; keyboard navigation walks the same list. */
 export function selectVisibleTickets(
-  state: Pick<TicketState, "data" | "views" | "selectedViewId" | "draftFilter">,
+  state: Pick<TicketState, "data" | "views" | "selectedViewId" | "draftFilter"> &
+    Partial<Pick<TicketState, "linkedOnly" | "linkedWork">>,
 ): TicketListItem[] {
   const view = selectCurrentView(state);
-  return applyTicketView({ filter: state.draftFilter ?? view.filter, sort: view.sort }, state.data);
+  const tickets = applyTicketView({ filter: state.draftFilter ?? view.filter, sort: view.sort }, state.data);
+  const linkedWork = state.linkedWork;
+  return state.linkedOnly && linkedWork ? tickets.filter((t) => linkedWork.has(t.id)) : tickets;
 }
 
 /** The selected view; falls back to All outstanding when it no longer exists. */

@@ -7,6 +7,7 @@ import { getSetting, setSetting, getSecureSetting, setSecureSetting } from "@/se
 import { TimeZoneSettings } from "./TimeZoneSettings";
 import { AiProviderSettings } from "./AiProviderSettings";
 import { FreshdeskSettings } from "./FreshdeskSettings";
+import { ClickUpSettings } from "./ClickUpSettings";
 import { deleteAccount } from "@/services/db/accounts";
 import { removeClient, reauthorizeAccount } from "@/services/gmail/tokenManager";
 import { triggerSync, forceFullSync, resyncAccount } from "@/services/gmail/syncManager";
@@ -27,6 +28,7 @@ import {
   Keyboard,
   Sparkles,
   LifeBuoy,
+  ListChecks,
   Check,
   Mail,
   Info,
@@ -67,7 +69,7 @@ import { Button } from "@/components/ui/Button";
 import { TextField } from "@/components/ui/TextField";
 import appIcon from "@/assets/icon.png";
 
-type SettingsTab = "general" | "notifications" | "composing" | "mail-rules" | "people" | "accounts" | "shortcuts" | "freshdesk" | "ai" | "about";
+type SettingsTab = "general" | "notifications" | "composing" | "mail-rules" | "people" | "accounts" | "shortcuts" | "freshdesk" | "clickup" | "ai" | "about";
 
 const tabs: { id: SettingsTab; label: string; icon: LucideIcon }[] = [
   { id: "general", label: "General", icon: Settings },
@@ -78,6 +80,7 @@ const tabs: { id: SettingsTab; label: string; icon: LucideIcon }[] = [
   { id: "accounts", label: "Accounts", icon: UserCircle },
   { id: "shortcuts", label: "Shortcuts", icon: Keyboard },
   { id: "freshdesk", label: "Freshdesk", icon: LifeBuoy },
+  { id: "clickup", label: "ClickUp", icon: ListChecks },
   { id: "ai", label: "AI", icon: Sparkles },
   { id: "about", label: "About", icon: Info },
 ];
@@ -1010,6 +1013,7 @@ export function SettingsPage() {
               )}
 
               {activeTab === "freshdesk" && <FreshdeskSettings />}
+              {activeTab === "clickup" && <ClickUpSettings />}
 
               {activeTab === "ai" && (
                 <>
