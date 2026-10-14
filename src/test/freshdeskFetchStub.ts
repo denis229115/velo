@@ -1,5 +1,9 @@
 import { createMockFetchResponse } from "@/test/mocks";
-import type { FixtureTicket, FreshdeskFixtureTenant } from "@/services/freshdesk/__fixtures__/freshdeskFixtures";
+import type {
+  FixtureConversation,
+  FixtureTicket,
+  FreshdeskFixtureTenant,
+} from "@/services/freshdesk/__fixtures__/freshdeskFixtures";
 
 export interface RecordedRequest {
   url: string;
@@ -36,6 +40,45 @@ export function createFreshdeskFetchStub(
   const written = new Map<string, Partial<FixtureTicket>>();
   const ticketsOf = (host: string): FixtureTicket[] =>
     (helpdesks[host]?.tenant.tickets ?? []).map((t) => ({ ...t, ...written.get(`${host}/${t.id}`) }));
+  // Replies and notes posted through the stub, after the fixture's own conversations
+  const posted = new Map<string, FixtureConversation[]>();
+  let nextConversationId = 8_000_000_001;
+  const conversationsOf = (host: string, ticketId: number): FixtureConversation[] => [
+    ...(helpdesks[host]?.tenant.conversations?.[ticketId] ?? []),
+    ...(posted.get(`${host}/${ticketId}`) ?? []),
+  ];
+  const nowIso = () => new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+
+  function applyPost(host: string, ticketId: number, kind: string, body: Record<string, unknown>): FixtureConversation | null {
+    const found = ticketsOf(host).find((t) => t.id === ticketId);
+    if (!found) return null;
+    const html = typeof body.body === "string" ? body.body : "";
+    const me = helpdesks[host]?.tenant.me as { id: number } | undefined;
+    const at = nowIso();
+    const conversation: FixtureConversation = {
+      id: nextConversationId++,
+      body: html,
+      body_text: html.replace(/<[^>]+>/g, ""),
+      incoming: false,
+      private: kind === "notes" ? body.private !== false : false,
+      user_id: me?.id ?? 0,
+      source: kind === "notes" ? 2 : 0,
+      ticket_id: ticketId,
+      support_email: null,
+      from_email: null,
+      to_emails: [],
+      cc_emails: Array.isArray(body.cc_emails) ? (body.cc_emails as string[]) : [],
+      bcc_emails: [],
+      attachments: [],
+      automation_id: null,
+      automation_type_id: null,
+      created_at: at,
+      updated_at: at,
+    };
+    posted.set(`${host}/${ticketId}`, [...(posted.get(`${host}/${ticketId}`) ?? []), conversation]);
+    written.set(`${host}/${ticketId}`, { ...written.get(`${host}/${ticketId}`), updated_at: at });
+    return conversation;
+  }
 
   function applyWrite(host: string, ticketId: number, body: Record<string, unknown>): FixtureTicket | null {
     const found = ticketsOf(host).find((t) => t.id === ticketId);
@@ -79,6 +122,8 @@ export function createFreshdeskFetchStub(
       const [canned] = pending.splice(cannedIndex, 1);
       const writeMatch = url.pathname.match(/^\/api\/v2\/tickets\/(\d+)$/);
       if (canned!.apply && writeMatch && body) applyWrite(url.host, Number(writeMatch[1]), body);
+      const postMatch = url.pathname.match(/^\/api\/v2\/tickets\/(\d+)\/(reply|notes)$/);
+      if (canned!.apply && postMatch && body) applyPost(url.host, Number(postMatch[1]), postMatch[2]!, body);
       if (canned!.networkError) throw new TypeError("fixture: connection dropped");
       return json(canned!.status ?? 200, canned!.body, canned!.headers);
     }
@@ -105,11 +150,16 @@ export function createFreshdeskFetchStub(
       const found = tickets.find((t) => t.id === Number(ticketMatch[1]));
       return found ? json(200, withRequester(found)) : json(404, { code: "not_found" });
     }
+    const postMatch = url.pathname.match(/^\/api\/v2\/tickets\/(\d+)\/(reply|notes)$/);
+    if (postMatch && method === "POST") {
+      const created = applyPost(url.host, Number(postMatch[1]), postMatch[2]!, body ?? {});
+      return created ? json(201, created) : json(404, { code: "not_found" });
+    }
     const conversationsMatch = url.pathname.match(/^\/api\/v2\/tickets\/(\d+)\/conversations$/);
     if (conversationsMatch) {
       const id = Number(conversationsMatch[1]);
       if (!tickets.some((t) => t.id === id)) return json(404, { code: "not_found" });
-      return json(200, page(tenant.conversations?.[id] ?? [], url));
+      return json(200, page(conversationsOf(url.host, id), url));
     }
     const contactMatch = url.pathname.match(/^\/api\/v2\/contacts\/(\d+)$/);
     if (contactMatch) {
@@ -158,6 +208,35 @@ export function createFreshdeskFetchStub(
   return {
     fetch,
     requests,
+    /** A colleague or the customer writes on a ticket meanwhile (bumps its updated_at) */
+    addConversation(host: string, ticketId: number, conversation: Partial<FixtureConversation> & { user_id: number; body: string }) {
+      const at = nowIso();
+      const added: FixtureConversation = {
+        id: nextConversationId++,
+        body_text: conversation.body.replace(/<[^>]+>/g, ""),
+        incoming: false,
+        private: false,
+        source: 0,
+        ticket_id: ticketId,
+        support_email: null,
+        from_email: null,
+        to_emails: [],
+        cc_emails: [],
+        bcc_emails: [],
+        attachments: [],
+        automation_id: null,
+        automation_type_id: null,
+        created_at: at,
+        updated_at: at,
+        ...conversation,
+      };
+      posted.set(`${host}/${ticketId}`, [...(posted.get(`${host}/${ticketId}`) ?? []), added]);
+      written.set(`${host}/${ticketId}`, { ...written.get(`${host}/${ticketId}`), updated_at: at });
+    },
+    /** Change a ticket in the helpdesk behind Velo's back (e.g. a colleague reassigns it) */
+    editTicket(host: string, ticketId: number, changes: Partial<FixtureTicket>) {
+      written.set(`${host}/${ticketId}`, { ...written.get(`${host}/${ticketId}`), ...changes, updated_at: nowIso() });
+    },
     /** Answer the next request to `host + path` (or to one page or method of it) with this response instead. */
     respondOnce(host: string, path: string, response: CannedResponse) {
       const key = `${host}${path}`;

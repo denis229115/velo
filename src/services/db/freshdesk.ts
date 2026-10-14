@@ -26,6 +26,7 @@ interface IntegrationAccountRow {
   me_agent_id: string | null;
   me_name: string | null;
   me_email: string | null;
+  me_signature: string | null;
   connected_at: number;
   metadata_refreshed_at: number | null;
 }
@@ -44,6 +45,7 @@ const FRESHDESK_TENANT_TABLES = [
   "freshdesk_ticket_views",
   "freshdesk_view_selection",
   "freshdesk_operation_journal",
+  "freshdesk_ticket_drafts",
 ] as const;
 
 export async function getIntegrationAccount(kind: IntegrationKind): Promise<IntegrationAccount | null> {
@@ -58,7 +60,9 @@ export async function getIntegrationAccount(kind: IntegrationKind): Promise<Inte
     kind: row.kind,
     tenantId: row.tenant_id,
     tenantHost: row.tenant_host,
-    me: row.me_agent_id ? { agentId: row.me_agent_id, name: row.me_name ?? "", email: row.me_email } : null,
+    me: row.me_agent_id
+      ? { agentId: row.me_agent_id, name: row.me_name ?? "", email: row.me_email, signature: row.me_signature }
+      : null,
     connectedAt: row.connected_at,
     metadataRefreshedAt: row.metadata_refreshed_at,
   };
@@ -72,19 +76,27 @@ export async function saveIntegrationAccount(account: {
 }): Promise<void> {
   const db = await getDb();
   await db.execute(
-    `INSERT INTO integration_accounts (kind, tenant_id, tenant_host, me_agent_id, me_name, me_email, connected_at)
-     VALUES ($1, $2, $3, $4, $5, $6, unixepoch())
+    `INSERT INTO integration_accounts (kind, tenant_id, tenant_host, me_agent_id, me_name, me_email, me_signature, connected_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, unixepoch())
      ON CONFLICT(kind) DO UPDATE SET tenant_id = $2, tenant_host = $3, me_agent_id = $4, me_name = $5,
-       me_email = $6, connected_at = unixepoch(), metadata_refreshed_at = NULL`,
-    [account.kind, account.tenantId, account.tenantHost, account.me.agentId, account.me.name, account.me.email],
+       me_email = $6, me_signature = $7, connected_at = unixepoch(), metadata_refreshed_at = NULL`,
+    [
+      account.kind,
+      account.tenantId,
+      account.tenantHost,
+      account.me.agentId,
+      account.me.name,
+      account.me.email,
+      account.me.signature ?? null,
+    ],
   );
 }
 
 export async function updateIntegrationIdentity(kind: IntegrationKind, me: HelpdeskAgent): Promise<void> {
   const db = await getDb();
   await db.execute(
-    "UPDATE integration_accounts SET me_agent_id = $2, me_name = $3, me_email = $4 WHERE kind = $1",
-    [kind, me.agentId, me.name, me.email],
+    "UPDATE integration_accounts SET me_agent_id = $2, me_name = $3, me_email = $4, me_signature = $5 WHERE kind = $1",
+    [kind, me.agentId, me.name, me.email, me.signature ?? null],
   );
 }
 

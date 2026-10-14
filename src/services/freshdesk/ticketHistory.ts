@@ -71,7 +71,7 @@ async function readHistory(
   credentials: HelpdeskCredentials,
   ticketId: string,
   humanAgentIds: ReadonlySet<string>,
-): Promise<void> {
+): Promise<FreshTicket> {
   const raw = await freshdeskGet<Record<string, unknown>>(credentials, `/tickets/${encodeURIComponent(ticketId)}`);
   const ticket = decodeTicket(raw);
   await upsertTickets(tenantId, [ticket]);
@@ -116,11 +116,34 @@ async function readHistory(
     }
     if (batch.length < CONVERSATION_PAGE_SIZE) {
       await save(true, ticket.updatedAt);
-      return;
+      return { ticket, conversations };
     }
   }
   // Longer than one run may read: incomplete until the ticket changes
   await save(false, ticket.updatedAt);
+  return { ticket, conversations };
+}
+
+/** A ticket and its conversations as Freshdesk has them right now */
+export interface FreshTicket {
+  ticket: CachedTicket;
+  conversations: DecodedConversation[];
+}
+
+/**
+ * Reads one ticket and its conversations from Freshdesk now (outside the
+ * hydration runs) and stores them, so Last answered and the reader follow.
+ * Throws the FreshdeskError when the read fails.
+ */
+export async function refreshTicketHistory(
+  tenantId: string,
+  credentials: HelpdeskCredentials,
+  ticketId: string,
+): Promise<FreshTicket> {
+  const agents = await withReadSnapshot(() => getAgents(tenantId));
+  const fresh = await readHistory(tenantId, credentials, ticketId, new Set(agents.map((a) => a.agentId)));
+  failedAt.delete(ticketId);
+  return fresh;
 }
 
 async function runHydration(): Promise<string[]> {

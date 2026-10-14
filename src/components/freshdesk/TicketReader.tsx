@@ -14,6 +14,8 @@ import { TicketEditError, useTicketEditor } from "./useTicketEditor";
 import { useTicketEditControls } from "./TicketEditControls";
 import { TicketHeader } from "./TicketHeader";
 import { FreshdeskWriteReason } from "./useFreshdeskWritable";
+import { TicketComposer } from "./TicketComposer";
+import type { ComposerMode } from "@/services/freshdesk/ticketSend";
 
 function formatSize(bytes: number | null): string | null {
   if (bytes === null) return null;
@@ -137,13 +139,16 @@ function useTicketHistory(ticketId: string | null): TicketHistoryView | null {
   return view && view.ticketId === ticketId ? view : null;
 }
 
-/** The ticket open on the right of the list. Status, priority and assignee are edited in its header; the rest is read-only. */
+/** The ticket open on the right of the list. Status, priority and assignee are edited in its header; Reply and Internal note open the composer under it. */
 export function TicketReader({ ticket, ticketId }: { ticket: TicketListItem | null; ticketId: string | null }) {
   const view = useTicketHistory(ticket ? ticketId : null);
   const a = ticket?.activity;
   const editor = useTicketEditor();
   const edit = useTicketEditControls(ticket, editor);
   const editError = editor.error && editor.error.ticketId === ticket?.id ? editor.error : null;
+  const [composing, setComposing] = useState<{ ticketId: string; mode: ComposerMode } | null>(null);
+  const composerMode = composing && composing.ticketId === ticket?.id ? composing.mode : null;
+  const compose = (mode: ComposerMode) => ticket && setComposing({ ticketId: ticket.id, mode });
   return (
     <section aria-label="Ticket reader" className="flex-1 min-w-0 flex flex-col bg-surface-reader">
       {!ticket || !a ? (
@@ -158,6 +163,8 @@ export function TicketReader({ ticket, ticketId }: { ticket: TicketListItem | nu
             ticket={ticket}
             channel={view?.channel ?? null}
             edit={edit}
+            onReply={() => compose("reply")}
+            onInternalNote={() => compose("note")}
             notice={
               (edit.blocked || editError) && (
                 <div className="space-y-1.5">
@@ -168,6 +175,9 @@ export function TicketReader({ ticket, ticketId }: { ticket: TicketListItem | nu
             }
           />
           {editor.element}
+          {composerMode && (
+            <TicketComposer ticket={ticket} mode={composerMode} onModeChange={compose} onClose={() => setComposing(null)} />
+          )}
           <HistoryNotice view={view} />
           {view && view.entries.length > 0 && <History key={view.ticketId} entries={view.entries} />}
         </div>
