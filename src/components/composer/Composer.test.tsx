@@ -19,6 +19,7 @@ import { useComposerStore } from "@/stores/composerStore";
 import { useAccountStore } from "@/stores/accountStore";
 import { useShortcutStore } from "@/stores/shortcutStore";
 import { getDefaultKeyMap } from "@/constants/shortcuts";
+import { pretendPlatform, restoreUserAgent } from "@/test/platform";
 
 const PICKER_NOTE = /sends when Velo is next open/i;
 
@@ -82,6 +83,27 @@ describe("Composer send-later shortcut", () => {
 
     pressInEditor({ key: "K", metaKey: true, shiftKey: true });
     expect(await screen.findByText(PICKER_NOTE)).toBeInTheDocument();
+  });
+});
+
+describe("Composer shortcut hints", () => {
+  afterEach(restoreUserAgent);
+
+  it("names the send and send-later keys with Cmd wording on macOS", async () => {
+    pretendPlatform("mac");
+    await renderComposer();
+
+    expect(screen.getByRole("button", { name: "Send" })).toHaveAttribute("title", "Send (Cmd+Enter)");
+    expect(screen.getByTitle("Send later (Cmd+Shift+L)")).toBeInTheDocument();
+  });
+
+  it("names the keys with Ctrl wording on Windows and follows a rebound key", async () => {
+    pretendPlatform("windows");
+    useShortcutStore.setState({ keyMap: { ...getDefaultKeyMap(), "app.sendLater": "Alt+K" } });
+    await renderComposer();
+
+    expect(screen.getByRole("button", { name: "Send" })).toHaveAttribute("title", "Send (Ctrl+Enter)");
+    expect(screen.getByTitle("Send later (Alt+K)")).toBeInTheDocument();
   });
 });
 
