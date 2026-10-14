@@ -99,6 +99,7 @@ describe("connecting a helpdesk", () => {
       agentId: "9000000002",
       name: "Fixture Operator",
       email: "operator.fixture@example.test",
+      signature: "<div>Fixture Operator</div>",
     });
     expect(connection?.host).toBe(ALPHA_HOST);
 
