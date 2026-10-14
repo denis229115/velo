@@ -14,6 +14,7 @@ import { ActivityValue, EntryKindBadge, NeedsReplyValue } from "./TicketActivity
 import { RelatedTasksPanel } from "@/components/clickup/RelatedTasksPanel";
 import { TicketEditError, useTicketEditor } from "./useTicketEditor";
 import { useTicketEditControls } from "./TicketEditControls";
+import { FreshdeskWriteReason } from "./useFreshdeskWritable";
 
 const fieldId = (label: string) => `ticket-field-${label.toLowerCase().replace(/\W+/g, "-")}`;
 
@@ -174,11 +175,7 @@ export function TicketReader({ ticket, ticketId }: { ticket: TicketListItem | nu
           <h2 className="text-title font-semibold text-text-primary mb-5">{ticket.subject || "(no subject)"}</h2>
           {(edit.blocked || editError) && (
             <div className="mb-3 max-w-4xl space-y-1.5">
-              {edit.blocked && (
-                <p role="status" className="text-meta text-text-tertiary">
-                  {edit.blocked}
-                </p>
-              )}
+              <FreshdeskWriteReason writable={edit.writable} />
               {editError && <TicketEditError text={editError.text} onDismiss={editor.clearError} />}
             </div>
           )}

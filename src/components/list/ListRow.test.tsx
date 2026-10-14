@@ -84,6 +84,27 @@ describe("ListRow", () => {
     expect(screen.getByText("Alice Walker").closest("button")).not.toHaveClass("@2xl:h-11");
   });
 
+  it.each(["compact", "default"] as const)(
+    "gives detail items a line of their own in %s density and drops whole items that do not fit, never cutting one",
+    (density) => {
+      renderRow({
+        density,
+        preview: undefined,
+        detailLine: [<span key="a">Sample Agent</span>, <span key="b">Answered 6 h ago</span>, <span key="c">Customer 2 h ago</span>],
+      });
+      const details = line("Sample Agent");
+      expect(details).not.toBeNull();
+      expect(details).not.toBe(line("Quarterly report"));
+      expect(line("Quarterly report")?.compareDocumentPosition(details as Node)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+      // Items that do not fit wrap out of the one visible line and are clipped away whole, last (lowest priority) first
+      expect(details).toHaveClass("flex-wrap", "overflow-hidden", "h-lh");
+      expect(line("Answered 6 h ago")).toBe(details);
+      expect(line("Customer 2 h ago")).toBe(details);
+      expect(details?.className).not.toMatch(/truncate|text-ellipsis/);
+      expect(screen.getByText("Alice Walker").closest("button")).not.toHaveClass("@2xl:h-11");
+    },
+  );
+
   it("renders no extra line when there are no extra details", () => {
     renderRow();
     expect(document.querySelectorAll("[data-line]")).toHaveLength(1);
