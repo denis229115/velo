@@ -4,8 +4,9 @@
  * client directly.
  *
  * - Only allowlisted fields of a source item are sent (subject, public message
- *   text, status, priority). Contact details, custom fields, internal notes and
- *   attachments have no field to travel in.
+ *   text, status, priority, sender domain). Contact details, custom fields,
+ *   internal notes and attachments have no field to travel in; the sender
+ *   domain is reduced to the bare domain, never a full address or a name.
  * - Only the approved provider (the Claude API) may receive email, ticket or
  *   task content, and only once the operator has approved it in settings.
  * - Source content is framed as data, no tools are offered, and the result is
@@ -52,6 +53,8 @@ export interface AiSourceItem {
   body?: string | null;
   status?: string | null;
   priority?: string | null;
+  /** The sender's domain only (for example `example.com`), never the address or name */
+  senderDomain?: string | null;
 }
 
 export interface AiGatewayRequest {
@@ -128,9 +131,16 @@ function clean(value: string | null | undefined): string {
   return (value ?? "").replace(/<(\/?)(source_item|operator_request)/gi, "&lt;$1$2").trim();
 }
 
+/** The bare domain of a sender address, or null when the value holds no domain. */
+export function senderDomain(value: string | null | undefined): string | null {
+  const host = (value ?? "").split("@").pop()!.trim().replace(/>$/, "").toLowerCase();
+  return /^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(host) ? host : null;
+}
+
 function renderItem(index: number, item: AiSourceItem, body: string): string {
   const lines: string[] = [];
   if (item.subject) lines.push(`Subject: ${clean(item.subject)}`);
+  if (item.senderDomain) lines.push(`Sender domain: ${item.senderDomain}`);
   if (item.status) lines.push(`Status: ${clean(item.status)}`);
   if (item.priority) lines.push(`Priority: ${clean(item.priority)}`);
   if (body) lines.push(lines.length > 0 ? `\n${body}` : body);
@@ -161,11 +171,12 @@ function buildUserContent(req: AiGatewayRequest): string {
   const parts: string[] = [];
   if (req.items && req.items.length > 0) {
     // Copy only allowlisted fields, whatever else the caller's objects carry.
-    const allowlisted = req.items.map(({ subject, body, status, priority }) => ({
-      subject,
-      body,
-      status,
-      priority,
+    const allowlisted = req.items.map((item) => ({
+      subject: item.subject,
+      body: item.body,
+      status: item.status,
+      priority: item.priority,
+      senderDomain: senderDomain(item.senderDomain),
     }));
     parts.push(renderItems(allowlisted, req.maxChars ?? DEFAULT_MAX_CHARS));
   }

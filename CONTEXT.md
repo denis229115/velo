@@ -215,7 +215,7 @@ _Avoid_: AI service, proxy
 The AI provider the operator has approved for ticket, task and email content; only the Claude API. Other providers are refused for this content.
 
 **Allowlisted field**:
-A field the gateway may send by default: subject, public message text, status and priority.
+A field the gateway may send by default: subject, public message text, status and priority. Email categorisation and smart labels also send the sender's domain (never the address or name).
 
 **Sensitive data**:
 Secrets, payment data and contact data found by Velo's local check before an AI request; names and companies are not sensitive.

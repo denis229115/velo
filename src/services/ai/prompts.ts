@@ -41,7 +41,7 @@ export const CATEGORIZE_PROMPT = `Categorize each email thread into exactly ONE 
 - Social: Social media notifications, social network updates
 - Newsletters: Subscribed newsletters, digests, blog updates
 
-Each thread is one source item. For each, respond with ONLY the source item id and category in this exact format, one per line:
+Each thread is one source item; its sender domain, when present, helps tell newsletters and promotions from personal mail. For each, respond with ONLY the source item id and category in this exact format, one per line:
 ITEM_ID:CATEGORY
 
 Do not include any other text. Only use the exact categories listed above: Primary, Updates, Promotions, Social, Newsletters.`;
@@ -72,7 +72,7 @@ export const SMART_LABEL_PROMPT = `Classify each email thread against a set of l
 
 For each thread, decide which labels (if any) apply. A thread can match zero, one, or multiple labels.
 
-Each thread is one source item; the label definitions are in the operator request.
+Each thread is one source item, with its sender domain when known; the label definitions are in the operator request.
 
 Respond with ONLY matching assignments in this exact format, one per line:
 ITEM_ID:LABEL_ID_1,LABEL_ID_2

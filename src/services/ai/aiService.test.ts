@@ -3,7 +3,8 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 const mockComplete = vi.fn();
 
 // The AI answers by source item position (1-based), never by thread ID.
-vi.mock("./gateway", () => ({
+vi.mock("./gateway", async (importOriginal) => ({
+  senderDomain: (await importOriginal<typeof import("./gateway")>()).senderDomain,
   requestAi: (req: unknown) => mockComplete(req),
 }));
 
@@ -87,7 +88,7 @@ describe("classifyThreadsBySmartLabels", () => {
     expect(result.get("t2")).toEqual(["label-orders"]);
   });
 
-  it("passes label definitions and thread subjects and previews, not senders", async () => {
+  it("passes label definitions and thread subjects, previews and sender domains, not addresses", async () => {
     mockComplete.mockResolvedValueOnce("");
 
     await classifyThreadsBySmartLabels(threads, labelRules);
@@ -97,9 +98,9 @@ describe("classifyThreadsBySmartLabels", () => {
     expect(req.operatorText).toContain("label-jobs");
     expect(req.operatorText).toContain("Job applications");
     expect(req.items).toEqual([
-      { subject: "Software Engineer Position", body: "We're hiring..." },
-      { subject: "Your order shipped", body: "Package tracking..." },
-      { subject: "Team standup notes", body: "Meeting recap..." },
+      { subject: "Software Engineer Position", body: "We're hiring...", senderDomain: "company.com" },
+      { subject: "Your order shipped", body: "Package tracking...", senderDomain: "shop.com" },
+      { subject: "Team standup notes", body: "Meeting recap...", senderDomain: "work.com" },
     ]);
   });
 });
