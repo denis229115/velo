@@ -82,7 +82,10 @@ export const useUIStore = create<UIState>((set) => ({
   pendingOpsCount: 0,
   isSyncingFolder: null,
 
-  setTheme: (theme) => set({ theme }),
+  setTheme: (theme) => {
+    setSetting("theme", theme).catch(() => {});
+    set({ theme });
+  },
   toggleSidebar: () =>
     set((state) => {
       const collapsed = !state.sidebarCollapsed;

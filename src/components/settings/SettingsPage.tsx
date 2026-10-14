@@ -356,9 +356,9 @@ export function SettingsPage() {
   const activeTabDef = tabs.find((t) => t.id === activeTab);
 
   return (
-    <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-bg-primary/50">
+    <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-surface-reader">
       {/* Header */}
-      <div className="flex items-center gap-3 px-5 py-3 border-b border-border-primary shrink-0 bg-bg-primary/60 backdrop-blur-sm">
+      <div className="flex items-center gap-3 px-5 py-3 border-b border-border-primary shrink-0 bg-surface-reader">
         <button
           onClick={() => navigateToLabel("inbox")}
           className="p-1.5 -ml-1 rounded-md text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors"
@@ -372,7 +372,7 @@ export function SettingsPage() {
       {/* Body: sidebar nav + content */}
       <div className="flex flex-1 min-h-0">
         {/* Vertical tab sidebar */}
-        <nav className="w-48 border-r border-border-primary py-2 overflow-y-auto shrink-0 bg-bg-primary/30">
+        <nav className="w-48 border-r border-border-primary py-2 overflow-y-auto shrink-0 bg-surface-list">
           {tabs.map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
@@ -415,7 +415,6 @@ export function SettingsPage() {
                         onChange={(e) => {
                           const val = e.target.value as "light" | "dark" | "system";
                           setTheme(val);
-                          setSetting("theme", val);
                         }}
                         className="w-48 bg-bg-tertiary text-text-primary text-sm px-3 py-1.5 rounded-md border border-border-primary focus:border-accent outline-none"
                       >

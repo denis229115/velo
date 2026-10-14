@@ -7,7 +7,7 @@ interface HelpSidebarProps {
 
 export function HelpSidebar({ activeTopic }: HelpSidebarProps) {
   return (
-    <nav className="w-48 border-r border-border-primary py-2 overflow-y-auto shrink-0 bg-bg-primary/30">
+    <nav className="w-48 border-r border-border-primary py-2 overflow-y-auto shrink-0 bg-surface-list">
       {HELP_CATEGORIES.map((category) => {
         const Icon = category.icon;
         const isActive = activeTopic === category.id;

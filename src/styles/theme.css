@@ -1,0 +1,99 @@
+/*
+ * MonoCode theme token layer.
+ *
+ * Plain CSS (no Tailwind syntax) so tests can load it into jsdom. Semantic
+ * tokens are exposed to Tailwind via @theme aliases in globals.css. Kept
+ * outside any @layer: unlayered rules win over Tailwind utilities, so the
+ * focus ring and reduced-motion rules below cannot be switched off by a
+ * utility class such as `outline-none`.
+ */
+
+:root {
+  color-scheme: light;
+
+  /* Surfaces — only the sidebar is translucent */
+  --surface-base: #f2f2f2;
+  --surface-sidebar: rgba(236, 236, 236, 0.82);
+  --surface-list: #fafafa;
+  --surface-reader: #ffffff;
+  --surface-composer: #ffffff;
+  --surface-overlay: #ffffff;
+  --surface-subtle: #ededed;
+
+  /* Text */
+  --text-primary: #171717;
+  --text-secondary: #4d4d4d;
+  --text-muted: #5c5c5c;
+
+  /* Separators */
+  --separator: #e3e3e3;
+  --separator-subtle: #eeeeee;
+
+  /* Interaction states */
+  --state-hover: #f0f0f0;
+  --state-selected: #e5e5e5;
+  --state-focus: #2563eb;
+  --sidebar-hover: rgba(0, 0, 0, 0.06);
+
+  /* Link and status */
+  --link: #1d4ed8;
+  --status-success: #15803d;
+  --status-warning: #a15c07;
+  --status-error: #c42020;
+}
+
+.dark {
+  color-scheme: dark;
+
+  --surface-base: #161616;
+  --surface-sidebar: rgba(32, 32, 32, 0.78);
+  --surface-list: #1b1b1b;
+  --surface-reader: #1f1f1f;
+  --surface-composer: #232323;
+  --surface-overlay: #262626;
+  --surface-subtle: #2e2e2e;
+
+  --text-primary: #ededed;
+  --text-secondary: #b8b8b8;
+  --text-muted: #a3a3a3;
+
+  --separator: #333333;
+  --separator-subtle: #2a2a2a;
+
+  --state-hover: #2a2a2a;
+  --state-selected: #333333;
+  --state-focus: #6ea8fe;
+  --sidebar-hover: rgba(255, 255, 255, 0.07);
+
+  --link: #7cb4ff;
+  --status-success: #4ade80;
+  --status-warning: #f5c04a;
+  --status-error: #ff8080;
+}
+
+/*
+ * Reduced motion: `.reduce-motion` is set on <html> when macOS asks for reduced
+ * motion or the in-app setting is on. The media query covers first paint.
+ */
+.reduce-motion * {
+  animation: none !important;
+  transition-duration: 0s !important;
+  scroll-behavior: auto !important;
+}
+
+/* Separate rule: some engines drop a whole selector list containing pseudo-elements */
+.reduce-motion *::before,
+.reduce-motion *::after {
+  animation: none !important;
+  transition-duration: 0s !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition-duration: 0s !important;
+    scroll-behavior: auto !important;
+  }
+}
