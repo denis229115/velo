@@ -1,6 +1,7 @@
 import { SHORTCUTS } from "@/constants/shortcuts";
 import { useShortcutStore } from "@/stores/shortcutStore";
 import { Modal } from "@/components/ui/Modal";
+import { formatShortcut } from "@/utils/shortcutLabel";
 
 interface ShortcutsHelpProps {
   isOpen: boolean;
@@ -28,7 +29,7 @@ export function ShortcutsHelp({ isOpen, onClose }: ShortcutsHelpProps) {
                     {item.desc}
                   </span>
                   <kbd className="text-xs text-text-tertiary bg-bg-tertiary px-2 py-0.5 rounded font-mono">
-                    {keyMap[item.id] ?? item.keys}
+                    {formatShortcut(keyMap[item.id] ?? item.keys)}
                   </kbd>
                 </div>
               ))}

@@ -8,6 +8,7 @@ import { getGmailClient } from "@/services/gmail/tokenManager";
 import { getTemplatesForAccount, type DbTemplate } from "@/services/db/templates";
 import { useActiveLabel } from "@/hooks/useRouteNavigation";
 import { navigateToLabel, navigateBack, getSelectedThreadId } from "@/router/navigate";
+import { formatShortcut } from "@/utils/shortcutLabel";
 
 interface Command {
   id: string;
@@ -193,7 +194,7 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
                         <span className="text-text-primary">{cmd.label}</span>
                         {cmd.shortcut && (
                           <kbd className="text-[0.625rem] text-text-tertiary bg-bg-tertiary px-1.5 py-0.5 rounded">
-                            {cmd.shortcut}
+                            {formatShortcut(cmd.shortcut)}
                           </kbd>
                         )}
                       </button>

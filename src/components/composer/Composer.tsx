@@ -19,6 +19,8 @@ import { useComposerStore } from "@/stores/composerStore";
 import { useAccountStore } from "@/stores/accountStore";
 import { useUIStore } from "@/stores/uiStore";
 import { useComposerShortcuts } from "@/hooks/useComposerShortcuts";
+import { useShortcutStore } from "@/stores/shortcutStore";
+import { formatShortcut } from "@/utils/shortcutLabel";
 import { sendEmail, archiveThread, deleteDraft as deleteDraftAction } from "@/services/emailActions";
 import { buildRawEmail } from "@/utils/emailBuilder";
 import { upsertContact } from "@/services/db/contacts";
@@ -340,6 +342,8 @@ export function Composer() {
     closeComposer();
   }, [activeAccountId, activeAccount, closeComposer, getFullHtml]);
 
+  const sendKeys = useShortcutStore((s) => s.keyMap["app.send"]);
+  const sendLaterKeys = useShortcutStore((s) => s.keyMap["app.sendLater"]);
   useComposerShortcuts(
     { onSend: handleSend, onSendLater: () => setShowSchedule(true) },
     isOpen,
@@ -564,6 +568,7 @@ export function Composer() {
               <button
                 onClick={handleSend}
                 disabled={to.length === 0}
+                title={sendKeys ? `Send (${formatShortcut(sendKeys)})` : "Send"}
                 className="px-4 py-1.5 text-xs font-medium text-white bg-accent hover:bg-accent-hover rounded-l-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Send
@@ -572,7 +577,7 @@ export function Composer() {
                 onClick={() => setShowSchedule(true)}
                 disabled={to.length === 0}
                 className="px-2 py-1.5 text-white bg-accent hover:bg-accent-hover border-l border-white/20 rounded-r-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                title="Schedule send"
+                title={sendLaterKeys ? `Send later (${formatShortcut(sendLaterKeys)})` : "Send later"}
               >
                 <Clock size={12} />
               </button>

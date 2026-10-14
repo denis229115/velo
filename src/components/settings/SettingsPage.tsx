@@ -52,6 +52,7 @@ import { SmartLabelEditor } from "./SmartLabelEditor";
 import { SHORTCUTS, getDefaultKeyMap } from "@/constants/shortcuts";
 import { useShortcutStore } from "@/stores/shortcutStore";
 import { findShortcutConflicts } from "@/utils/shortcutKeys";
+import { formatShortcut } from "@/utils/shortcutLabel";
 import { COLOR_THEMES } from "@/constants/themes";
 import {
   getAliasesForAccount,
@@ -1652,7 +1653,7 @@ export function ShortcutsTab() {
           </div>
           <div className="flex items-center gap-2">
             <kbd className="text-xs bg-bg-tertiary px-2 py-1 rounded border border-border-primary font-mono">
-              {composeShortcut}
+              {formatShortcut(composeShortcut)}
             </kbd>
             <button
               ref={globalRecorderRef}
@@ -1723,13 +1724,13 @@ export function ShortcutsTab() {
                           : "bg-bg-tertiary text-text-tertiary hover:text-text-primary border border-border-primary"
                       }`}
                     >
-                      {isRecording ? "Press key..." : currentKey}
+                      {isRecording ? "Press key..." : formatShortcut(currentKey)}
                     </button>
                     {!isDefault && (
                       <button
                         onClick={() => resetKey(item.id)}
                         className="text-xs text-text-tertiary hover:text-text-primary"
-                        title={`Reset to ${defaults[item.id]}`}
+                        title={`Reset to ${formatShortcut(defaults[item.id] ?? "")}`}
                       >
                         ×
                       </button>

@@ -1057,7 +1057,7 @@ export const HELP_CATEGORIES: HelpCategory[] = [
           "When viewing an email thread, press t to have AI analyze the conversation and extract an actionable task. The AI identifies the task title, description, suggested due date, and priority from the email content. A dialog shows the extracted task with editable fields — adjust the title, description, priority, or due date before creating. The task is linked to the email thread so you can always jump back to the original context. Also available from the command palette as 'Create Task from Email (AI)'.",
         tips: [
           { text: "Extract task from email", shortcut: "t" },
-          { text: "Also available in the command palette (Ctrl+K → 'Create Task from Email')." },
+          { text: "Also available in the command palette ('Create Task from Email')." },
           { text: "Edit the extracted fields before creating the task." },
           { text: "The task links back to the original email thread." },
           { text: "Requires the Claude API, approved in Settings > AI." },
