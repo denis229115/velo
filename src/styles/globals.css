@@ -7,6 +7,7 @@
  */
 @theme {
   /* Semantic tokens */
+  --color-surface-window: var(--surface-window);
   --color-surface-base: var(--surface-base);
   --color-surface-sidebar: var(--surface-sidebar);
   --color-surface-list: var(--surface-list);
@@ -87,7 +88,7 @@ body {
   font-family:
     -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue",
     Arial, sans-serif;
-  background: var(--surface-base);
+  background: var(--surface-window);
   color: var(--color-text-primary);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -104,6 +105,23 @@ body {
 .glass-sidebar {
   backdrop-filter: blur(var(--sidebar-blur)) saturate(1.4);
   -webkit-backdrop-filter: blur(var(--sidebar-blur)) saturate(1.4);
+}
+
+/*
+ * Native vibrancy (macOS): the system material replaces the CSS blur, and the
+ * content beside the sidebar gets a solid backing so the list, reader and
+ * pages never show the wallpaper. In the base layer so a surface utility on
+ * that element still wins.
+ */
+.native-vibrancy .glass-sidebar {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+@layer base {
+  .native-vibrancy .glass-sidebar + * {
+    background-color: var(--surface-base);
+  }
 }
 
 /* Elevation for menus, popovers and dialogs (solid surface + shadow) */

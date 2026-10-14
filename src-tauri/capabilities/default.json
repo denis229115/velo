@@ -51,6 +51,7 @@
     "core:window:allow-start-dragging",
     "core:window:allow-show",
     "core:window:allow-set-focus",
+    "core:window:allow-set-theme",
     "autostart:default",
     "autostart:allow-enable",
     "autostart:allow-disable",
