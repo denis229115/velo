@@ -52,3 +52,8 @@ export async function setSecureSetting(key: string, value: string): Promise<void
   const encrypted = await encryptValue(value);
   await setSetting(key, encrypted);
 }
+
+export async function deleteSetting(key: string): Promise<void> {
+  const db = await getDb();
+  await db.execute("DELETE FROM settings WHERE key = $1", [key]);
+}
