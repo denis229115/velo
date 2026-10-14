@@ -35,11 +35,14 @@ export function FreshdeskViewNav({ collapsed }: { collapsed: boolean }) {
               navigateToLabel("freshdesk");
             }}
             aria-current={active ? "page" : undefined}
-            className={`flex items-center w-full gap-2 py-1.5 pl-9 pr-3 text-left text-meta transition-colors ${
-              active ? "bg-accent/10 text-accent font-medium" : "hover:bg-sidebar-hover text-sidebar-text/80"
+            className={`flex items-center w-full py-1.5 pl-[42px] pr-3 text-left text-row transition-colors ${
+              active ? "bg-accent/10 text-accent font-medium" : "hover:bg-sidebar-hover text-sidebar-text"
             }`}
           >
-            {view.kind === "custom" && <ListFilter size={12} aria-hidden className="shrink-0 opacity-70" />}
+            {/* Hung in the gutter so custom and preset names stay aligned under Tickets */}
+            {view.kind === "custom" && (
+              <ListFilter size={12} aria-hidden className="shrink-0 -ml-[18px] mr-1.5 opacity-60" />
+            )}
             <span className="flex-1 truncate">{view.name}</span>
           </button>
         );

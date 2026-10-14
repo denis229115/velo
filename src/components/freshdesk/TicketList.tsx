@@ -85,25 +85,16 @@ function NeedsReplyBadge() {
   );
 }
 
-/** Last answered, Last customer message and the assignee under the subject. */
+/**
+ * The view's optional columns, then Last answered, Last customer message and the assignee under the subject.
+ * Optional columns come first: they were chosen for this view, so they must not be the ones truncated.
+ */
 function TicketRowDetails({ ticket: t, columns }: { ticket: TicketListItem; columns: OptionalTicketColumn[] }) {
   const a = t.activity;
   return (
     <span className="inline-flex items-center gap-x-3 min-w-0">
-      <span className="inline-flex items-center gap-1 shrink-0">
-        <span className="text-text-tertiary">Answered</span>
-        <ActivityValue time={a.lastAnswered} history={a.history} never="Never" focusable={false} />
-      </span>
-      <span className="inline-flex items-center gap-1 shrink-0">
-        <span className="text-text-tertiary">Customer</span>
-        <ActivityValue time={a.lastCustomerMessage} history={a.history} never="None" focusable={false} />
-      </span>
-      <span className="inline-flex items-center gap-1 min-w-0">
-        <UserRound size={11} aria-hidden className="shrink-0" />
-        <span className="truncate">{t.assignee ?? "Unassigned"}</span>
-      </span>
       {columns.includes("company_group") && (t.group || t.companyId) && (
-        <span data-column="company_group" className="truncate">
+        <span data-column="company_group" className="shrink-0 max-w-48 truncate">
           {[t.group?.name, t.companyId ? `Company ${t.companyId}` : null].filter(Boolean).join(" · ")}
         </span>
       )}
@@ -116,6 +107,18 @@ function TicketRowDetails({ ticket: t, columns }: { ticket: TicketListItem; colu
           Due {formatFullDate(t.dueBy)}
         </span>
       )}
+      <span className="inline-flex items-center gap-1 shrink-0">
+        <span className="text-text-tertiary">Answered</span>
+        <ActivityValue time={a.lastAnswered} history={a.history} never="Never" focusable={false} />
+      </span>
+      <span className="inline-flex items-center gap-1 shrink-0">
+        <span className="text-text-tertiary">Customer</span>
+        <ActivityValue time={a.lastCustomerMessage} history={a.history} never="None" focusable={false} />
+      </span>
+      <span className="inline-flex items-center gap-1 min-w-0">
+        <UserRound size={11} aria-hidden className="shrink-0" />
+        <span className="truncate">{t.assignee ?? "Unassigned"}</span>
+      </span>
     </span>
   );
 }
