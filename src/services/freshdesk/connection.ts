@@ -16,6 +16,7 @@ import {
   type StatusClass,
 } from "@/services/db/freshdesk";
 import { clearTicketSyncAuthBlock } from "@/services/db/freshdeskTickets";
+import { deleteTicketLinksOutsideScope } from "@/services/db/taskLinks";
 import { FreshdeskError, normalizeHelpdeskHost, type HelpdeskCredentials } from "./client";
 import {
   fetchCurrentAgent,
@@ -92,6 +93,7 @@ export async function connectHelpdesk(input: { host: string; apiKey: string }): 
 
   const tenantId = tenantIdForHost(host);
   await deleteFreshdeskDataExcept(tenantId);
+  await deleteTicketLinksOutsideScope(tenantId);
   await setSecureSetting(API_KEY_SETTING, apiKey);
   await saveIntegrationAccount({ kind: "freshdesk", tenantId, tenantHost: host, me });
   await replaceHelpdeskMetadata(tenantId, metadata);
