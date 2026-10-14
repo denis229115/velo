@@ -138,7 +138,8 @@ export async function refreshMetadataAfterInvalidValue(error: unknown): Promise<
   return refreshHelpdeskMetadata();
 }
 
-async function currentTenantId(): Promise<string> {
+/** The connected helpdesk's tenant, or the sample tenant until one is connected. */
+export async function currentTenantId(): Promise<string> {
   return (await getIntegrationAccount("freshdesk"))?.tenantId ?? SAMPLE_TENANT_ID;
 }
 

@@ -11,6 +11,7 @@ import { createBackgroundChecker } from "@/services/backgroundCheckers";
 import { withReadSnapshot } from "@/services/db/connection";
 import {
   getAgents,
+  getGroups,
   getFieldChoices,
   getIntegrationAccount,
   getStatusClasses,
@@ -83,6 +84,13 @@ export interface TicketListItem {
   priority: { id: string; label: string } | null;
   assignee: string | null;
   assigneeId: string | null;
+  group: { id: string; name: string } | null;
+  companyId: string | null;
+  tags: string[];
+  /** Resolution due (SLA), unix ms */
+  dueBy: number | null;
+  /** Created, unix ms */
+  createdAt: number;
   /** Last updated, unix ms */
   updatedAt: number;
   /** Not classified done; unknown statuses count as outstanding */
@@ -172,6 +180,11 @@ function sampleList(classes: Map<string, StatusClass>): TicketListData {
         priority: priorityLabel ? { id: t.priorityId, label: priorityLabel } : null,
         assignee: t.assigneeName,
         assigneeId: null,
+        group: null,
+        companyId: null,
+        tags: [],
+        dueBy: null,
+        createdAt: now - (t.updatedMinutesAgo + 60) * 60_000,
         updatedAt: now - t.updatedMinutesAgo * 60_000,
         outstanding: status.statusClass !== "done",
         activity: sampleActivity(t.id, status.statusClass !== "done", now),
@@ -200,11 +213,12 @@ async function readTicketList(): Promise<TicketListData> {
   if (!account) return sampleList(await getStatusClasses(SAMPLE_TENANT_ID));
 
   const { tenantId } = account;
-  const [tickets, statuses, priorities, agents, classes, state, histories] = await Promise.all([
+  const [tickets, statuses, priorities, agents, groups, classes, state, histories] = await Promise.all([
     getCachedTickets(tenantId),
     getFieldChoices(tenantId, "status"),
     getFieldChoices(tenantId, "priority"),
     getAgents(tenantId),
+    getGroups(tenantId),
     getStatusClasses(tenantId),
     getTicketSyncState(tenantId),
     getStoredHistories(tenantId),
@@ -212,6 +226,7 @@ async function readTicketList(): Promise<TicketListData> {
   const statusLabels = new Map(statuses.map((c) => [c.choiceId, c.label]));
   const priorityLabels = new Map(priorities.map((c) => [c.choiceId, c.label]));
   const agentNames = new Map(agents.map((a) => [a.agentId, a.name]));
+  const groupNames = new Map(groups.map((g) => [g.groupId, g.name]));
 
   return {
     isSample: false,
@@ -230,6 +245,11 @@ async function readTicketList(): Promise<TicketListData> {
         priority: t.priorityId !== null ? { id: t.priorityId, label: priorityLabel ?? `Priority ${t.priorityId}` } : null,
         assignee: t.responderId !== null ? (agentNames.get(t.responderId) ?? `Agent ${t.responderId}`) : null,
         assigneeId: t.responderId,
+        group: t.groupId !== null ? { id: t.groupId, name: groupNames.get(t.groupId) ?? `Group ${t.groupId}` } : null,
+        companyId: t.companyId,
+        tags: t.tags,
+        dueBy: msOrNull(t.dueBy),
+        createdAt: t.createdAt * 1000,
         updatedAt: t.updatedAt * 1000,
         outstanding,
         activity: activityFrom(stored?.summary ?? null, historyStateOf(t, stored), outstanding),

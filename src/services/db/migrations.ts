@@ -952,6 +952,33 @@ const MIGRATIONS = [
       CREATE INDEX IF NOT EXISTS idx_freshdesk_conversations_ticket ON freshdesk_conversations(tenant_id, ticket_id, created_at);
     `,
   },
+  {
+    version: 30,
+    description: "Freshdesk saved ticket views, the selected view, and ticket company, tags and SLA due",
+    sql: `
+      CREATE TABLE IF NOT EXISTS freshdesk_ticket_views (
+        tenant_id TEXT NOT NULL,
+        view_id TEXT NOT NULL,
+        kind TEXT NOT NULL CHECK (kind IN ('preset', 'custom')),
+        name TEXT NOT NULL,
+        filter_json TEXT NOT NULL DEFAULT '{}',
+        sort TEXT NOT NULL,
+        columns_json TEXT NOT NULL DEFAULT '[]',
+        density TEXT NOT NULL,
+        presentation TEXT NOT NULL DEFAULT 'list',
+        board_json TEXT NOT NULL DEFAULT '{}',
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (tenant_id, view_id)
+      );
+      CREATE TABLE IF NOT EXISTS freshdesk_view_selection (
+        tenant_id TEXT PRIMARY KEY,
+        view_id TEXT NOT NULL
+      );
+      ALTER TABLE freshdesk_tickets ADD COLUMN company_id TEXT;
+      ALTER TABLE freshdesk_tickets ADD COLUMN tags_json TEXT NOT NULL DEFAULT '[]';
+      ALTER TABLE freshdesk_tickets ADD COLUMN due_by INTEGER;
+    `,
+  },
 ];
 
 /**
