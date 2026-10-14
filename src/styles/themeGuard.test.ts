@@ -13,7 +13,10 @@ function sourceFiles(dir: string): string[] {
   });
 }
 
-const files = sourceFiles(SRC).map((path) => ({
+// The HTML entry pages (main window, splash screen) paint before React does
+const ENTRY_PAGES = ["index.html", "splashscreen.html"].map((name) => resolve(SRC, "..", name));
+
+const files = [...sourceFiles(SRC), ...ENTRY_PAGES].map((path) => ({
   path: relative(SRC, path),
   text: readFileSync(path, "utf-8"),
 }));

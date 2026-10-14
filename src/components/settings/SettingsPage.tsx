@@ -506,7 +506,7 @@ export function SettingsPage() {
                     </SettingRow>
                     <ToggleRow
                       label="Reduce motion"
-                      description="Disable animated background effects (fixes flickering on some GPUs)"
+                      description="Turn off animations and transitions. Also on automatically when macOS Reduce motion is enabled"
                       checked={reduceMotion}
                       onToggle={() => setReduceMotion(!reduceMotion)}
                     />

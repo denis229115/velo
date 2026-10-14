@@ -1102,12 +1102,12 @@ export const HELP_CATEGORIES: HelpCategory[] = [
         title: "Light & dark mode",
         summary: "Switch between light, dark, or system theme.",
         description:
-          "Choose between light mode, dark mode, or system-matched (follows your OS setting). Dark mode uses carefully chosen colors for comfortable reading in low-light environments, with a darker background and softer text. The theme switches instantly and persists across restarts. The animated gradient background also adapts — light mode uses blues/purples/pinks, dark mode uses deeper blues and purples.",
+          "Choose between light mode, dark mode, or system-matched (follows your OS setting). Dark mode uses carefully chosen colors for comfortable reading in low-light environments, with a darker background and softer text. The theme switches instantly and persists across restarts. Surfaces are neutral and solid so text stays readable; only the sidebar is translucent. Keyboard focus is always shown with a visible ring.",
         tips: [
           { text: "Change theme in Settings > General." },
           { text: "\"System\" follows your OS light/dark preference." },
           { text: "Dark mode is optimized for low-light environments." },
-          { text: "The animated background gradient adapts to light/dark mode." },
+          { text: "Plain-text emails follow the theme; HTML emails keep a light page so senders' colours stay readable." },
         ],
         relatedSettingsTab: "general",
       },
@@ -1132,7 +1132,7 @@ export const HELP_CATEGORIES: HelpCategory[] = [
         title: "Font size & email density",
         summary: "Adjust text size and list spacing.",
         description:
-          "Font scale adjusts the overall text size across the app: Small, Default, Large, or Extra Large. Email density controls the spacing in the email list: Compact (more threads visible), Default (balanced), or Comfortable (more breathing room). Both settings combine — use large font with comfortable density for accessibility, or small font with compact density to see more at once.",
+          "Font scale adjusts the overall text size across the app: Small, Default, Large, or Extra Large. Email density controls the spacing in the email list: Compact (the default, more threads visible), Default (balanced), or Comfortable (more breathing room). Both settings combine — use large font with comfortable density for accessibility, or small font with compact density to see more at once.",
         tips: [
           { text: "Font sizes: Small, Default, Large, Extra Large." },
           { text: "Density options: Compact, Default, Comfortable." },
