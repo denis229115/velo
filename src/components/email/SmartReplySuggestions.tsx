@@ -2,6 +2,7 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import { Sparkles, RefreshCw } from "lucide-react";
 import { isAiAvailable } from "@/services/ai/gateway";
 import { generateSmartReplies } from "@/services/ai/aiService";
+import { AiSendNote } from "@/components/ai/AiSendPreview";
 import { useComposerStore } from "@/stores/composerStore";
 import type { DbMessage } from "@/services/db/messages";
 
@@ -26,12 +27,13 @@ export function SmartReplySuggestions({ threadId, accountId, messages, noReply }
     isAiAvailable().then(setAvailable);
   }, []);
 
-  const loadReplies = useCallback(async () => {
+  const loadReplies = useCallback(async (refresh = false) => {
     if (loadingRef.current) return;
     loadingRef.current = true;
     setLoading(true);
+    if (refresh) setReplies(null);
     try {
-      const result = await generateSmartReplies(threadId, accountId, messages);
+      const result = await generateSmartReplies(threadId, accountId, messages, refresh ? { refresh } : undefined);
       setReplies(result);
     } catch (err) {
       console.error("Failed to generate smart replies:", err);
@@ -47,18 +49,9 @@ export function SmartReplySuggestions({ threadId, accountId, messages, noReply }
     loadReplies();
   }, [available, messages.length, replies, loadReplies]);
 
-  const handleRefresh = useCallback(async () => {
-    setReplies(null);
-    setLoading(true);
-    try {
-      const result = await generateSmartReplies(threadId, accountId, messages, { refresh: true });
-      setReplies(result);
-    } catch (err) {
-      console.error("Failed to refresh smart replies:", err);
-    } finally {
-      setLoading(false);
-    }
-  }, [threadId, accountId, messages]);
+  // Through the guarded loader, so clearing the replies doesn't also trigger
+  // the auto-load and send the thread twice.
+  const handleRefresh = useCallback(() => loadReplies(true), [loadReplies]);
 
   const handleReplyClick = useCallback((replyText: string) => {
     const lastMessage = messages[messages.length - 1];
@@ -110,6 +103,9 @@ export function SmartReplySuggestions({ threadId, accountId, messages, noReply }
           ))}
         </div>
       )}
+      <div className="mt-2">
+        <AiSendNote features={["smart_replies"]} onPreview={handleRefresh} />
+      </div>
     </div>
   );
 }
