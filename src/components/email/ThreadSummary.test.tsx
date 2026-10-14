@@ -1,0 +1,84 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import type { DbMessage } from "@/services/db/messages";
+
+vi.mock("@/services/ai/gateway", () => ({ getAiReadiness: vi.fn() }));
+vi.mock("@/services/ai/aiService", () => ({ summarizeThread: vi.fn() }));
+
+import { getAiReadiness } from "@/services/ai/gateway";
+import { summarizeThread } from "@/services/ai/aiService";
+import { AiError } from "@/services/ai/errors";
+import { ThreadSummary } from "./ThreadSummary";
+
+const messages = [
+  { id: "m1", subject: "Invoice question", body_text: "Could you resend it?" },
+  { id: "m2", subject: "Re: Invoice question", body_text: "Sure." },
+] as DbMessage[];
+
+function renderSummary() {
+  return render(<ThreadSummary threadId="thread-1" accountId="acc-1" messages={messages} />);
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.spyOn(console, "error").mockImplementation(() => {});
+});
+
+describe("ThreadSummary", () => {
+  it("shows why AI is refused for a non-approved provider, without asking it", async () => {
+    vi.mocked(getAiReadiness).mockResolvedValue({
+      status: "refused",
+      provider: "openai",
+      message: "OpenAI is not approved to receive email, ticket or task content.",
+    });
+
+    renderSummary();
+
+    expect(await screen.findByText(/OpenAI is not approved/)).toBeInTheDocument();
+    expect(summarizeThread).not.toHaveBeenCalled();
+  });
+
+  it("tells the operator to approve the Claude API when approval is missing", async () => {
+    vi.mocked(getAiReadiness).mockResolvedValue({
+      status: "needs_approval",
+      message: "AI is off until you approve the Claude API (Anthropic).",
+    });
+
+    renderSummary();
+
+    expect(await screen.findByText(/approve the Claude API/)).toBeInTheDocument();
+    expect(summarizeThread).not.toHaveBeenCalled();
+  });
+
+  it("renders nothing when AI is not configured", async () => {
+    vi.mocked(getAiReadiness).mockResolvedValue({ status: "off", message: "No AI provider" });
+
+    const { container } = renderSummary();
+
+    await waitFor(() => expect(getAiReadiness).toHaveBeenCalled());
+    expect(container.innerHTML).toBe("");
+  });
+
+  it("keeps the thread readable when the AI request fails", async () => {
+    vi.mocked(getAiReadiness).mockResolvedValue({ status: "ready", provider: "claude", model: "m" });
+    vi.mocked(summarizeThread).mockRejectedValue(new AiError("NETWORK_ERROR", "offline"));
+
+    renderSummary();
+
+    expect(await screen.findByText("Summary unavailable right now.")).toBeInTheDocument();
+  });
+
+  it("shows the summary and refreshes past the cache", async () => {
+    vi.mocked(getAiReadiness).mockResolvedValue({ status: "ready", provider: "claude", model: "m" });
+    vi.mocked(summarizeThread).mockResolvedValueOnce("They want the invoice resent.");
+
+    renderSummary();
+    expect(await screen.findByText("They want the invoice resent.")).toBeInTheDocument();
+
+    vi.mocked(summarizeThread).mockResolvedValueOnce("Updated summary.");
+    fireEvent.click(screen.getByTitle("Refresh summary"));
+
+    expect(await screen.findByText("Updated summary.")).toBeInTheDocument();
+    expect(summarizeThread).toHaveBeenLastCalledWith("thread-1", "acc-1", messages, { refresh: true });
+  });
+});

@@ -1,8 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { Sparkles, RefreshCw } from "lucide-react";
-import { isAiAvailable } from "@/services/ai/providerManager";
+import { isAiAvailable } from "@/services/ai/gateway";
 import { generateSmartReplies } from "@/services/ai/aiService";
-import { deleteAiCache } from "@/services/db/aiCache";
 import { useComposerStore } from "@/stores/composerStore";
 import type { DbMessage } from "@/services/db/messages";
 
@@ -49,11 +48,10 @@ export function SmartReplySuggestions({ threadId, accountId, messages, noReply }
   }, [available, messages.length, replies, loadReplies]);
 
   const handleRefresh = useCallback(async () => {
-    await deleteAiCache(accountId, threadId, "smart_replies");
     setReplies(null);
     setLoading(true);
     try {
-      const result = await generateSmartReplies(threadId, accountId, messages);
+      const result = await generateSmartReplies(threadId, accountId, messages, { refresh: true });
       setReplies(result);
     } catch (err) {
       console.error("Failed to refresh smart replies:", err);

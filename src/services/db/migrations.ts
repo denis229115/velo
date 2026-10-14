@@ -775,6 +775,36 @@ const MIGRATIONS = [
     description: "Accept self-signed certificates for IMAP/SMTP",
     sql: `ALTER TABLE accounts ADD COLUMN accept_invalid_certs INTEGER DEFAULT 0;`,
   },
+  {
+    version: 24,
+    description: "AI gateway audit log and revision-keyed AI result cache",
+    sql: `
+      CREATE TABLE IF NOT EXISTS ai_audit_log (
+        id TEXT PRIMARY KEY,
+        created_at INTEGER NOT NULL,
+        feature TEXT NOT NULL,
+        provider TEXT NOT NULL,
+        model TEXT NOT NULL,
+        payload_hash TEXT NOT NULL,
+        flag_counts TEXT NOT NULL DEFAULT '{}',
+        outcome TEXT NOT NULL DEFAULT 'pending'
+      );
+      CREATE INDEX IF NOT EXISTS idx_ai_audit_log_created ON ai_audit_log(created_at DESC);
+
+      CREATE TABLE IF NOT EXISTS ai_result_cache (
+        id TEXT PRIMARY KEY,
+        scope TEXT NOT NULL,
+        source_id TEXT NOT NULL,
+        feature TEXT NOT NULL,
+        content_revision TEXT NOT NULL,
+        model TEXT NOT NULL,
+        prompt_version TEXT NOT NULL,
+        content TEXT NOT NULL,
+        created_at INTEGER DEFAULT (unixepoch()),
+        UNIQUE(scope, source_id, feature, content_revision, model, prompt_version)
+      );
+    `,
+  },
 ];
 
 /**

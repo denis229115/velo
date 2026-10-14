@@ -1,5 +1,7 @@
 export type AiErrorCode =
   | "NOT_CONFIGURED"
+  | "NOT_APPROVED"
+  | "PROVIDER_REFUSED"
   | "AUTH_ERROR"
   | "RATE_LIMITED"
   | "NETWORK_ERROR";
