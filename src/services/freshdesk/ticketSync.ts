@@ -30,7 +30,7 @@ import { SAMPLE_TENANT_ID, currentCredentials } from "./connection";
 import { SAMPLE_PRIORITIES, SAMPLE_STATUSES, SAMPLE_TICKETS, sampleHistory } from "./sampleData";
 import { getStoredHistories } from "@/services/db/freshdeskHistory";
 import { activityFrom, summarizeHistory, type TicketActivity } from "./activity";
-import { historyStateOf } from "./ticketHistory";
+import { historyStateOf, hydrateTicketHistories } from "./ticketHistory";
 import { fetchContactName, fetchTicketById, listTicketsUpdatedSince, searchTicketsByStatus } from "./tickets";
 
 const DAY_S = 86_400;
@@ -364,6 +364,7 @@ const ticketPoller = createBackgroundChecker(
   "FreshdeskTickets",
   async () => {
     await syncTickets({ trigger: "poll" });
+    await hydrateTicketHistories();
   },
   60_000,
 );

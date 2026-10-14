@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { RefreshCw, UserRound } from "lucide-react";
+import { MessageCircleWarning, RefreshCw, UserRound } from "lucide-react";
 import { ListHeader, type ListTab } from "@/components/list/ListHeader";
 import { ListRow } from "@/components/list/ListRow";
 import { DateGroupHeader } from "@/components/list/DateGroupHeader";
@@ -11,6 +11,8 @@ import { navigateToTicket } from "@/router/navigate";
 import type { TicketListItem } from "@/services/freshdesk/ticketSync";
 import { TicketPriorityBadge, TicketStatusBadge } from "./TicketBadges";
 import { TicketSyncBar } from "./TicketSyncBar";
+import { ActivityValue, activityText } from "./TicketActivity";
+import { useDisplayTimeZone } from "@/components/ui/Timestamp";
 
 const TABS: (ListTab & { id: TicketFilter })[] = [
   { id: "outstanding", label: "Outstanding" },
@@ -24,7 +26,8 @@ const EMPTY_TEXT: Record<TicketFilter, string> = {
   all: "No tickets downloaded yet.",
 };
 
-function rowLabel(t: TicketListItem): string {
+function rowLabel(t: TicketListItem, timeZone: string): string {
+  const a = t.activity;
   return [
     `Ticket #${t.id}`,
     t.subject,
@@ -32,6 +35,9 @@ function rowLabel(t: TicketListItem): string {
     `status ${t.status.label ?? "Unknown status"}`,
     t.priority ? `priority ${t.priority.label}` : null,
     t.assignee ? `assigned to ${t.assignee}` : "unassigned",
+    `last answered ${activityText(a.lastAnswered, a.history, "never answered", timeZone)}`,
+    `last customer message ${activityText(a.lastCustomerMessage, a.history, "none", timeZone)}`,
+    a.needsReply === true ? "needs reply" : null,
     `last updated ${formatFullDate(t.updatedAt)}`,
   ]
     .filter(Boolean)
@@ -77,6 +83,39 @@ function FindOlderTicket() {
   );
 }
 
+function NeedsReplyBadge() {
+  return (
+    <span
+      title="Needs reply: the customer wrote after the last answer"
+      className="inline-flex items-center gap-1 shrink-0 rounded-md border border-status-warning/40 bg-status-warning/10 px-1.5 py-px text-micro font-medium text-status-warning"
+    >
+      <MessageCircleWarning size={11} aria-hidden className="shrink-0" />
+      Needs reply
+    </span>
+  );
+}
+
+/** Assignee, Last answered and Last customer message under the subject. */
+function TicketRowDetails({ ticket: t }: { ticket: TicketListItem }) {
+  const a = t.activity;
+  return (
+    <span className="inline-flex items-center gap-x-3 min-w-0">
+      <span className="inline-flex items-center gap-1 min-w-0">
+        <UserRound size={11} aria-hidden className="shrink-0" />
+        <span className="truncate">{t.assignee ?? "Unassigned"}</span>
+      </span>
+      <span className="inline-flex items-center gap-1 shrink-0">
+        <span className="text-text-tertiary">Answered</span>
+        <ActivityValue time={a.lastAnswered} history={a.history} never="Never" focusable={false} />
+      </span>
+      <span className="inline-flex items-center gap-1 shrink-0">
+        <span className="text-text-tertiary">Customer</span>
+        <ActivityValue time={a.lastCustomerMessage} history={a.history} never="None" focusable={false} />
+      </span>
+    </span>
+  );
+}
+
 export function TicketList({ selectedTicketId, width }: { selectedTicketId: string | null; width: number }) {
   const data = useTicketStore((s) => s.data);
   const filter = useTicketStore((s) => s.filter);
@@ -84,6 +123,7 @@ export function TicketList({ selectedTicketId, width }: { selectedTicketId: stri
   const refresh = useTicketStore((s) => s.refresh);
   const refreshing = useTicketStore((s) => s.refreshing);
   const density = useUIStore((s) => s.emailDensity);
+  const timeZone = useDisplayTimeZone();
 
   const tickets = useMemo(() => selectVisibleTickets({ data, filter }), [data, filter]);
   const groups = useMemo(() => groupByDate(tickets, (t) => t.updatedAt), [tickets]);
@@ -143,22 +183,18 @@ export function TicketList({ selectedTicketId, width }: { selectedTicketId: stri
                   sender={t.customer ?? "Customer not loaded"}
                   subject={t.subject || "(no subject)"}
                   subjectPrefix={`#${t.id}`}
-                  preview={
-                    <span className="inline-flex items-center gap-1">
-                      <UserRound size={11} aria-hidden className="shrink-0" />
-                      <span>{t.assignee ?? "Unassigned"}</span>
-                    </span>
-                  }
+                  preview={<TicketRowDetails ticket={t} />}
                   time={t.updatedAt}
                   selected={t.id === selectedTicketId}
                   indicators={
                     <>
+                      {t.activity.needsReply === true && <NeedsReplyBadge />}
                       <TicketStatusBadge status={t.status} />
                       {t.priority && <TicketPriorityBadge priority={t.priority} />}
                     </>
                   }
                   onClick={() => navigateToTicket(t.id)}
-                  buttonProps={{ "aria-label": rowLabel(t) }}
+                  buttonProps={{ "aria-label": rowLabel(t, timeZone) }}
                 />
               </div>
             ))}

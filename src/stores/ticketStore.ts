@@ -6,6 +6,7 @@ import {
   type TicketListData,
   type TicketListItem,
 } from "@/services/freshdesk/ticketSync";
+import { hydrateTicketHistories } from "@/services/freshdesk/ticketHistory";
 
 export type TicketFilter = "outstanding" | "mine" | "all";
 
@@ -26,6 +27,8 @@ export function filterTickets(data: TicketListData | null, filter: TicketFilter)
 
 interface TicketState {
   data: TicketListData | null;
+  /** Bumped on every reload so views holding derived data (the reader's history) refresh */
+  version: number;
   filter: TicketFilter;
   refreshing: boolean;
   load: () => Promise<void>;
@@ -34,20 +37,25 @@ interface TicketState {
   refresh: () => Promise<void>;
   /** Fetch an older ticket by ID; resolves to its ID when found */
   findOlder: (ticketId: string) => Promise<string | null>;
+  /** Tells background hydration which tickets the operator is looking at */
+  focusHistory: (openedId: string | null, visibleIds: string[]) => void;
 }
 
 export const useTicketStore = create<TicketState>((set, get) => ({
   data: null,
+  version: 0,
   filter: "outstanding",
   refreshing: false,
   load: async () => {
-    set({ data: await getTicketList() });
+    const data = await getTicketList();
+    set((s) => ({ data, version: s.version + 1 }));
   },
   setFilter: (filter) => set({ filter }),
   refresh: async () => {
     set({ refreshing: true });
     try {
       await syncTickets({ trigger: "manual" });
+      void hydrateTicketHistories();
     } finally {
       set({ refreshing: false });
       await get().load();
@@ -58,6 +66,9 @@ export const useTicketStore = create<TicketState>((set, get) => ({
     await get().load();
     if (found) set({ filter: "all" });
     return found?.id ?? null;
+  },
+  focusHistory: (openedId, visibleIds) => {
+    void hydrateTicketHistories({ openedId, visibleIds });
   },
 }));
 
