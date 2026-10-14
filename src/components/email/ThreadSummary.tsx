@@ -1,8 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { Sparkles, ChevronDown, ChevronUp, RefreshCw } from "lucide-react";
-import { isAiAvailable } from "@/services/ai/providerManager";
+import { getAiReadiness, type AiReadiness } from "@/services/ai/gateway";
 import { summarizeThread } from "@/services/ai/aiService";
-import { deleteAiCache } from "@/services/db/aiCache";
 import type { DbMessage } from "@/services/db/messages";
 
 interface ThreadSummaryProps {
@@ -15,27 +14,32 @@ export function ThreadSummary({ threadId, accountId, messages }: ThreadSummaryPr
   const [summary, setSummary] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
-  const [available, setAvailable] = useState(false);
+  const [readiness, setReadiness] = useState<AiReadiness | null>(null);
+  const [failed, setFailed] = useState(false);
   const checkedRef = useRef(false);
+  const available = readiness?.status === "ready";
 
   useEffect(() => {
     if (checkedRef.current) return;
     checkedRef.current = true;
     if (messages.length < 2) return;
-    isAiAvailable().then(setAvailable);
+    getAiReadiness().then(setReadiness);
   }, [messages.length]);
 
   const loadingRef = useRef(false);
-  const loadSummary = useCallback(async () => {
+  const loadSummary = useCallback(async (refresh = false) => {
     if (loadingRef.current) return;
     loadingRef.current = true;
     setLoading(true);
+    setFailed(false);
+    if (refresh) setSummary(null);
     try {
-      const result = await summarizeThread(threadId, accountId, messages);
+      const result = await summarizeThread(threadId, accountId, messages, { refresh });
       setSummary(result);
     } catch (err) {
       console.error("Failed to summarize thread:", err);
       setSummary(null);
+      setFailed(true);
     } finally {
       loadingRef.current = false;
       setLoading(false);
@@ -44,25 +48,23 @@ export function ThreadSummary({ threadId, accountId, messages }: ThreadSummaryPr
 
   // Auto-load summary when available
   useEffect(() => {
-    if (!available || messages.length < 2 || summary !== null || loadingRef.current) return;
+    if (!available || messages.length < 2 || summary !== null || failed || loadingRef.current) return;
     loadSummary();
-  }, [available, messages.length, summary, loadSummary]);
+  }, [available, messages.length, summary, failed, loadSummary]);
 
-  const handleRefresh = useCallback(async () => {
-    await deleteAiCache(accountId, threadId, "summary");
-    setSummary(null);
-    setLoading(true);
-    try {
-      const result = await summarizeThread(threadId, accountId, messages);
-      setSummary(result);
-    } catch (err) {
-      console.error("Failed to refresh summary:", err);
-    } finally {
-      setLoading(false);
-    }
-  }, [threadId, accountId, messages]);
+  const handleRefresh = useCallback(() => loadSummary(true), [loadSummary]);
 
-  if (!available || messages.length < 2) return null;
+  if (messages.length < 2 || !readiness || readiness.status === "off") return null;
+
+  // AI is configured but may not receive email content: say why, send nothing.
+  if (readiness.status === "refused" || readiness.status === "needs_approval") {
+    return (
+      <div className="mx-4 my-2 p-3 rounded-lg bg-bg-secondary border border-border-primary flex items-start gap-2">
+        <Sparkles size={14} className="text-text-tertiary shrink-0 mt-0.5" />
+        <p className="text-xs text-text-secondary">{readiness.message}</p>
+      </div>
+    );
+  }
 
   return (
     <div className="mx-4 my-2 p-3 rounded-lg bg-accent/5 border border-accent/20">
@@ -95,6 +97,9 @@ export function ThreadSummary({ threadId, accountId, messages }: ThreadSummaryPr
             </div>
           )}
           {summary && <p className="text-xs leading-relaxed">{summary}</p>}
+          {failed && !loading && !summary && (
+            <p className="text-xs text-text-tertiary">Summary unavailable right now.</p>
+          )}
         </div>
       )}
     </div>

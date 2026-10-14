@@ -5,6 +5,8 @@ import { navigateToLabel, navigateToSettings } from "@/router/navigate";
 import { useAccountStore } from "@/stores/accountStore";
 import { getSetting, setSetting, getSecureSetting, setSecureSetting } from "@/services/db/settings";
 import { PROVIDER_MODELS } from "@/services/ai/types";
+import { AI_APPROVAL_SETTING, APPROVED_PROVIDER } from "@/services/ai/gateway";
+import { AiProviderApproval } from "./AiProviderApproval";
 import { deleteAccount } from "@/services/db/accounts";
 import { removeClient, reauthorizeAccount } from "@/services/gmail/tokenManager";
 import { triggerSync, forceFullSync, resyncAccount } from "@/services/gmail/syncManager";
@@ -124,6 +126,7 @@ export function SettingsPage() {
   const [geminiModel, setGeminiModel] = useState("gemini-2.5-flash-preview-05-20");
   const [copilotModel, setCopilotModel] = useState("openai/gpt-4o-mini");
   const [aiEnabled, setAiEnabled] = useState(true);
+  const [aiProviderApproved, setAiProviderApproved] = useState(false);
   const [aiAutoCategorize, setAiAutoCategorize] = useState(true);
   const [aiAutoSummarize, setAiAutoSummarize] = useState(true);
   const [aiKeySaved, setAiKeySaved] = useState(false);
@@ -197,6 +200,7 @@ export function SettingsPage() {
       if (copilotModelVal) setCopilotModel(copilotModelVal);
       const aiEn = await getSetting("ai_enabled");
       setAiEnabled(aiEn !== "false");
+      setAiProviderApproved((await getSetting(AI_APPROVAL_SETTING)) === APPROVED_PROVIDER);
       const aiCat = await getSetting("ai_auto_categorize");
       setAiAutoCategorize(aiCat !== "false");
       const aiSum = await getSetting("ai_auto_summarize");
@@ -1070,6 +1074,14 @@ export function SettingsPage() {
                       {aiProvider === "ollama" && "Connect to a local Ollama or LMStudio server. No API key required."}
                       {aiProvider === "copilot" && `Uses ${PROVIDER_MODELS.copilot.find((m) => m.id === copilotModel)?.label ?? copilotModel}. Requires a GitHub PAT with models:read permission.`}
                     </p>
+                    <AiProviderApproval
+                      provider={aiProvider}
+                      approved={aiProviderApproved}
+                      onApprovedChange={async (approved) => {
+                        setAiProviderApproved(approved);
+                        await setSetting(AI_APPROVAL_SETTING, approved ? APPROVED_PROVIDER : "");
+                      }}
+                    />
                   </Section>
 
                   {aiProvider === "ollama" ? (
