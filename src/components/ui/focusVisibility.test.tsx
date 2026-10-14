@@ -51,7 +51,9 @@ const thread: Thread = {
   fromAddress: "alice@example.com",
 };
 
-const FOCUSABLE = 'button, a[href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
+// Tab-reachable elements; tabindex="-1" controls (e.g. hover-only row actions) are exempt, as in theme.css
+const FOCUSABLE =
+  'button:not([tabindex="-1"]), a[href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
 
 function expectVisibleFocusRing(el: HTMLElement) {
   // Move focus the way a keyboard user does (Tab), so :focus-visible applies

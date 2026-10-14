@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { ThreadCard } from "./ThreadCard";
 import type { Thread } from "@/stores/threadStore";
 
@@ -32,6 +32,14 @@ vi.mock("@/stores/uiStore", () => ({
 vi.mock("@/hooks/useRouteNavigation", () => ({
   useActiveLabel: () => "inbox",
 }));
+
+const actions = vi.hoisted(() => ({
+  starThread: vi.fn(async () => ({ success: true })),
+  archiveThread: vi.fn(async () => ({ success: true })),
+  trashThread: vi.fn(async () => ({ success: true })),
+  markThreadRead: vi.fn(async () => ({ success: true })),
+}));
+vi.mock("@/services/emailActions", () => actions);
 
 function makeThread(overrides: Partial<Thread> = {}): Thread {
   return {
@@ -100,5 +108,30 @@ describe("ThreadCard", () => {
     );
     const button = container.querySelector("button")!;
     expect(button.className).toContain("bg-red-500/8");
+  });
+
+  it("stars a thread from the hover star without opening it", () => {
+    render(<ThreadCard thread={makeThread({ isStarred: false })} isSelected={false} onClick={onClick} />);
+    fireEvent.click(screen.getByRole("button", { name: "Star" }));
+    expect(actions.starThread).toHaveBeenCalledWith("a1", "t1", [], true);
+    expect(onClick).not.toHaveBeenCalled();
+  });
+
+  it("archives, trashes and toggles read from the hover quick actions", () => {
+    render(<ThreadCard thread={makeThread({ isRead: false })} isSelected={false} onClick={onClick} />);
+    fireEvent.click(screen.getByRole("button", { name: "Archive" }));
+    expect(actions.archiveThread).toHaveBeenCalledWith("a1", "t1", []);
+    fireEvent.click(screen.getByRole("button", { name: "Move to trash" }));
+    expect(actions.trashThread).toHaveBeenCalledWith("a1", "t1", []);
+    fireEvent.click(screen.getByRole("button", { name: "Mark as read" }));
+    expect(actions.markThreadRead).toHaveBeenCalledWith("a1", "t1", [], true);
+    expect(onClick).not.toHaveBeenCalled();
+  });
+
+  it("opens the thread when its row is clicked", () => {
+    const thread = makeThread();
+    render(<ThreadCard thread={thread} isSelected={false} onClick={onClick} />);
+    fireEvent.click(screen.getByRole("button", { name: /email from Alice/ }));
+    expect(onClick).toHaveBeenCalledWith(thread);
   });
 });

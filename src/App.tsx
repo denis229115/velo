@@ -66,7 +66,8 @@ import { fetchSendAsAliases } from "./services/gmail/sendAs";
 import { getGmailClient } from "./services/gmail/tokenManager";
 import { invoke } from "@tauri-apps/api/core";
 import { DndProvider } from "./components/dnd/DndProvider";
-import { TitleBar } from "./components/layout/TitleBar";
+import { AppFrame } from "./components/layout/AppFrame";
+import { StatusBar } from "./components/list/StatusBar";
 import { useShortcutStore } from "./stores/shortcutStore";
 import { getIncompleteTaskCount } from "./services/db/tasks";
 import { useTaskStore } from "./stores/taskStore";
@@ -221,7 +222,8 @@ export default function App() {
 
         // Restore read filter
         const savedReadFilter = await getSetting("read_filter");
-        if (savedReadFilter === "all" || savedReadFilter === "read" || savedReadFilter === "unread") {
+        // The list offers All / Unread tabs; an older saved "read" falls back to All
+        if (savedReadFilter === "all" || savedReadFilter === "unread") {
           ui.setReadFilter(savedReadFilter);
         }
 
@@ -489,29 +491,22 @@ export default function App() {
   return (
     <div className="flex flex-col h-screen overflow-hidden text-text-primary">
       <OfflineBanner />
-      <TitleBar />
-      <div className="flex flex-1 min-w-0 overflow-hidden">
-        <DndProvider>
-          <ErrorBoundary name="Sidebar">
-            <Sidebar
-              collapsed={sidebarCollapsed}
-              onAddAccount={() => setShowAddAccount(true)}
-            />
-          </ErrorBoundary>
-          <Outlet />
-        </DndProvider>
-      </div>
-
-      {/* Sync status bar */}
-      {syncStatus && (
-        <div
-          className={`fixed bottom-0 left-0 right-0 text-white text-xs px-4 py-1.5 text-center z-40 animate-[slideUp_200ms_ease-out,fadeIn_200ms_ease-out] ${
-            syncStatus.startsWith("Sync failed") ? "bg-danger" : "bg-accent"
-          }`}
+      <DndProvider>
+        <AppFrame
+          sidebarCollapsed={sidebarCollapsed}
+          sidebar={
+            <ErrorBoundary name="Sidebar">
+              <Sidebar
+                collapsed={sidebarCollapsed}
+                onAddAccount={() => setShowAddAccount(true)}
+              />
+            </ErrorBoundary>
+          }
+          footer={<StatusBar syncStatus={syncStatus} />}
         >
-          {syncStatus}
-        </div>
-      )}
+          <Outlet />
+        </AppFrame>
+      </DndProvider>
 
       {showAddAccount && (
         <AddAccount

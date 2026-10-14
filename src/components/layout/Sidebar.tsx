@@ -345,7 +345,7 @@ export function Sidebar({ collapsed, onAddAccount }: SidebarProps) {
 
   return (
     <aside
-      className={`no-select flex flex-col bg-sidebar-bg text-sidebar-text border-r border-border-primary transition-all duration-200 glass-sidebar ${
+      className={`no-select flex flex-col text-sidebar-text transition-all duration-200 ${
         collapsed ? "w-16" : "w-60"
       }`}
     >
