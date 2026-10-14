@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { AiSendPreviewHost } from "@/components/ai/AiSendPreview";
 import { ThreadView } from "./components/email/ThreadView";
 import { Composer } from "./components/composer/Composer";
 import { UndoSendToast } from "./components/composer/UndoSendToast";
@@ -139,6 +140,7 @@ export default function ThreadWindow() {
       <ThreadView thread={thread} />
       <Composer />
       <UndoSendToast />
+      <AiSendPreviewHost />
     </div>
   );
 }

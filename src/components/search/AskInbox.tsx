@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { Sparkles, X, Send, ExternalLink } from "lucide-react";
 import { askMyInbox, type AskInboxResult } from "@/services/ai/askInbox";
 import { AiError } from "@/services/ai/errors";
+import { AiSendNote } from "@/components/ai/AiSendPreview";
 import { useAccountStore } from "@/stores/accountStore";
 import { navigateToLabel } from "@/router/navigate";
 
@@ -98,6 +99,9 @@ export function AskInbox({ isOpen, onClose }: AskInboxProps) {
           >
             <Send size={16} />
           </button>
+        </div>
+        <div className="px-4 py-1.5 border-b border-border-secondary">
+          <AiSendNote features={["ask_inbox"]} />
         </div>
 
         {/* Results */}

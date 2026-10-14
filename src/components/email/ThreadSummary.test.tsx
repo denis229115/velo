@@ -8,6 +8,7 @@ vi.mock("@/services/ai/aiService", () => ({ summarizeThread: vi.fn() }));
 import { getAiReadiness } from "@/services/ai/gateway";
 import { summarizeThread } from "@/services/ai/aiService";
 import { AiError } from "@/services/ai/errors";
+import { takePreviewRequest } from "@/services/ai/sendPreview";
 import { ThreadSummary } from "./ThreadSummary";
 
 const messages = [
@@ -80,5 +81,34 @@ describe("ThreadSummary", () => {
 
     expect(await screen.findByText("Updated summary.")).toBeInTheDocument();
     expect(summarizeThread).toHaveBeenLastCalledWith("thread-1", "acc-1", messages, { refresh: true });
+  });
+
+  it("names the provider and reruns the summary through the send preview", async () => {
+    vi.mocked(getAiReadiness).mockResolvedValue({ status: "ready", provider: "claude", model: "m" });
+    vi.mocked(summarizeThread).mockResolvedValue("They want the invoice resent.");
+
+    renderSummary();
+    expect(await screen.findByText("They want the invoice resent.")).toBeInTheDocument();
+    expect(screen.getByText("Sends to Claude API (Anthropic)")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+
+    await waitFor(() =>
+      expect(summarizeThread).toHaveBeenLastCalledWith("thread-1", "acc-1", messages, { refresh: true }),
+    );
+    expect(takePreviewRequest("thread_summary")).toBe(true);
+  });
+
+  it("says nothing was sent when the operator cancels the preview", async () => {
+    vi.mocked(getAiReadiness).mockResolvedValue({ status: "ready", provider: "claude", model: "m" });
+    vi.mocked(summarizeThread).mockRejectedValue(
+      new AiError("CANCELLED", "Not sent: you cancelled the send preview."),
+    );
+
+    renderSummary();
+
+    expect(await screen.findByText("Not sent: you cancelled the send preview.")).toBeInTheDocument();
+    expect(screen.queryByText("Summary unavailable right now.")).not.toBeInTheDocument();
+    expect(screen.getByText("Sends to Claude API (Anthropic)")).toBeInTheDocument();
   });
 });
