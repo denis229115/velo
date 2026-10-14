@@ -29,9 +29,10 @@ describe("theme guard", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("applies glass/blur only to the sidebar", () => {
+  it("applies glass/blur only to the sidebar and the window frame it sits on", () => {
+    const allowed = ["styles/globals.css", "components/layout/Sidebar.tsx", "components/layout/AppFrame.tsx"];
     const offenders = files
-      .filter(({ path }) => path !== "styles/globals.css" && path !== "components/layout/Sidebar.tsx")
+      .filter(({ path }) => !allowed.includes(path))
       .filter(({ text }) => /glass-|backdrop-blur|backdrop-filter/.test(text))
       .map(({ path }) => path);
     expect(offenders).toEqual([]);

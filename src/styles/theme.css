@@ -40,6 +40,13 @@
   --status-success: #15803d;
   --status-warning: #a15c07;
   --status-error: #c42020;
+
+  /* Window frame and inset content panel */
+  --frame-gap: 8px;
+  --titlebar-height: 36px;
+  --panel-radius: 10px;
+  --panel-border: rgba(0, 0, 0, 0.1);
+  --panel-shadow: 0 1px 6px rgba(0, 0, 0, 0.05);
 }
 
 .dark {
@@ -69,6 +76,42 @@
   --status-success: #4ade80;
   --status-warning: #f5c04a;
   --status-error: #ff8080;
+
+  --panel-border: rgba(255, 255, 255, 0.08);
+  --panel-shadow: 0 1px 8px rgba(0, 0, 0, 0.32);
+}
+
+/*
+ * App frame: the window is drawn in the (translucent) sidebar colour and the
+ * sidebar sits directly on it. Content lives in one solid, rounded panel inset
+ * by --frame-gap on the top, right and bottom.
+ */
+.app-frame {
+  background-color: var(--surface-sidebar);
+}
+
+.app-panel {
+  background-color: var(--surface-list);
+  border-width: 1px;
+  border-style: solid;
+  border-color: var(--panel-border);
+  border-radius: var(--panel-radius);
+  box-shadow: var(--panel-shadow);
+  margin-top: var(--frame-gap);
+  margin-right: var(--frame-gap);
+  margin-bottom: var(--frame-gap);
+  margin-left: 0;
+  overflow: hidden;
+}
+
+/* macOS with a collapsed sidebar: keep the traffic lights off the panel */
+.app-panel[data-top="titlebar"] {
+  margin-top: var(--titlebar-height);
+}
+
+/* Windows/Linux: the title bar row above already provides the gap */
+.app-panel[data-top="none"] {
+  margin-top: 0;
 }
 
 /*

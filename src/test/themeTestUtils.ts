@@ -111,3 +111,21 @@ export function contrastRatio(fg: string, bg: string, backdrop = "#ffffff"): num
   const [hi, lo] = [luminance(fgSolid), luminance(bgSolid)].sort((a, b) => b - a) as [number, number];
   return (hi + 0.05) / (lo + 0.05);
 }
+
+/**
+ * The value a property is declared with for an element, from the last matching
+ * stylesheet rule. For properties whose var() values jsdom cannot compute
+ * (margins, border colours); rules are taken in source order.
+ */
+export function declaredStyle(el: Element, property: string): string {
+  let value = "";
+  for (const sheet of Array.from(document.styleSheets)) {
+    for (const rule of Array.from(sheet.cssRules)) {
+      if (rule instanceof CSSStyleRule && el.matches(rule.selectorText)) {
+        const v = rule.style.getPropertyValue(property);
+        if (v) value = v.trim();
+      }
+    }
+  }
+  return value;
+}
