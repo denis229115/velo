@@ -1,21 +1,17 @@
 import { useState } from "react";
-import { Search, X, FolderPlus } from "lucide-react";
+import { X, FolderPlus } from "lucide-react";
 import { useAccountStore } from "@/stores/accountStore";
 import { useThreadStore } from "@/stores/threadStore";
 import { useSmartFolderStore } from "@/stores/smartFolderStore";
-import { useShortcutStore } from "@/stores/shortcutStore";
 import { InputDialog } from "@/components/ui/InputDialog";
-import { shortcutTooltip } from "@/utils/shortcutTooltip";
-import { openSearch } from "./openSearch";
 
 const iconButton =
   "w-7 h-7 flex items-center justify-center rounded-md text-text-tertiary hover:bg-bg-hover hover:text-text-primary transition-colors";
 
-/** List header buttons: search, or save/clear while a search is shown. */
+/** List header buttons to save or clear the search shown; the search icon lives in the sidebar header. */
 export function ListSearchActions() {
   const searchQuery = useThreadStore((s) => s.searchQuery);
   const activeAccountId = useAccountStore((s) => s.activeAccountId);
-  const searchKey = useShortcutStore((s) => s.keyMap["app.search"]);
   const [showSaveModal, setShowSaveModal] = useState(false);
   const query = searchQuery.trim();
 
@@ -43,15 +39,6 @@ export function ListSearchActions() {
           </button>
         </>
       )}
-      <button
-        type="button"
-        onClick={openSearch}
-        aria-label="Search"
-        title={shortcutTooltip("Search", searchKey)}
-        className={iconButton}
-      >
-        <Search size={15} />
-      </button>
       <InputDialog
         isOpen={showSaveModal}
         onClose={() => setShowSaveModal(false)}
