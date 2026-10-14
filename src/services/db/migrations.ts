@@ -775,6 +775,15 @@ const MIGRATIONS = [
     description: "Accept self-signed certificates for IMAP/SMTP",
     sql: `ALTER TABLE accounts ADD COLUMN accept_invalid_certs INTEGER DEFAULT 0;`,
   },
+  {
+    version: 24,
+    description: "Bounded retries with backoff for scheduled emails",
+    sql: `
+      ALTER TABLE scheduled_emails ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE scheduled_emails ADD COLUMN next_attempt_at INTEGER;
+      ALTER TABLE scheduled_emails ADD COLUMN last_error TEXT;
+    `,
+  },
 ];
 
 /**
