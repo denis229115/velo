@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import {
   Outlet,
   RouterProvider,
@@ -49,13 +49,21 @@ import { getSelectedThreadId } from "@/router/navigate";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useTicketStore } from "@/stores/ticketStore";
 import { FreshdeskPage } from "./FreshdeskPage";
+import { FreshdeskViewNav } from "./FreshdeskViewNav";
 
 vi.spyOn(console, "log").mockImplementation(() => {});
 vi.spyOn(console, "warn").mockImplementation(() => {});
 
 function Shell() {
   useKeyboardShortcuts();
-  return <Outlet />;
+  return (
+    <>
+      <nav aria-label="Sidebar">
+        <FreshdeskViewNav collapsed={false} />
+      </nav>
+      <Outlet />
+    </>
+  );
 }
 
 function renderFreshdesk(path = "/freshdesk") {
@@ -83,6 +91,15 @@ const rows = () => screen.queryAllByRole("button", { name: /^Ticket #/ });
 const rowIds = () => rows().map((r) => r.getAttribute("aria-label")?.match(/^Ticket #([\w-]+)/)?.[1]);
 const press = (key: string) => act(() => void fireEvent.keyDown(window, { key }));
 const reader = () => screen.getByRole("region", { name: "Ticket reader" });
+const sidebar = () => within(screen.getByRole("group", { name: "Freshdesk views" }));
+const sidebarView = (name: string) => sidebar().findByRole("button", { name });
+/** A restart: the in-memory store is dropped and everything is read back from the database */
+async function restart() {
+  cleanup();
+  useTicketStore.setState(useTicketStore.getInitialState(), true);
+  renderFreshdesk();
+  await waitFor(() => expect(rows().length).toBeGreaterThan(0));
+}
 
 beforeEach(async () => {
   vi.useFakeTimers({ toFake: ["Date"] });
@@ -106,10 +123,10 @@ describe("Freshdesk ticket list", () => {
     await connectAndSync();
     renderFreshdesk();
 
-    expect(await screen.findByRole("heading", { name: "Tickets" })).toBeInTheDocument();
     await screen.findByText("Fixture: export stuck");
-    // Done ticket 1004 is downloaded but not outstanding
-    expect(rowIds()).toEqual(["1003", "1001", "1002", "1007", "1008", "1006"]);
+    // All outstanding, priority then oldest; done ticket 1004 is downloaded but not outstanding
+    expect(screen.getByRole("heading", { name: "All outstanding" })).toBeInTheDocument();
+    expect(rowIds()).toEqual(["1006", "1001", "1008", "1007", "1002", "1003"]);
 
     const row = within(screen.getByRole("button", { name: /^Ticket #1002/ }));
     expect(row.getByText("#1002")).toBeInTheDocument();
@@ -133,7 +150,7 @@ describe("Freshdesk ticket list", () => {
     renderFreshdesk();
     await screen.findByText("Fixture: export stuck");
 
-    fireEvent.click(screen.getByRole("tab", { name: "My open tickets" }));
+    fireEvent.click(await sidebarView("My open tickets"));
 
     // Not 1003 (mine, unknown status), 1006 (mine, waiting), 1007 (a namesake's)
     expect(rowIds()).toEqual(["1001"]);
@@ -145,13 +162,13 @@ describe("Freshdesk ticket list", () => {
     await screen.findByText("Fixture: export stuck");
 
     press("Enter");
-    expect(await within(reader()).findByRole("heading", { name: "Fixture: status Velo does not know" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^Ticket #1003/ })).toHaveAttribute("aria-selected", "true");
+    expect(await within(reader()).findByRole("heading", { name: "Fixture: long-waiting reply" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Ticket #1006/ })).toHaveAttribute("aria-selected", "true");
 
     press("j");
     expect(await within(reader()).findByRole("heading", { name: "Fixture: cannot sign in" })).toBeInTheDocument();
     press("j");
-    expect(await within(reader()).findByRole("heading", { name: "Fixture: export stuck" })).toBeInTheDocument();
+    expect(await within(reader()).findByRole("heading", { name: "Fixture: nobody assigned" })).toBeInTheDocument();
     press("k");
     expect(await within(reader()).findByRole("heading", { name: "Fixture: cannot sign in" })).toBeInTheDocument();
 
@@ -180,5 +197,121 @@ describe("Freshdesk ticket list", () => {
     expect(await screen.findByText("Sample ticket: cannot sign in")).toBeInTheDocument();
     expect(screen.getByText(/Sample data/)).toBeInTheDocument();
     expect(within(screen.getByRole("button", { name: /^Ticket #sample-4/ })).getByText("Unknown status")).toBeInTheDocument();
+  });
+});
+
+describe("Freshdesk ticket views", () => {
+  it("lists the presets under Freshdesk in the sidebar and opens each one", async () => {
+    await connectAndSync();
+    renderFreshdesk();
+    await screen.findByText("Fixture: export stuck");
+    expect(sidebar().getAllByRole("button").map((b) => b.textContent)).toEqual([
+      "My open tickets",
+      "My outstanding tickets",
+      "Needs reply",
+      "Unassigned",
+      "All outstanding",
+      "Waiting on customer",
+    ]);
+    fireEvent.click(await sidebarView("Unassigned"));
+    await waitFor(() => expect(rowIds()).toEqual(["1008"]));
+    expect(await sidebarView("Unassigned")).toHaveAttribute("aria-current", "page");
+  });
+
+  it("changes a view's sort and remembers it, and the selected view, after a restart (A04)", async () => {
+    await connectAndSync();
+    renderFreshdesk();
+    await screen.findByText("Fixture: export stuck");
+    expect(screen.getByRole("combobox", { name: "Sort" })).toHaveDisplayValue("Priority, then oldest");
+    fireEvent.change(screen.getByRole("combobox", { name: "Sort" }), { target: { value: "updated" } });
+    await waitFor(() => expect(rowIds()).toEqual(["1003", "1001", "1002", "1007", "1008", "1006"]));
+    fireEvent.click(await sidebarView("Waiting on customer"));
+    await waitFor(() => expect(rowIds()).toEqual(["1006"]));
+
+    await restart();
+    expect(await screen.findByRole("heading", { name: "Waiting on customer" })).toBeInTheDocument();
+    fireEvent.click(await sidebarView("All outstanding"));
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "Sort" })).toHaveDisplayValue("Last updated"));
+    expect(rowIds()).toEqual(["1003", "1001", "1002", "1007", "1008", "1006"]);
+  });
+
+  it("saves a custom view from edited filters with its columns and density, renames and deletes it", async () => {
+    await connectAndSync();
+    renderFreshdesk();
+    await screen.findByText("Fixture: export stuck");
+
+    fireEvent.click(screen.getByRole("button", { name: "Filters" }));
+    const panel = within(await screen.findByRole("region", { name: "Filters" }));
+    fireEvent.click(await panel.findByRole("checkbox", { name: "Fixture: With engineering" }));
+    fireEvent.click(panel.getByRole("checkbox", { name: "Open" }));
+    fireEvent.click(panel.getByRole("checkbox", { name: "Medium" }));
+    await waitFor(() => expect(rowIds()).toEqual(["1008", "1007", "1002"]));
+
+    fireEvent.change(panel.getByRole("textbox", { name: "View name" }), { target: { value: "Engineering queue" } });
+    fireEvent.click(panel.getByRole("button", { name: "Save as view" }));
+    expect(await screen.findByRole("heading", { name: "Engineering queue" })).toBeInTheDocument();
+    expect(await sidebarView("Engineering queue")).toHaveAttribute("aria-current", "page");
+
+    fireEvent.click(screen.getByRole("button", { name: "Columns" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "SLA due" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Density" }), { target: { value: "spacious" } });
+    await waitFor(() => expect(within(screen.getByRole("button", { name: /^Ticket #1002/ })).getByText(/^Due/)).toBeInTheDocument());
+
+    await restart();
+    expect(await screen.findByRole("heading", { name: "Engineering queue" })).toBeInTheDocument();
+    await waitFor(() => expect(rowIds()).toEqual(["1008", "1007", "1002"]));
+    expect(screen.getByRole("combobox", { name: "Density" })).toHaveDisplayValue("Spacious");
+    expect(within(screen.getByRole("button", { name: /^Ticket #1002/ })).getByText(/^Due/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Rename view" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "View name" }), { target: { value: "Engineering" } });
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "View name" }), { key: "Enter" });
+    expect(await sidebarView("Engineering")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete view" }));
+    await waitFor(() => expect(sidebar().queryByRole("button", { name: "Engineering" })).not.toBeInTheDocument());
+    expect(await screen.findByRole("heading", { name: "All outstanding" })).toBeInTheDocument();
+  });
+
+  it("shows the coverage indicator while Needs reply is partial, never a total (A21)", async () => {
+    await connectAndSync();
+    renderFreshdesk();
+    await screen.findByText("Fixture: export stuck");
+    expect(screen.queryByRole("status", { name: "Coverage" })).not.toBeInTheDocument();
+    cleanup();
+
+    // The next full sync's search finds 450 outstanding tickets but downloads one
+    stub.respondOnce(ALPHA_HOST, "/api/v2/search/tickets", {
+      status: 200,
+      body: { results: [alphaTenantWithTickets.tickets![0]], total: 450 },
+    });
+    vi.setSystemTime(FIXTURE_NOW + 7 * 60 * 60_000);
+    await syncTickets({ trigger: "manual" });
+    useTicketStore.setState(useTicketStore.getInitialState(), true);
+    renderFreshdesk();
+    const coverage = await screen.findByRole("status", { name: "Coverage" });
+    expect(coverage).toHaveTextContent(/Partial results/);
+    expect(coverage).toHaveTextContent("1 of 450 outstanding tickets downloaded");
+    expect(coverage).not.toHaveTextContent(/\b6 tickets\b|of 6\b/);
+    expect(within(coverage).getByRole("button", { name: "Refresh" })).toBeInTheDocument();
+  });
+
+  it("offers optional columns only when Freshdesk provides their data, hidden by default", async () => {
+    renderFreshdesk();
+    await screen.findByText("Sample ticket: cannot sign in");
+    fireEvent.click(screen.getByRole("button", { name: "Columns" }));
+    expect(screen.queryByRole("checkbox", { name: "SLA due" })).not.toBeInTheDocument();
+    expect(screen.getByText("No optional columns: Freshdesk has not provided company, group or SLA data.")).toBeInTheDocument();
+    cleanup();
+
+    await connectAndSync();
+    useTicketStore.setState(useTicketStore.getInitialState(), true);
+    renderFreshdesk();
+    await screen.findByText("Fixture: export stuck");
+    expect(within(screen.getByRole("button", { name: /^Ticket #1002/ })).queryByText(/^Due/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Columns" }));
+    expect(screen.getByRole("checkbox", { name: "SLA due" })).not.toBeChecked();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Company / group" }));
+    await waitFor(() => expect(within(screen.getByRole("button", { name: /^Ticket #1002/ })).getByText(/Fixture/, { selector: "[data-column=company_group]" })).toBeInTheDocument());
   });
 });

@@ -17,12 +17,18 @@ export function FreshdeskPage() {
   const load = useTicketStore((s) => s.load);
   const selectedTicketId = useSelectedTicketId();
   const ticket = data?.tickets.find((t) => t.id === selectedTicketId) ?? null;
-  const filter = useTicketStore((s) => s.filter);
+  const views = useTicketStore((s) => s.views);
+  const selectedViewId = useTicketStore((s) => s.selectedViewId);
+  const draftFilter = useTicketStore((s) => s.draftFilter);
   const focusHistory = useTicketStore((s) => s.focusHistory);
   // Histories load for the opened ticket first, then the top of the list; keyed by IDs so reloads don't re-trigger
   const visibleKey = useMemo(
-    () => selectVisibleTickets({ data, filter }).slice(0, VISIBLE_HYDRATION_ROWS).map((t) => t.id).join(","),
-    [data, filter],
+    () =>
+      selectVisibleTickets({ data, views, selectedViewId, draftFilter })
+        .slice(0, VISIBLE_HYDRATION_ROWS)
+        .map((t) => t.id)
+        .join(","),
+    [data, views, selectedViewId, draftFilter],
   );
 
   useEffect(() => {

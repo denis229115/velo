@@ -1,4 +1,4 @@
-import { getDb, withReadSnapshot } from "@/services/db/connection";
+import { getDb, withReadSnapshot, withTransaction } from "@/services/db/connection";
 import { getStatusClasses } from "@/services/db/freshdesk";
 import { currentTenantId } from "./connection";
 import { DEFAULT_VIEW_ID, presetViews, type TicketView } from "./viewEngine";
@@ -96,16 +96,21 @@ export async function createTicketView(input: TicketViewInput): Promise<TicketVi
 
 /** Changes a view; a preset keeps its name and filter, so only its display settings change. */
 export async function updateTicketView(viewId: string, changes: TicketViewChanges): Promise<TicketView | null> {
-  const tenantId = await currentTenantId();
-  const current = (await readViews(tenantId)).views.find((v) => v.id === viewId);
-  if (!current) return null;
-  const { name, filter, ...display } = changes;
-  const next: TicketView =
-    current.kind === "preset"
-      ? { ...current, ...display }
-      : { ...current, ...display, ...(name !== undefined ? { name: name.trim() } : {}), ...(filter ? { filter } : {}) };
-  await writeView(tenantId, next, current.kind === "preset" ? 0 : Date.now());
-  return next;
+  let updated: TicketView | null = null;
+  // Read and write in one step, so quick successive changes never overwrite each other
+  await withTransaction(async () => {
+    const tenantId = await currentTenantId();
+    const current = (await readViews(tenantId)).views.find((v) => v.id === viewId);
+    if (!current) return;
+    const { name, filter, ...display } = changes;
+    const next: TicketView =
+      current.kind === "preset"
+        ? { ...current, ...display }
+        : { ...current, ...display, ...(name !== undefined ? { name: name.trim() } : {}), ...(filter ? { filter } : {}) };
+    await writeView(tenantId, next, current.kind === "preset" ? 0 : Date.now());
+    updated = next;
+  });
+  return updated;
 }
 
 /** Deletes a custom view; presets cannot be deleted. */

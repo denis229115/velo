@@ -32,7 +32,7 @@ describe("Freshdesk list header", () => {
     useTicketStore.setState({ data: listData(isSample) });
     render(<TicketList selectedTicketId={null} width={420} />);
 
-    expect(screen.getByRole("heading", { name: "Tickets" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "All outstanding" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Search" })).not.toBeInTheDocument();
   });
 });
