@@ -764,11 +764,11 @@ export const HELP_CATEGORIES: HelpCategory[] = [
         title: "AI overview",
         summary: "Every AI request goes through one gateway, to the Claude API only.",
         description:
-          "Every AI request in Velo goes through one AI gateway. It sends only allowlisted fields (subject, message text, status and priority): sender and recipient addresses, custom fields, internal notes and attachments never leave Velo. Only the Claude API (Anthropic) may receive email, ticket or task content, and AI stays off until you approve it in Settings > AI. Other providers can still be configured but are refused for this content, with the reason shown. The AI gets no tools and its output is only shown to you. Every request is recorded in a local AI audit log. AI features include thread summaries, smart replies, compose assistance, text transformation, categorisation, smart labels, task extraction, auto-drafts and natural language inbox queries. Reading, replying and composing keep working when AI is off or failing.",
+          "Every AI request in Velo goes through one AI gateway. It sends only allowlisted fields (subject, message text, status and priority, plus the sender's domain such as example.com for categorisation and smart labels): sender and recipient addresses and names, custom fields, internal notes and attachments never leave Velo. Only the Claude API (Anthropic) may receive email, ticket or task content, and AI stays off until you approve it in Settings > AI. Other providers are no longer offered; if one was selected before, Settings > AI explains why it is refused and offers to switch to Claude. The AI gets no tools and its output is only shown to you. Every request is recorded in a local AI audit log. AI features include thread summaries, smart replies, compose assistance, text transformation, categorisation, smart labels, task extraction, auto-drafts and natural language inbox queries. Reading, replying and composing keep working when AI is off or failing.",
         tips: [
           { text: "Add your Anthropic API key in Settings > AI, then tick the approval box." },
           { text: "Only the Claude API may receive email, ticket or task content." },
-          { text: "Sender and recipient addresses are never sent to the AI." },
+          { text: "Sender and recipient addresses are never sent to the AI; categorisation sees only the sender's domain." },
           { text: "Every AI request is logged locally: when, which feature, which model." },
           { text: "AI results are cached per message content, model and prompt version." },
           { text: "API keys are stored securely in your local database." },

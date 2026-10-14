@@ -35,8 +35,8 @@ export function AiProviderApproval({ provider, approved, onApprovedChange }: AiP
           Approve the {APPROVED_PROVIDER_LABEL} for email, ticket and task content
         </span>
         <span className="block text-xs text-text-tertiary mt-0.5">
-          AI stays off until you approve it. Velo sends only subjects, message text, status and
-          priority, and logs every request locally.
+          AI stays off until you approve it. Velo sends only subjects, message text, status, priority
+          and sender domains, and logs every request locally.
         </span>
       </span>
     </label>
