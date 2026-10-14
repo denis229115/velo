@@ -76,7 +76,15 @@ import { extractTask } from "./taskExtraction";
 import { refreshWritingStyle, generateAutoDraft } from "./writingStyleService";
 import { upsertMessage } from "@/services/db/messages";
 import { upsertThread } from "@/services/db/threads";
-import { requestAi, getAiReadiness, isAiAvailable } from "./gateway";
+import { upsertAttachment } from "@/services/db/attachments";
+import {
+  requestAi,
+  getAiReadiness,
+  isAiAvailable,
+  setSendPreviewHandler,
+  previewNextRequest,
+  type SendPreview,
+} from "./gateway";
 import { AiError } from "./errors";
 
 // ── Fixtures (fake personal data) ──
@@ -136,6 +144,10 @@ const CONTACT_FIELDS = [
   "abc123@mail.example.test",
 ];
 
+// ── The operator at the send preview ──
+const previews: SendPreview[] = [];
+let previewAnswer = true;
+
 function outbound(i = 0): string {
   const r = captured[i]?.request;
   if (!r) throw new Error(`no captured request #${i}`);
@@ -154,6 +166,12 @@ beforeEach(async () => {
   clearProviderClients();
   captured.length = 0;
   nextResponse = "AI says hello";
+  previews.length = 0;
+  previewAnswer = true;
+  setSendPreviewHandler(async (preview) => {
+    previews.push(preview);
+    return previewAnswer;
+  });
 });
 
 afterEach(() => {
@@ -533,5 +551,271 @@ describe("AI gateway — every email AI feature goes through it", () => {
     expect(captured).toHaveLength(2);
     expect((await listAiAuditLog()).map((r) => r.feature).sort()).toEqual(["auto_draft", "writing_style"]);
     expect(captured[1]!.request.userContent).toContain("Short and friendly.");
+  });
+});
+
+// ── Sensitive data (all values are fake) ──
+const SENSITIVE_BODY = [
+  "Hi, my login is below.",
+  "password: Hunter2-Fake!",
+  "Our key is sk-ant-api03-FAKEFAKEFAKEFAKEFAKEFAKE1234 and the token ghp_FAKE0123456789abcdefFAKE0123456789abcd.",
+  "Please charge 4111 1111 1111 1111 again.",
+  "Refund to DE89 3704 0044 0532 0130 00 please.",
+  "Write to me at customer.fake@example.test or call +49 30 1234 5678.",
+  "Ship it to 42 Fakeholm Street, Springfield.",
+  "Or to Musterstraße 12, 10115 Berlin.",
+].join("\n");
+
+const SENSITIVE_VALUES = [
+  "Hunter2-Fake!",
+  "sk-ant-api03-FAKEFAKEFAKEFAKEFAKEFAKE1234",
+  "ghp_FAKE0123456789abcdefFAKE0123456789abcd",
+  "4111 1111 1111 1111",
+  "DE89 3704 0044 0532 0130 00",
+  "customer.fake@example.test",
+  "+49 30 1234 5678",
+  "42 Fakeholm Street",
+  "Musterstraße 12",
+  "10115 Berlin",
+];
+
+describe("AI gateway — sensitive data", () => {
+  it("replaces payment and contact data with placeholders and removes secrets before sending", async () => {
+    await approveClaude();
+
+    await summarizeThread("thread-1", "acc-1", [message({ body_text: SENSITIVE_BODY })]);
+
+    const sent = outbound();
+    for (const value of SENSITIVE_VALUES) expect(sent).not.toContain(value);
+    expect(sent).toContain("[CARD_1]");
+    expect(sent).toContain("[IBAN_1]");
+    expect(sent).toContain("[EMAIL_1]");
+    expect(sent).toContain("[PHONE_1]");
+    expect(sent).toContain("[ADDRESS_1]");
+    expect(sent).toContain("[SECRET_REMOVED]");
+    // Names are not sensitive.
+    expect(sent).toContain("Springfield");
+  });
+
+  it("restores placeholders in the displayed result but never the removed secret", async () => {
+    await approveClaude();
+    nextResponse = "Reply to [EMAIL_1], refund [IBAN_1], ship to [ADDRESS_1]. Login: [SECRET_REMOVED]";
+
+    const result = await summarizeThread("thread-1", "acc-1", [message({ body_text: SENSITIVE_BODY })]);
+
+    expect(result).toBe(
+      "Reply to customer.fake@example.test, refund DE89 3704 0044 0532 0130 00, ship to 42 Fakeholm Street. Login: [SECRET_REMOVED]",
+    );
+    expect(result).not.toContain("Hunter2-Fake!");
+  });
+
+  it("records flag counts per category in the audit log", async () => {
+    await approveClaude();
+
+    await summarizeThread("thread-1", "acc-1", [message({ body_text: SENSITIVE_BODY })]);
+
+    const [entry] = await listAiAuditLog();
+    // 3 secrets; card + IBAN; email + phone + 3 address parts
+    expect(JSON.parse(entry!.flag_counts)).toEqual({ secret: 3, payment: 2, contact: 5 });
+  });
+
+  it("keeps contact data out of the operator's own instruction and restores it in the draft", async () => {
+    await approveClaude();
+    nextResponse = "Dear customer, please call us on [PHONE_1].";
+
+    const draft = await composeFromPrompt("Tell them to call +44 20 7946 0999");
+
+    expect(outbound()).not.toContain("+44 20 7946 0999");
+    expect(draft).toBe("Dear customer, please call us on +44 20 7946 0999.");
+  });
+
+  it("fails closed when the operator's own instruction holds a secret", async () => {
+    await approveClaude();
+
+    const error = await composeFromPrompt("Send them the new password: Fake#Pass99").catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(AiError);
+    expect((error as AiError).code).toBe("SENSITIVE_DATA");
+    expect((error as AiError).message).toMatch(/password, API key or token/);
+    expect(captured).toHaveLength(0);
+  });
+
+  it("does not flag names, companies, dates or order numbers", async () => {
+    await approveClaude();
+    const plain = "Jane Fakeperson from Fakecorp GmbH asked on 2026-10-14 about order 1234 5678 9012 3456 and ticket #48213.";
+
+    await summarizeThread("thread-1", "acc-1", [message({ body_text: plain })]);
+
+    expect(outbound()).toContain(plain);
+    expect(JSON.parse((await listAiAuditLog())[0]!.flag_counts)).toEqual({ secret: 0, payment: 0, contact: 0 });
+  });
+});
+
+describe("AI gateway — fixture personal data never leaves Velo, for every email AI feature (A23)", () => {
+  const ATTACHMENT_NAME = "fake-passport-scan.pdf";
+  const ATTACHMENT_TEXT = "ATTACHMENT CONTENT Fake Passport No X1234567";
+  const INTERNAL_NOTE = "INTERNAL NOTE: fake customer is on the watch list";
+  const NEVER_SENT = [...SENSITIVE_VALUES, ATTACHMENT_NAME, ATTACHMENT_TEXT, INTERNAL_NOTE];
+
+  // A message as callers hold it, carrying more than the allowlist permits.
+  const sensitiveMessage = {
+    ...message({ body_text: SENSITIVE_BODY, snippet: SENSITIVE_BODY, subject: "Card 4111 1111 1111 1111" }),
+    attachments: [{ filename: ATTACHMENT_NAME, text: ATTACHMENT_TEXT }],
+    internal_note: INTERNAL_NOTE,
+  } as DbMessage;
+  const sensitiveThread = [sensitiveMessage];
+  // An operator instruction with a secret is refused outright, so these carry payment and contact data only.
+  const INSTRUCTION = SENSITIVE_BODY.split("\n").filter((l) => !/password|key/.test(l)).join("\n");
+
+  async function seedSensitiveMailbox() {
+    await db.execute("INSERT INTO accounts (id, email, display_name) VALUES ($1, $2, $3)", [
+      "acc-1", "ops.fake@example.test", "Ops Fake",
+    ]);
+    await upsertThread({
+      id: "thread-1", accountId: "acc-1", subject: sensitiveMessage.subject, snippet: SENSITIVE_BODY,
+      lastMessageAt: 1_700_000_000_000, messageCount: 1, isRead: false, isStarred: false,
+      isImportant: false, hasAttachments: true,
+    });
+    const rows = [
+      { id: "m1", from: "jane.fake@example.test" },
+      ...[0, 1, 2].map((i) => ({ id: `sent-${i}`, from: "ops.fake@example.test" })),
+    ];
+    for (const [i, row] of rows.entries()) {
+      await upsertMessage({
+        id: row.id, accountId: "acc-1", threadId: "thread-1", fromAddress: row.from,
+        fromName: "Fake Person", toAddresses: "jane.fake@example.test", ccAddresses: null,
+        bccAddresses: null, replyTo: null, subject: sensitiveMessage.subject, snippet: SENSITIVE_BODY,
+        date: 1_700_000_000_000 + i, isRead: false, isStarred: false, bodyHtml: null,
+        bodyText: `${SENSITIVE_BODY}\nKind regards, sent ${i}`, rawSize: null, internalDate: null,
+      });
+      await upsertAttachment({
+        id: `att-${row.id}`, messageId: row.id, accountId: "acc-1", filename: ATTACHMENT_NAME,
+        mimeType: "application/pdf", size: 1000, gmailAttachmentId: null, contentId: null, isInline: false,
+      });
+    }
+  }
+
+  const summaries = [
+    { id: "thread-1", subject: sensitiveMessage.subject, snippet: SENSITIVE_BODY, fromAddress: "jane.fake@example.test" },
+  ];
+
+  const features: [string, () => Promise<unknown>][] = [
+    ["thread_summary", () => summarizeThread("thread-1", "acc-1", sensitiveThread)],
+    ["smart_replies", () => generateSmartReplies("thread-1", "acc-1", sensitiveThread)],
+    ["ai_compose", () => composeFromPrompt(`Answer this: ${INSTRUCTION}`)],
+    ["ai_reply", () => generateReply([SENSITIVE_BODY], `Mention ${INSTRUCTION}`)],
+    ["text_transform", () => transformText(`<p>${SENSITIVE_BODY}</p>`, "formalize")],
+    ["categorization", () => categorizeThreads(summaries)],
+    ["smart_labels", () => classifyThreadsBySmartLabels(summaries, [{ labelId: "l1", description: "Invoices" }])],
+    ["ask_inbox", () => askMyInbox("Tell me about the refund", "acc-1")],
+    ["task_extraction", () => extractTask("thread-1", "acc-1", sensitiveThread)],
+    ["writing_style", async () => {
+      await setSetting("ai_writing_style_enabled", "true");
+      return refreshWritingStyle("acc-1");
+    }],
+    ["auto_draft", () => generateAutoDraft("thread-1", "acc-1", sensitiveThread, "reply")],
+  ];
+
+  it.each(features)("%s sends none of it", async (feature, run) => {
+    await approveClaude();
+    await setSetting("ai_writing_style_enabled", "false");
+    await seedSensitiveMailbox();
+
+    await run();
+
+    expect(captured.length).toBeGreaterThan(0);
+    for (const value of NEVER_SENT) {
+      for (const i of captured.keys()) expect(outbound(i)).not.toContain(value);
+    }
+    const flags = (await listAiAuditLog()).filter((r) => r.feature === feature);
+    expect(flags).toHaveLength(1);
+    expect(Object.values(JSON.parse(flags[0]!.flag_counts) as Record<string, number>).some((n) => n > 0)).toBe(true);
+  });
+
+  it("an auto-draft built on a style profile never carries contact data back out", async () => {
+    await approveClaude();
+    await seedSensitiveMailbox();
+    // A style profile whose text quotes a phone number and an email address.
+    nextResponse = "Signs off with +49 30 1234 5678 and customer.fake@example.test.";
+
+    await generateAutoDraft("thread-1", "acc-1", sensitiveThread, "reply");
+
+    expect(captured).toHaveLength(2);
+    expect(outbound(1)).not.toContain("+49 30 1234 5678");
+    expect(outbound(1)).not.toContain("customer.fake@example.test");
+  });
+});
+
+describe("AI gateway — send preview", () => {
+  it("is required on first use and shows exactly what will be sent and to which provider", async () => {
+    await approveClaude();
+
+    await summarizeThread("thread-1", "acc-1", thread);
+
+    expect(previews).toHaveLength(1);
+    const [preview] = previews;
+    expect(preview!.reason).toBe("first_use");
+    expect(preview!.providerLabel).toBe("Claude API (Anthropic)");
+    expect(preview!.model).toBe("claude-haiku-4-5-20251001");
+    expect(preview!.feature).toBe("thread_summary");
+    expect(preview!.systemPrompt).toBe(captured[0]!.request.systemPrompt);
+    expect(preview!.userContent).toBe(captured[0]!.request.userContent);
+  });
+
+  it("is not required again for the same kinds of data", async () => {
+    await approveClaude();
+    await summarizeThread("thread-1", "acc-1", thread);
+
+    await summarizeThread("thread-2", "acc-1", [message({ body_text: "Another fake question" })]);
+
+    expect(previews).toHaveLength(1);
+    expect(captured).toHaveLength(2);
+  });
+
+  it("is required again when a request includes a new data kind", async () => {
+    await approveClaude();
+    await summarizeThread("thread-1", "acc-1", thread);
+
+    await summarizeThread("thread-2", "acc-1", [message({ body_text: "Card 4111 1111 1111 1111 please" })]);
+
+    expect(previews).toHaveLength(2);
+    expect(previews[1]!.reason).toBe("new_data_kind");
+    expect(previews[1]!.newKinds).toEqual(["card"]);
+    expect(previews[1]!.userContent).toContain("[CARD_1]");
+  });
+
+  it("can be cancelled without sending anything", async () => {
+    await approveClaude();
+    previewAnswer = false;
+
+    const error = await summarizeThread("thread-1", "acc-1", thread).catch((e: unknown) => e);
+
+    expect((error as AiError).code).toBe("CANCELLED");
+    expect(captured).toHaveLength(0);
+    expect(await listAiAuditLog()).toHaveLength(0);
+    // Nothing was approved, so the next request still needs the preview.
+    previewAnswer = true;
+    await summarizeThread("thread-1", "acc-1", thread);
+    expect(previews.map((p) => p.reason)).toEqual(["first_use", "first_use"]);
+  });
+
+  it("fails closed when no preview can be shown", async () => {
+    await approveClaude();
+    setSendPreviewHandler(null);
+
+    const error = await summarizeThread("thread-1", "acc-1", thread).catch((e: unknown) => e);
+
+    expect((error as AiError).code).toBe("PREVIEW_REQUIRED");
+    expect(captured).toHaveLength(0);
+  });
+
+  it("is one click away otherwise", async () => {
+    await approveClaude();
+    await summarizeThread("thread-1", "acc-1", thread);
+
+    previewNextRequest(["thread_summary"]);
+    await summarizeThread("thread-1", "acc-1", thread, { refresh: true });
+
+    expect(previews.map((p) => p.reason)).toEqual(["first_use", "requested"]);
   });
 });

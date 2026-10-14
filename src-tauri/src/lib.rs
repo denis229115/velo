@@ -10,6 +10,7 @@ mod commands;
 mod imap;
 mod oauth;
 mod smtp;
+mod vibrancy;
 
 #[tauri::command]
 fn close_splashscreen(app: tauri::AppHandle) {
@@ -86,6 +87,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_os::init())
+        .manage(vibrancy::VibrancyState::default())
         .invoke_handler(tauri::generate_handler![
             oauth::start_oauth_server,
             oauth::oauth_exchange_token,
@@ -93,6 +95,7 @@ pub fn run() {
             set_tray_tooltip,
             close_splashscreen,
             open_devtools,
+            vibrancy::native_vibrancy_active,
             commands::imap_test_connection,
             commands::imap_list_folders,
             commands::imap_fetch_messages,
@@ -221,6 +224,13 @@ pub fn run() {
                         std::thread::park();
                     }
                 });
+            }
+
+            // macOS only: native sidebar vibrancy behind the transparent main window.
+            #[cfg(target_os = "macos")]
+            {
+                let applied = vibrancy::apply(app);
+                app.state::<vibrancy::VibrancyState>().set_applied(applied);
             }
 
             // On Windows/Linux, remove decorations for custom titlebar.

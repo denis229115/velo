@@ -66,6 +66,20 @@ describe("AppFrame", () => {
       expect(declaredStyle(panel, "margin-left")).toBe("0px");
     });
 
+    it("with native macOS vibrancy lets the material through the frame while the panel stays solid", () => {
+      document.documentElement.classList.add("native-vibrancy");
+      try {
+        const { container } = renderFrame(true);
+        expect(getComputedStyle(container.firstElementChild as HTMLElement).backgroundColor).toBe("var(--surface-sidebar)");
+        expect(readToken("surface-window")).toBe("transparent");
+        expect(parseColor(readToken("surface-sidebar")).a).toBeLessThan(0.5);
+        expect(getComputedStyle(screen.getByRole("main")).backgroundColor).toBe("var(--surface-list)");
+        expect(parseColor(readToken("surface-list")).a).toBe(1);
+      } finally {
+        document.documentElement.classList.remove("native-vibrancy");
+      }
+    });
+
     it("keeps the footer inside the panel", () => {
       renderFrame(true);
       expect(screen.getByRole("main")).toHaveTextContent("mail liststatus");

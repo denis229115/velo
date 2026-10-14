@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useUIStore } from "@/stores/uiStore";
 import { getThemeById } from "@/constants/themes";
+import { useNativeVibrancy } from "./useNativeVibrancy";
 
 const DARK_QUERY = "(prefers-color-scheme: dark)";
 const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
@@ -24,13 +25,15 @@ export function useIsDarkTheme(): boolean {
   return theme === "dark" || (theme === "system" && systemDark);
 }
 
-/** Applies the theme, accent preset and motion preference to <html>. Mount once per window. */
+/** Applies the theme, accent preset, motion preference and native vibrancy to <html>. Mount once per window. */
 export function useAppearance(): void {
   const isDark = useIsDarkTheme();
   const colorTheme = useUIStore((s) => s.colorTheme);
   const reduceMotionSetting = useUIStore((s) => s.reduceMotion);
   const systemReducedMotion = useMediaQuery(REDUCED_MOTION_QUERY);
   const reduceMotion = reduceMotionSetting || systemReducedMotion;
+
+  useNativeVibrancy(isDark);
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", isDark);

@@ -8,6 +8,7 @@
  */
 @theme {
   /* Semantic tokens */
+  --color-surface-window: var(--surface-window);
   --color-surface-base: var(--surface-base);
   --color-surface-sidebar: var(--surface-sidebar);
   --color-surface-list: var(--surface-list);
@@ -100,7 +101,7 @@ body,
 
 body {
   font-family: var(--font-sans);
-  background: var(--surface-base);
+  background: var(--surface-window);
   color: var(--color-text-primary);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -117,6 +118,16 @@ body {
 .glass-sidebar {
   backdrop-filter: blur(var(--sidebar-blur)) saturate(1.4);
   -webkit-backdrop-filter: blur(var(--sidebar-blur)) saturate(1.4);
+}
+
+/*
+ * Native vibrancy (macOS): the system material replaces the CSS blur on the
+ * window frame (.app-frame, which the sidebar sits on). The list, reader and
+ * pages live in the solid .app-panel, so they never show the wallpaper.
+ */
+.native-vibrancy .glass-sidebar {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 /* Elevation for menus, popovers and dialogs (solid surface + shadow) */

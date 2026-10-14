@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from "react";
+import { AiSendPreviewHost } from "@/components/ai/AiSendPreview";
 import { Outlet } from "@tanstack/react-router";
 import { Sidebar } from "./components/layout/Sidebar";
 import { AddAccount } from "./components/accounts/AddAccount";
@@ -536,6 +537,7 @@ export default function App() {
         />
       </ErrorBoundary>
       <ContextMenuPortal />
+      <AiSendPreviewHost />
       <MoveToFolderDialog
         isOpen={moveToFolderState.open}
         threadIds={moveToFolderState.threadIds}

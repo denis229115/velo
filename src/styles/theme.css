@@ -12,6 +12,7 @@
   color-scheme: light;
 
   /* Surfaces — only the sidebar is translucent */
+  --surface-window: var(--surface-base); /* window frame; transparent with native vibrancy */
   --surface-base: #f2f2f2;
   --surface-sidebar: rgba(236, 236, 236, 0.82);
   --surface-list: #fafafa;
@@ -112,6 +113,21 @@
 /* Windows/Linux: the title bar row above already provides the gap */
 .app-panel[data-top="none"] {
   margin-top: 0;
+}
+
+/*
+ * Native vibrancy (macOS main window, set by useNativeVibrancy). The window is
+ * transparent with the system sidebar material behind the webview, so the
+ * window frame and the sidebar let it through; the light tint keeps the
+ * sidebar close to its solid colour. All other surfaces keep their tokens.
+ */
+:root.native-vibrancy {
+  --surface-window: transparent;
+  --surface-sidebar: rgba(246, 246, 246, 0.35);
+}
+
+:root.native-vibrancy.dark {
+  --surface-sidebar: rgba(28, 28, 28, 0.35);
 }
 
 /*
