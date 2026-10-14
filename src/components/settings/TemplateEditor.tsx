@@ -14,6 +14,7 @@ import {
   type DbTemplate,
 } from "@/services/db/templates";
 import { TEMPLATE_VARIABLES } from "@/utils/templateVariables";
+import { formatShortcut } from "@/utils/shortcutLabel";
 
 export function TemplateEditor() {
   const activeAccountId = useAccountStore((s) => s.activeAccountId);
@@ -111,7 +112,7 @@ export function TemplateEditor() {
               {tmpl.name}
               {tmpl.shortcut && (
                 <kbd className="text-[0.625rem] bg-bg-tertiary text-text-tertiary px-1.5 py-0.5 rounded">
-                  {tmpl.shortcut}
+                  {formatShortcut(tmpl.shortcut)}
                 </kbd>
               )}
             </div>

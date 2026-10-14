@@ -19,6 +19,7 @@ import { useComposerStore } from "@/stores/composerStore";
 import { useAccountStore } from "@/stores/accountStore";
 import { useShortcutStore } from "@/stores/shortcutStore";
 import { getDefaultKeyMap } from "@/constants/shortcuts";
+import { pretendPlatform, restoreUserAgent } from "@/test/platform";
 
 const PICKER_NOTE = /sends when Velo is next open/i;
 
@@ -85,6 +86,27 @@ describe("Composer send-later shortcut", () => {
   });
 });
 
+describe("Composer shortcut hints", () => {
+  afterEach(restoreUserAgent);
+
+  it("names the send and send-later keys with Cmd wording on macOS", async () => {
+    pretendPlatform("mac");
+    await renderComposer();
+
+    expect(screen.getByRole("button", { name: "Send" })).toHaveAttribute("title", "Send (Cmd+Enter)");
+    expect(screen.getByTitle("Send later (Cmd+Shift+L)")).toBeInTheDocument();
+  });
+
+  it("names the keys with Ctrl wording on Windows and follows a rebound key", async () => {
+    pretendPlatform("windows");
+    useShortcutStore.setState({ keyMap: { ...getDefaultKeyMap(), "app.sendLater": "Alt+K" } });
+    await renderComposer();
+
+    expect(screen.getByRole("button", { name: "Send" })).toHaveAttribute("title", "Send (Ctrl+Enter)");
+    expect(screen.getByTitle("Send later (Alt+K)")).toBeInTheDocument();
+  });
+});
+
 describe("Composer send-now shortcut", () => {
   it("sends on Cmd+Enter from the editor", async () => {
     await renderComposer();
@@ -135,5 +157,24 @@ describe("Composer scheduling", () => {
     expect(JSON.parse(rows[0]!.attachment_paths)).toEqual([
       { filename: "terms.pdf", mimeType: "application/pdf", content: "eA==" },
     ]);
+  });
+});
+
+describe("Composer scheduling from a send-as alias", () => {
+  it("stores the alias chosen in the From selector with the scheduled email", async () => {
+    await db.execute(
+      `INSERT INTO send_as_aliases (id, account_id, email, is_primary, is_default)
+       VALUES ('alias-main', 'gmail-1', 'me@gmail.com', 1, 1), ('alias-support', 'gmail-1', 'support@acme.com', 0, 0)`,
+    );
+    await renderComposer();
+    await waitFor(() => expect(useComposerStore.getState().fromEmail).toBe("me@gmail.com"));
+    act(() => useComposerStore.getState().setFromEmail("support@acme.com"));
+
+    pressInEditor({ key: "L", metaKey: true, shiftKey: true });
+    fireEvent.click(await screen.findByText("Tomorrow morning"));
+
+    await waitFor(() => expect(useComposerStore.getState().isOpen).toBe(false));
+    const rows = await db.select<{ from_email: string | null }[]>("SELECT from_email FROM scheduled_emails");
+    expect(rows).toEqual([{ from_email: "support@acme.com" }]);
   });
 });

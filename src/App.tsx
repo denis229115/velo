@@ -54,6 +54,10 @@ import {
   stopPreCacheManager,
 } from "./services/attachments/preCacheManager";
 import {
+  startFreshdeskMetadataRefresher,
+  stopFreshdeskMetadataRefresher,
+} from "./services/freshdesk/connection";
+import {
   startUpdateChecker,
   stopUpdateChecker,
 } from "./services/updateManager";
@@ -334,6 +338,7 @@ export default function App() {
         startBundleChecker();
         startQueueProcessor();
         startPreCacheManager();
+        startFreshdeskMetadataRefresher();
 
         // Initialize notifications
         await initNotifications();
@@ -373,6 +378,7 @@ export default function App() {
       stopBundleChecker();
       stopQueueProcessor();
       stopPreCacheManager();
+      stopFreshdeskMetadataRefresher();
       stopUpdateChecker();
       unregisterComposeShortcut();
       deepLinkCleanupRef.current?.();

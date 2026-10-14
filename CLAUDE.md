@@ -46,6 +46,7 @@ Tauri v2 desktop app: Rust backend + React 19 frontend communicating via Tauri I
    - `imap/` — IMAP-specific services. `tauriCommands.ts` wraps Rust IMAP Tauri commands. `imapSync.ts` orchestrates IMAP initial sync (batch fetch, 50 messages/batch) and delta sync via UIDVALIDITY/last_uid tracking. `folderMapper.ts` maps IMAP folders (special-use flags + well-known names) to Gmail-style labels. `autoDiscovery.ts` provides pre-configured server settings for 7 major providers (Outlook, Yahoo, iCloud, AOL, Zoho, FastMail, GMX). `imapConfigBuilder.ts` builds IMAP/SMTP configs from account records. `messageHelper.ts` handles IMAP message utilities.
    - `threading/` — JWZ threading algorithm (`threadBuilder.ts`) for grouping IMAP messages into conversation threads using Message-ID, References, and In-Reply-To headers. Supports incremental threading, phantom containers for missing references, and subject-based merging.
    - `ai/` — `aiService.ts` provides thread summaries, smart replies, AI compose, text transform, auto-categorization, smart label classification, and task extraction. `providerManager.ts` manages three providers (`providers/claudeProvider.ts`, `providers/openaiProvider.ts`, `providers/geminiProvider.ts`). `askInbox.ts` enables natural language inbox queries. `categorizationManager.ts` auto-sorts threads into Primary/Updates/Promotions/Social/Newsletters. `writingStyleService.ts` analyzes user writing style from sent emails and generates auto-draft replies. `taskExtraction.ts` extracts tasks from email threads via AI. `errors.ts` and `types.ts` define shared AI types. Results cached locally via `db/aiCache.ts`.
+   - `freshdesk/` — Freshdesk connector. `client.ts` calls Freshdesk API v2 through `@tauri-apps/plugin-http` (Basic auth `apiKey:X`) and maps failures to `FreshdeskError` kinds (auth, rate_limited with Retry-After, invalid_value, ...). `metadata.ts` decodes `/agents/me`, `/ticket_fields`, `/agents`, `/groups`. `connection.ts` connects/disconnects the one helpdesk, stores metadata by tenant (`freshdesk:<host>`), keeps status classes (open/waiting/done) by status ID, refreshes metadata every 6h and after invalid-value errors. `sampleData.ts` holds the sample statuses/tickets shown until a helpdesk is connected. Tests use fixtures in `__fixtures__/` via `src/test/freshdeskFetchStub.ts`; never call a live helpdesk.
    - `google/` — `calendar.ts` handles Google Calendar API (list calendars, fetch events, create events, token refresh).
    - `composer/` — `draftAutoSave.ts` auto-saves drafts every 3 seconds (debounced). Watches composer state changes via Zustand subscribe.
    - `search/` — `searchParser.ts` parses Gmail-style operators (`from:`, `to:`, `subject:`, `has:attachment`, `is:unread/read/starred`, `before:`, `after:`, `label:`). `searchQueryBuilder.ts` builds SQL queries from parsed operators.
@@ -68,7 +69,7 @@ Tauri v2 desktop app: Rust backend + React 19 frontend communicating via Tauri I
 
 ### Component organization
 
-14 groups, ~94 component files:
+15 groups, ~96 component files:
 - `layout/` — Sidebar, EmailList, ReadingPane, TitleBar
 - `email/` — ThreadView, ThreadCard, MessageItem, EmailRenderer, ActionBar, AttachmentList, SnoozeDialog, ContactSidebar, FollowUpDialog, InlineAttachmentPreview, InlineReply, SmartReplySuggestions, ThreadSummary, AuthBadge, AuthWarningBanner, PhishingBanner, LinkConfirmDialog, CategoryTabs, MoveToFolderDialog
 - `composer/` — Composer (TipTap v3 rich text editor), AddressInput, EditorToolbar, AttachmentPicker, ScheduleSendDialog, SignatureSelector, TemplatePicker, UndoSendToast, AiAssistPanel, FromSelector
@@ -77,6 +78,7 @@ Tauri v2 desktop app: Rust backend + React 19 frontend communicating via Tauri I
 - `accounts/` — AddAccount, AddImapAccount, AccountSwitcher, SetupClientId
 - `calendar/` — CalendarPage, CalendarReauthBanner, CalendarToolbar, DayView, WeekView, MonthView, EventCard, EventCreateModal
 - `attachments/` — AttachmentLibrary, AttachmentGridItem, AttachmentListItem
+- `scheduled/` — ScheduledEmailsPage (`/scheduled`), ScheduledList (generic scheduled-sends list, reusable for scheduled ticket replies)
 - `tasks/` — TasksPage, TaskItem, TaskQuickAdd, TaskSidebar, AiTaskExtractDialog
 - `help/` — HelpPage, HelpSidebar, HelpSearchBar, HelpCard, HelpCardGrid, HelpTooltip
 - `labels/` — LabelForm
@@ -105,7 +107,7 @@ Thread pop-out windows via `ThreadWindow.tsx`. Entry point in `main.tsx` checks 
 
 ### Cross-component communication
 
-Custom window events: `velo-sync-done`, `velo-toggle-command-palette`, `velo-toggle-shortcuts-help`, `velo-toggle-ask-inbox`, `velo-move-to-folder`. Tray emits `tray-check-mail` via Tauri event system. `single-instance-args` event for deep link forwarding.
+Custom window events: `velo-sync-done`, `velo-toggle-command-palette`, `velo-toggle-shortcuts-help`, `velo-toggle-ask-inbox`, `velo-move-to-folder`, `velo-scheduled-emails-changed`. Tray emits `tray-check-mail` via Tauri event system. `single-instance-args` event for deep link forwarding.
 
 ### Keyboard shortcuts
 
@@ -147,6 +149,7 @@ Custom window events: `velo-sync-done`, `velo-toggle-command-palette`, `velo-tog
 | `g` then `n` | Go to Newsletters |
 | `g` then `k` | Go to Tasks |
 | `g` then `a` | Go to Attachments |
+| `g` then `l` | Go to Scheduled emails |
 
 Multi-select: click to toggle, Shift+click for range. All keyboard actions work on multi-selected threads.
 
@@ -176,7 +179,7 @@ Vitest + jsdom. Setup file: `src/test/setup.ts` (imports `@testing-library/jest-
 
 SQLite via Tauri SQL plugin. 19 migrations (version-tracked in `_migrations` table, transactional). Custom `splitStatements()` handles BEGIN...END blocks in triggers.
 
-Key tables (37 total): `accounts` (with `provider` "gmail_api"|"imap", IMAP/SMTP host/port/security fields, `auth_method`, encrypted `imap_password`, optional `imap_username`), `messages` (with FTS5 index `messages_fts`, `auth_results`, `message_id_header`, `references_header`, `in_reply_to_header`, `imap_uid`, `imap_folder`), `threads` (with `is_pinned`, `is_muted`), `thread_labels`, `labels` (with `imap_folder_path`, `imap_special_use`), `contacts` (frequency-ranked for autocomplete, with `first_contacted_at`), `attachments` (with `cached_at`, `cache_size`, `imap_part_id`), `filter_rules` (criteria/actions as JSON), `scheduled_emails` (status: pending/sent/failed), `templates` (with optional keyboard shortcut), `signatures`, `image_allowlist`, `settings` (key-value store), `ai_cache`, `thread_categories`, `calendar_events`, `follow_up_reminders`, `notification_vips`, `unsubscribe_actions`, `bundle_rules`, `bundled_threads`, `send_as_aliases`, `smart_folders`, `link_scan_results`, `phishing_allowlist`, `quick_steps`, `folder_sync_state` (IMAP UIDVALIDITY/last_uid/modseq tracking per folder), `pending_operations` (offline action queue with retry/backoff), `local_drafts` (offline draft persistence), `writing_style_profiles` (AI writing style per account), `tasks` (full task management with priorities, subtasks, recurrence), `task_tags` (custom task tag colors), `smart_label_rules` (AI auto-labeling rules with optional criteria), `_migrations`.
+Key tables (37 total): `accounts` (with `provider` "gmail_api"|"imap", IMAP/SMTP host/port/security fields, `auth_method`, encrypted `imap_password`, optional `imap_username`), `messages` (with FTS5 index `messages_fts`, `auth_results`, `message_id_header`, `references_header`, `in_reply_to_header`, `imap_uid`, `imap_folder`), `threads` (with `is_pinned`, `is_muted`), `thread_labels`, `labels` (with `imap_folder_path`, `imap_special_use`), `contacts` (frequency-ranked for autocomplete, with `first_contacted_at`), `attachments` (with `cached_at`, `cache_size`, `imap_part_id`), `filter_rules` (criteria/actions as JSON), `scheduled_emails` (status: pending/sending/sent/failed, `from_email` send-as alias), `templates` (with optional keyboard shortcut), `signatures`, `image_allowlist`, `settings` (key-value store), `ai_cache`, `thread_categories`, `calendar_events`, `follow_up_reminders`, `notification_vips`, `unsubscribe_actions`, `bundle_rules`, `bundled_threads`, `send_as_aliases`, `smart_folders`, `link_scan_results`, `phishing_allowlist`, `quick_steps`, `folder_sync_state` (IMAP UIDVALIDITY/last_uid/modseq tracking per folder), `pending_operations` (offline action queue with retry/backoff), `local_drafts` (offline draft persistence), `writing_style_profiles` (AI writing style per account), `tasks` (full task management with priorities, subtasks, recurrence), `task_tags` (custom task tag colors), `smart_label_rules` (AI auto-labeling rules with optional criteria), `_migrations`.
 
 ## Key Gotchas
 
@@ -206,7 +209,7 @@ Key tables (37 total): `accounts` (with `provider` "gmail_api"|"imap", IMAP/SMTP
 - **Thread deletion**: Two-stage — first trash, then permanent delete from DB if already in trash
 - **Snooze**: Removes INBOX label and adds SNOOZED label (not just a flag)
 - **Draft auto-save**: 3-second debounce, not configurable
-- **Send later**: `scheduledSendManager.ts` sends through `getEmailProvider` (Gmail and IMAP/SMTP), only while Velo runs and is online. Attachments are stored in the same INSERT as the row. Up to 5 attempts with 1m/5m/15m/1h backoff, then `failed` with `last_error` and an OS notification. Each scheduled email has a fixed Message-ID (`<scheduled.{id}@domain>`); rows left in `sending` are reconciled on startup against the local synced copy and never resent automatically
+- **Send later**: `scheduledSendManager.ts` sends through `getEmailProvider` (Gmail and IMAP/SMTP), only while Velo runs and is online. Attachments are stored in the same INSERT as the row. Up to 5 attempts with 1m/5m/15m/1h backoff, then `failed` with `last_error` and an OS notification. Each scheduled email has a fixed Message-ID (`<scheduled.{id}@domain>`); rows left in `sending` are reconciled on startup against the local synced copy and never resent automatically. The Scheduled screen (`g` then `l`) lists them; cancel deletes only a still-`pending` row, retry (`retryFailedScheduledEmail`) makes one attempt on a `failed` row with the same Message-ID. The composer's From alias is stored in `from_email` and used as the From header. Status changes fire the `velo-scheduled-emails-changed` window event
 - **Composer shortcuts**: `app.send` / `app.sendLater` are dispatched by `useComposerShortcuts` (capture phase, reads the registry at keypress time) in Composer and InlineReply, not by `useKeyboardShortcuts`. Settings > Shortcuts warns on duplicate bindings (`findShortcutConflicts`, Cmd = Ctrl)
 - **Service tests on real SQLite**: `src/test/sqliteTestDb.ts` (Node's built-in `node:sqlite`) runs the real migrations in memory; mock `@tauri-apps/plugin-sql` so `getDb()` returns it
 - **Gmail History API**: Expires after ~30 days, triggers automatic full sync fallback
@@ -223,6 +226,7 @@ Key tables (37 total): `accounts` (with `provider` "gmail_api"|"imap", IMAP/SMTP
 - **Smart folders**: Saved search queries with dynamic tokens (`__LAST_7_DAYS__`, `__LAST_30_DAYS__`, `__TODAY__`). Managed via `smartFolderStore`
 - **Quick steps**: Custom action chains with 18 action types. Executor in `services/quickSteps/executor.ts`
 - **Split inbox**: Category tabs (Primary/Updates/Promotions/Social/Newsletters) with backfill service for existing threads
+- **Freshdesk credentials**: The API key lives only in the encrypted secure setting `freshdesk_api_key` (`setSecureSetting`); the helpdesk host and identity are in `integration_accounts`. Every Freshdesk table is keyed by `tenant_id`; connecting a different helpdesk deletes all rows of other tenants (`deleteFreshdeskDataExcept`)
 - **Help page**: In-app help at `/help/$topic` with 13 categories, searchable cards, and contextual `HelpTooltip` component. All content in `src/constants/helpContent.ts`. After adding a new feature, run `/document-feature` to add its help card
 
 ## Agent skills

@@ -20,6 +20,8 @@ export interface DbScheduledEmail {
   attempts: number;
   next_attempt_at: number | null;
   last_error: string | null;
+  /** Send-as alias chosen in the composer; null sends from the account address */
+  from_email: string | null;
 }
 
 export async function getPendingScheduledEmails(): Promise<DbScheduledEmail[]> {
@@ -44,6 +46,36 @@ export async function getScheduledEmailsForAccount(
   );
 }
 
+export interface ScheduledEmailWithAccount extends DbScheduledEmail {
+  /** Address of the email account it sends through; null if the account was removed */
+  account_email: string | null;
+}
+
+/** How many sent scheduled emails the scheduled emails screen keeps showing. */
+const RECENT_SENT_LIMIT = 50;
+
+/**
+ * Every scheduled email the operator can see: anything not yet sent (failed
+ * first, then by send time) followed by the most recently sent ones.
+ */
+export async function listScheduledEmails(): Promise<ScheduledEmailWithAccount[]> {
+  const db = await getDb();
+  const open = await db.select<ScheduledEmailWithAccount[]>(
+    `SELECT s.*, a.email AS account_email FROM scheduled_emails s
+     LEFT JOIN accounts a ON a.id = s.account_id
+     WHERE s.status IN ('pending', 'sending', 'failed')
+     ORDER BY CASE s.status WHEN 'failed' THEN 0 WHEN 'sending' THEN 1 ELSE 2 END, s.scheduled_at ASC`,
+  );
+  const sent = await db.select<ScheduledEmailWithAccount[]>(
+    `SELECT s.*, a.email AS account_email FROM scheduled_emails s
+     LEFT JOIN accounts a ON a.id = s.account_id
+     WHERE s.status = 'sent'
+     ORDER BY s.scheduled_at DESC LIMIT $1`,
+    [RECENT_SENT_LIMIT],
+  );
+  return [...open, ...sent];
+}
+
 export async function insertScheduledEmail(email: {
   accountId: string;
   toAddresses: string;
@@ -55,6 +87,8 @@ export async function insertScheduledEmail(email: {
   threadId: string | null;
   scheduledAt: number;
   signatureId: string | null;
+  /** Send-as alias chosen in the composer; null or omitted sends from the account address */
+  fromEmail?: string | null;
   /** Stored in the same INSERT as the row so concurrent schedules can't mix them up */
   attachments?: EmailAttachment[];
 }): Promise<string> {
@@ -65,8 +99,8 @@ export async function insertScheduledEmail(email: {
       ? JSON.stringify(email.attachments)
       : null;
   await db.execute(
-    `INSERT INTO scheduled_emails (id, account_id, to_addresses, cc_addresses, bcc_addresses, subject, body_html, reply_to_message_id, thread_id, scheduled_at, signature_id, attachment_paths)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+    `INSERT INTO scheduled_emails (id, account_id, to_addresses, cc_addresses, bcc_addresses, subject, body_html, reply_to_message_id, thread_id, scheduled_at, signature_id, attachment_paths, from_email)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
     [
       id,
       email.accountId,
@@ -80,6 +114,7 @@ export async function insertScheduledEmail(email: {
       email.scheduledAt,
       email.signatureId,
       attachmentData,
+      email.fromEmail ?? null,
     ],
   );
   return id;
@@ -95,15 +130,28 @@ export async function getScheduledEmailsInStatus(
   );
 }
 
+export async function getScheduledEmail(id: string): Promise<DbScheduledEmail | null> {
+  const db = await getDb();
+  const rows = await db.select<DbScheduledEmail[]>(
+    "SELECT * FROM scheduled_emails WHERE id = $1",
+    [id],
+  );
+  return rows[0] ?? null;
+}
+
 /**
- * Atomically move a pending row to "sending". Returns false if another
- * run already claimed it, so the same row is never sent twice concurrently.
+ * Atomically move a pending (or, for a manual retry, failed) row to "sending".
+ * Returns false if another run already claimed it, so the same row is never
+ * sent twice concurrently.
  */
-export async function claimScheduledEmail(id: string): Promise<boolean> {
+export async function claimScheduledEmail(
+  id: string,
+  fromStatus: "pending" | "failed" = "pending",
+): Promise<boolean> {
   const db = await getDb();
   const result = await db.execute(
-    "UPDATE scheduled_emails SET status = 'sending', attempts = attempts + 1 WHERE id = $1 AND status = 'pending'",
-    [id],
+    "UPDATE scheduled_emails SET status = 'sending', attempts = attempts + 1 WHERE id = $1 AND status = $2",
+    [id, fromStatus],
   );
   return result.rowsAffected === 1;
 }
@@ -133,6 +181,19 @@ export async function updateScheduledEmailStatus(
     "UPDATE scheduled_emails SET status = $1 WHERE id = $2",
     [status, id],
   );
+}
+
+/**
+ * Cancel a scheduled email that has not started sending. Returns false if
+ * it is no longer pending (already sending, sent or failed), leaving it as is.
+ */
+export async function cancelScheduledEmail(id: string): Promise<boolean> {
+  const db = await getDb();
+  const result = await db.execute(
+    "DELETE FROM scheduled_emails WHERE id = $1 AND status = 'pending'",
+    [id],
+  );
+  return result.rowsAffected === 1;
 }
 
 export async function deleteScheduledEmail(id: string): Promise<void> {
