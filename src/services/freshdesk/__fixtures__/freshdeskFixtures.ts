@@ -221,6 +221,29 @@ export interface FreshdeskFixtureTenant {
   tickets?: FixtureTicket[];
   /** GET /contacts/:id payloads */
   contacts?: { id: number; name: string; email: string | null }[];
+  /** GET /tickets/:id/conversations payloads, by ticket ID, oldest first */
+  conversations?: Record<number, FixtureConversation[]>;
+}
+
+export interface FixtureConversation {
+  id: number;
+  body: string;
+  body_text: string;
+  incoming: boolean;
+  private: boolean;
+  user_id: number;
+  source: number;
+  ticket_id: number;
+  support_email: string | null;
+  from_email: string | null;
+  to_emails: string[];
+  cc_emails: string[];
+  bcc_emails: string[];
+  attachments: { id: number; name: string; content_type: string; size: number; attachment_url: string }[];
+  automation_id: number | null;
+  automation_type_id: number | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export const alphaTenant: FreshdeskFixtureTenant = {
