@@ -39,7 +39,7 @@ describe("Shortcuts help", () => {
     pretendPlatform("mac");
     render(<ShortcutsHelp isOpen onClose={() => {}} />);
 
-    const row = screen.getByText("Search mail and commands").parentElement!;
+    const row = screen.getByText("Search mail, tickets and commands").parentElement!;
     expect(row).toHaveTextContent("Cmd+K");
   });
 });

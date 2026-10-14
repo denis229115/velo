@@ -332,7 +332,7 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
             autoFocus
             type="text"
             role="combobox"
-            aria-label="Search mail and commands"
+            aria-label="Search mail, tickets and commands"
             aria-expanded={items.length > 0}
             aria-controls="command-palette-results"
             aria-activedescendant={items[activeIdx] ? optionId(items[activeIdx]) : undefined}
@@ -343,7 +343,7 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
               setSelectedIdx(0);
             }}
             onKeyDown={handleKeyDown}
-            placeholder="Search mail or type a command… (from: to: has:attachment)"
+            placeholder="Search mail and tickets or type a command… (#123, from:, has:attachment)"
             // The caret marks focus here; the global focus ring would box the whole field
             style={{ outline: "none" }}
             className="w-full bg-transparent text-sm text-text-primary placeholder:text-text-tertiary"
