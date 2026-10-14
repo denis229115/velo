@@ -24,6 +24,7 @@ import { buildRawEmail } from "@/utils/emailBuilder";
 import { upsertContact } from "@/services/db/contacts";
 import { getSetting } from "@/services/db/settings";
 import { insertScheduledEmail } from "@/services/db/scheduledEmails";
+import { announceScheduledEmailsChanged } from "@/services/snooze/scheduledSendManager";
 import { getDefaultSignature } from "@/services/db/signatures";
 import { getAliasesForAccount, mapDbAlias, type SendAsAlias } from "@/services/db/sendAsAliases";
 import { resolveFromAddress } from "@/utils/resolveFromAddress";
@@ -318,12 +319,14 @@ export function Composer() {
       threadId: state.threadId,
       scheduledAt,
       signatureId: null,
+      fromEmail: state.fromEmail,
       attachments: state.attachments.map((a) => ({
         filename: a.filename,
         mimeType: a.mimeType,
         content: a.content,
       })),
     });
+    announceScheduledEmailsChanged();
 
     stopAutoSave();
     // Delete the draft if exists

@@ -136,6 +136,38 @@ describe("send later through the email provider abstraction", () => {
   });
 });
 
+describe("send-as alias chosen in the composer", () => {
+  it("sends a Gmail scheduled email from the chosen alias, not the account address", async () => {
+    const id = await scheduleDue("gmail-1", { fromEmail: "support@acme.com" });
+
+    await processDueScheduledEmails();
+
+    const message = decodeRaw(gmailSend.mock.calls[0]![0] as string);
+    expect(headerOf(message, "From")).toBe("support@acme.com");
+    expect(headerOf(message, "Message-ID")).toMatch(/@acme\.com>$/);
+    expect(await statusOf(id)).toBe("sent");
+  });
+
+  it("sends an IMAP scheduled email from the chosen alias over SMTP", async () => {
+    const id = await scheduleDue("imap-1", { fromEmail: "sales@fastmail.com" });
+
+    await processDueScheduledEmails();
+
+    const smtpCall = tauriInvoke.mock.calls.find(([cmd]) => cmd === "smtp_send_email")!;
+    const message = decodeRaw((smtpCall[1] as { rawEmail: string }).rawEmail);
+    expect(headerOf(message, "From")).toBe("sales@fastmail.com");
+    expect(await statusOf(id)).toBe("sent");
+  });
+
+  it("sends from the account address when no alias was chosen", async () => {
+    await scheduleDue("gmail-1", { fromEmail: null });
+
+    await processDueScheduledEmails();
+
+    expect(headerOf(decodeRaw(gmailSend.mock.calls[0]![0] as string), "From")).toBe("me@gmail.com");
+  });
+});
+
 describe("scheduled email attachments", () => {
   it("keeps each scheduled email's attachments when two are scheduled at once", async () => {
     const attachment = (filename: string) => ({
@@ -308,7 +340,7 @@ describe("when Velo is offline", () => {
 describe("upgrading an existing database", () => {
   it("keeps scheduled emails created before the retry columns existed and still sends them", async () => {
     // Roll the schema back to v24, as an existing install has it
-    for (const column of ["attempts", "next_attempt_at", "last_error"]) {
+    for (const column of ["attempts", "next_attempt_at", "last_error", "from_email"]) {
       await db.execute(`ALTER TABLE scheduled_emails DROP COLUMN ${column}`);
     }
     await db.execute("DELETE FROM _migrations WHERE version >= 25");

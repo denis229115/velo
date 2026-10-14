@@ -24,8 +24,16 @@ const V26_TABLES = [
   "freshdesk_status_classes",
 ];
 
+/** Roll a fresh database back to how a v26 install looks. */
+async function rollBackToV26() {
+  // The v27 column on scheduled_emails must go, or re-running v27 would add it twice.
+  await db.execute("ALTER TABLE scheduled_emails DROP COLUMN from_email");
+  await db.execute("DELETE FROM _migrations WHERE version >= 27");
+}
+
 /** Roll a fresh database back to how a v25 install looks. */
 async function rollBackToV25() {
+  await rollBackToV26();
   for (const table of V26_TABLES) {
     await db.execute(`DROP TABLE IF EXISTS ${table}`);
   }
@@ -143,5 +151,24 @@ describe("migration v26 (Freshdesk connection)", () => {
     );
     expect(tables.map((t) => t.name)).toEqual([...V26_TABLES].sort());
     expect(await db.select("SELECT version FROM _migrations WHERE version = 26")).toHaveLength(1);
+  });
+});
+
+describe("migration v27 (scheduled email send-as alias)", () => {
+  it("upgrades a v26 install and keeps existing scheduled emails", async () => {
+    await runMigrations();
+    await rollBackToV26();
+    await seedEmailData();
+    await db.execute(
+      `INSERT INTO scheduled_emails (id, account_id, to_addresses, subject, body_html, scheduled_at)
+       VALUES ('s1', 'acc-1', 'jane.fake@example.test', 'Later', '<p>Hi</p>', 1700000000000)`,
+    );
+
+    await runMigrations();
+
+    expect(await db.select("SELECT id, from_email FROM scheduled_emails")).toEqual([
+      { id: "s1", from_email: null },
+    ]);
+    expect(await db.select("SELECT version FROM _migrations WHERE version = 27")).toHaveLength(1);
   });
 });
