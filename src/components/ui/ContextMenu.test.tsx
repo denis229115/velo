@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { ContextMenu, type ContextMenuItem } from "./ContextMenu";
 import { Archive, Trash2, Star } from "lucide-react";
+import { pretendPlatform, restoreUserAgent } from "@/test/platform";
 
 // Mock useClickOutside since it relies on document event listeners
 vi.mock("@/hooks/useClickOutside", () => ({
@@ -183,5 +184,24 @@ describe("ContextMenu", () => {
 
     expect(screen.getByText("Checked Item")).toBeInTheDocument();
     expect(screen.getByText("Unchecked Item")).toBeInTheDocument();
+  });
+});
+
+describe("ContextMenu shortcut labels", () => {
+  const items: ContextMenuItem[] = [
+    { id: "quick", label: "Quick step", icon: Archive, shortcut: "Ctrl+Shift+1", action: vi.fn() },
+  ];
+  afterEach(restoreUserAgent);
+
+  it("shows Cmd wording on macOS", () => {
+    pretendPlatform("mac");
+    render(<ContextMenu items={items} position={{ x: 0, y: 0 }} onClose={vi.fn()} />);
+    expect(screen.getByText("Cmd+Shift+1")).toBeInTheDocument();
+  });
+
+  it("keeps Ctrl wording on Windows", () => {
+    pretendPlatform("windows");
+    render(<ContextMenu items={items} position={{ x: 0, y: 0 }} onClose={vi.fn()} />);
+    expect(screen.getByText("Ctrl+Shift+1")).toBeInTheDocument();
   });
 });

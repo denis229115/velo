@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { useClickOutside } from "@/hooks/useClickOutside";
 import { ChevronRight, Check } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { formatShortcut } from "@/utils/shortcutLabel";
 
 export interface ContextMenuItem {
   id: string;
@@ -251,7 +252,7 @@ export function ContextMenu({ items, position, onClose }: ContextMenuProps) {
 
                 {item.shortcut && !hasSubmenu && (
                   <span className="text-text-tertiary ml-4 shrink-0">
-                    {item.shortcut}
+                    {formatShortcut(item.shortcut)}
                   </span>
                 )}
               </button>
