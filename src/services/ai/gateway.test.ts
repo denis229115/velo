@@ -77,7 +77,14 @@ import { refreshWritingStyle, generateAutoDraft } from "./writingStyleService";
 import { upsertMessage } from "@/services/db/messages";
 import { upsertThread } from "@/services/db/threads";
 import { upsertAttachment } from "@/services/db/attachments";
-import { requestAi, getAiReadiness, isAiAvailable } from "./gateway";
+import {
+  requestAi,
+  getAiReadiness,
+  isAiAvailable,
+  setSendPreviewHandler,
+  previewNextRequest,
+  type SendPreview,
+} from "./gateway";
 import { AiError } from "./errors";
 
 // ── Fixtures (fake personal data) ──
@@ -137,6 +144,10 @@ const CONTACT_FIELDS = [
   "abc123@mail.example.test",
 ];
 
+// ── The operator at the send preview ──
+const previews: SendPreview[] = [];
+let previewAnswer = true;
+
 function outbound(i = 0): string {
   const r = captured[i]?.request;
   if (!r) throw new Error(`no captured request #${i}`);
@@ -155,6 +166,12 @@ beforeEach(async () => {
   clearProviderClients();
   captured.length = 0;
   nextResponse = "AI says hello";
+  previews.length = 0;
+  previewAnswer = true;
+  setSendPreviewHandler(async (preview) => {
+    previews.push(preview);
+    return previewAnswer;
+  });
 });
 
 afterEach(() => {
@@ -726,5 +743,79 @@ describe("AI gateway — fixture personal data never leaves Velo, for every emai
     expect(captured).toHaveLength(2);
     expect(outbound(1)).not.toContain("+49 30 1234 5678");
     expect(outbound(1)).not.toContain("customer.fake@example.test");
+  });
+});
+
+describe("AI gateway — send preview", () => {
+  it("is required on first use and shows exactly what will be sent and to which provider", async () => {
+    await approveClaude();
+
+    await summarizeThread("thread-1", "acc-1", thread);
+
+    expect(previews).toHaveLength(1);
+    const [preview] = previews;
+    expect(preview!.reason).toBe("first_use");
+    expect(preview!.providerLabel).toBe("Claude API (Anthropic)");
+    expect(preview!.model).toBe("claude-haiku-4-5-20251001");
+    expect(preview!.feature).toBe("thread_summary");
+    expect(preview!.systemPrompt).toBe(captured[0]!.request.systemPrompt);
+    expect(preview!.userContent).toBe(captured[0]!.request.userContent);
+  });
+
+  it("is not required again for the same kinds of data", async () => {
+    await approveClaude();
+    await summarizeThread("thread-1", "acc-1", thread);
+
+    await summarizeThread("thread-2", "acc-1", [message({ body_text: "Another fake question" })]);
+
+    expect(previews).toHaveLength(1);
+    expect(captured).toHaveLength(2);
+  });
+
+  it("is required again when a request includes a new data kind", async () => {
+    await approveClaude();
+    await summarizeThread("thread-1", "acc-1", thread);
+
+    await summarizeThread("thread-2", "acc-1", [message({ body_text: "Card 4111 1111 1111 1111 please" })]);
+
+    expect(previews).toHaveLength(2);
+    expect(previews[1]!.reason).toBe("new_data_kind");
+    expect(previews[1]!.newKinds).toEqual(["card"]);
+    expect(previews[1]!.userContent).toContain("[CARD_1]");
+  });
+
+  it("can be cancelled without sending anything", async () => {
+    await approveClaude();
+    previewAnswer = false;
+
+    const error = await summarizeThread("thread-1", "acc-1", thread).catch((e: unknown) => e);
+
+    expect((error as AiError).code).toBe("CANCELLED");
+    expect(captured).toHaveLength(0);
+    expect(await listAiAuditLog()).toHaveLength(0);
+    // Nothing was approved, so the next request still needs the preview.
+    previewAnswer = true;
+    await summarizeThread("thread-1", "acc-1", thread);
+    expect(previews.map((p) => p.reason)).toEqual(["first_use", "first_use"]);
+  });
+
+  it("fails closed when no preview can be shown", async () => {
+    await approveClaude();
+    setSendPreviewHandler(null);
+
+    const error = await summarizeThread("thread-1", "acc-1", thread).catch((e: unknown) => e);
+
+    expect((error as AiError).code).toBe("PREVIEW_REQUIRED");
+    expect(captured).toHaveLength(0);
+  });
+
+  it("is one click away otherwise", async () => {
+    await approveClaude();
+    await summarizeThread("thread-1", "acc-1", thread);
+
+    previewNextRequest(["thread_summary"]);
+    await summarizeThread("thread-1", "acc-1", thread, { refresh: true });
+
+    expect(previews.map((p) => p.reason)).toEqual(["first_use", "requested"]);
   });
 });
