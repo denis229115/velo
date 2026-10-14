@@ -215,3 +215,22 @@ describe("coverage", () => {
     });
   });
 });
+
+describe("server and local filters", () => {
+  it("keeps what Freshdesk search can apply apart from what needs the classification, identity or history", async () => {
+    const { splitTicketFilter } = await import("./ticketViews");
+    expect(
+      splitTicketFilter({
+        statusIds: ["6"],
+        statusClasses: ["outstanding"],
+        assignees: ["me", "unassigned", "9000000003"],
+        priorityIds: ["4"],
+        tags: ["vip"],
+        needsReply: true,
+      }),
+    ).toEqual({
+      server: { statusIds: ["6"], priorityIds: ["4"], tags: ["vip"], agentIds: ["9000000003"], unassigned: true },
+      local: { statusClasses: ["outstanding"], needsReply: true, me: true },
+    });
+  });
+});
