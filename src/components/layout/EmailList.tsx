@@ -527,7 +527,7 @@ export function EmailList({ width, listRef }: { width?: number; listRef?: React.
       style={readingPanePosition === "right" && width ? { width } : undefined}
     >
       <ListHeader
-        breadcrumb={["Mail", ...(activeAccountEmail ? [activeAccountEmail] : []), ...(activeSearch ? ["Search"] : [])]}
+        breadcrumb={["Mail", ...(activeAccountEmail ? [activeAccountEmail] : [])]}
         icon={
           activeSearch ? <Search size={16} className="text-accent shrink-0" />
           : isSmartFolder ? <FolderSearch size={16} className="text-accent shrink-0" /> : undefined

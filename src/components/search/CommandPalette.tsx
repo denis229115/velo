@@ -292,7 +292,9 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
             }}
             onKeyDown={handleKeyDown}
             placeholder="Search mail or type a command… (from: to: has:attachment)"
-            className="w-full bg-transparent text-sm text-text-primary outline-none placeholder:text-text-tertiary"
+            // The caret marks focus here; the global focus ring would box the whole field
+            style={{ outline: "none" }}
+            className="w-full bg-transparent text-sm text-text-primary placeholder:text-text-tertiary"
           />
         </div>
 
