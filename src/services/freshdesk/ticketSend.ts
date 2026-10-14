@@ -49,7 +49,7 @@ export type TicketSendResult =
 
 export const OFFLINE_MESSAGE = "Sending needs a connection to Freshdesk. Your draft is kept.";
 export const SAMPLE_MESSAGE = "Sample tickets can't be answered. Connect a helpdesk to send.";
-const UNCONFIRMED_MESSAGE =
+export const UNCONFIRMED_MESSAGE =
   "Freshdesk did not answer, so Velo can't tell yet whether this went out. Velo checks the conversation instead of sending again.";
 const STILL_UNCONFIRMED_MESSAGE =
   "Velo could not read the ticket back from Freshdesk yet. It will not send again until it knows what happened.";

@@ -43,7 +43,7 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
 
 const Sep = () => <span aria-hidden className="opacity-60"> · </span>;
 
-/** Reply and Internal note until the ticket composer lands: visible, explained, never a dead click. */
+/** Reply and Internal note: open the ticket composer; without a handler the slot explains why, never a dead click. */
 function ActionSlot({
   label,
   icon,
@@ -349,7 +349,7 @@ export function TicketHeader({
   edit: EditControls;
   /** Why the state cannot change, or why a change was refused */
   notice?: ReactNode;
-  /** Wired by the ticket composer; until then the slots explain they are not available */
+  /** Open the ticket composer in that mode; without them the slots explain they are not available */
   onReply?: () => void;
   onInternalNote?: () => void;
 }) {

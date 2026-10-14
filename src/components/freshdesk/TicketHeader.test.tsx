@@ -162,18 +162,17 @@ describe("ticket header: identity and actions", () => {
     expect(header().queryByText("Sample")).not.toBeInTheDocument();
   });
 
-  it("keeps Reply and Internal note as visible slots that explain they are not available yet, never a dead click", async () => {
+  it("opens the composer in Reply to customer or Internal note mode, without writing to Freshdesk", async () => {
     await connectAndSync();
     await opened1001();
 
-    for (const name of ["Reply", "Internal note"]) {
+    for (const [name, region] of [["Reply", "Reply to customer"], ["Internal note", "Internal note"]] as const) {
       const button = await header().findByRole("button", { name });
-      expect(button).toHaveAttribute("aria-disabled", "true");
-      expect(button).toHaveAccessibleDescription(/not available in Velo yet/);
+      expect(button).not.toHaveAttribute("aria-disabled");
       freshdesk.requests.length = 0;
       fireEvent.click(button);
-      expect(freshdesk.requests).toEqual([]);
-      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      expect(await screen.findByRole("region", { name: region })).toBeInTheDocument();
+      expect(freshdesk.requests.filter((r) => r.method !== "GET")).toEqual([]);
     }
   });
 

@@ -106,7 +106,7 @@ const later = (ms: number) => vi.setSystemTime(Date.now() + ms);
 async function openTicket(ticketId = "1001") {
   await connectAndSync();
   renderFreshdesk(`/freshdesk/ticket/${ticketId}`);
-  await reader().findByRole("heading", { level: 2 });
+  await within(await screen.findByRole("region", { name: "Ticket reader" })).findByRole("heading", { level: 2 });
 }
 async function openComposer(button: "Reply" | "Internal note") {
   fireEvent.click(await reader().findByRole("button", { name: button }));
