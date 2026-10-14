@@ -29,6 +29,7 @@ import {
   isAiAvailable as isProviderConfigured,
 } from "./providerManager";
 import type { AiProvider } from "./types";
+import { Redaction, containsSecret, containsSensitiveData, redact } from "./sensitiveData";
 
 export type AiFeature =
   | "thread_summary"
@@ -167,21 +168,22 @@ function renderItems(items: AiSourceItem[], budget: number): string {
   return blocks.join("\n");
 }
 
-function buildUserContent(req: AiGatewayRequest): string {
+function buildUserContent(req: AiGatewayRequest, r: Redaction): string {
   const parts: string[] = [];
   if (req.items && req.items.length > 0) {
-    // Copy only allowlisted fields, whatever else the caller's objects carry.
+    // Copy only allowlisted fields, whatever else the caller's objects carry,
+    // with sensitive data replaced before any budget is applied.
     const allowlisted = req.items.map((item) => ({
-      subject: item.subject,
-      body: item.body,
-      status: item.status,
-      priority: item.priority,
+      subject: item.subject && redact(item.subject, r),
+      body: item.body && redact(item.body, r),
+      status: item.status && redact(item.status, r),
+      priority: item.priority && redact(item.priority, r),
       senderDomain: senderDomain(item.senderDomain),
     }));
     parts.push(renderItems(allowlisted, req.maxChars ?? DEFAULT_MAX_CHARS));
   }
   if (req.operatorText?.trim()) {
-    parts.push(`<operator_request>\n${clean(req.operatorText)}\n</operator_request>`);
+    parts.push(`<operator_request>\n${clean(redact(req.operatorText, r))}\n</operator_request>`);
   }
   return parts.join("\n\n");
 }
@@ -224,8 +226,22 @@ async function requireReady(): Promise<{ provider: typeof APPROVED_PROVIDER; mod
 export async function requestAi(req: AiGatewayRequest): Promise<string> {
   const { provider, model } = await requireReady();
 
-  const systemPrompt = `${req.systemPrompt}\n\n${DATA_FRAMING}`;
-  const userContent = buildUserContent(req);
+  // A secret in the operator's own instruction is refused rather than silently cut out.
+  if (req.operatorText && containsSecret(req.operatorText)) {
+    throw new AiError(
+      "SENSITIVE_DATA",
+      "Not sent: your instruction contains what looks like a password, API key or token. Remove it and try again.",
+    );
+  }
+
+  // Local sensitive-data check: nothing below this point sees the originals.
+  const redaction = new Redaction();
+  const systemPrompt = `${redact(req.systemPrompt, redaction)}\n\n${DATA_FRAMING}`;
+  const userContent = buildUserContent(req, redaction);
+  // Fail closed: never send content the local check would still flag.
+  if (containsSensitiveData(systemPrompt) || containsSensitiveData(userContent)) {
+    throw new AiError("SENSITIVE_DATA", "Not sent: Velo could not remove all sensitive data from this request.");
+  }
 
   const cacheKey = req.cache
     ? {
@@ -239,10 +255,10 @@ export async function requestAi(req: AiGatewayRequest): Promise<string> {
     : null;
   if (cacheKey && !req.cache?.refresh) {
     const cached = await getAiResult(cacheKey);
-    if (cached !== null) return cached;
+    if (cached !== null) return redaction.restore(cached);
   }
 
-  const flagCounts: AiFlagCounts = { secret: 0, payment: 0, contact: 0 };
+  const flagCounts: AiFlagCounts = redaction.categoryCounts();
   const auditId = await insertAiAuditLog({
     feature: req.feature,
     provider,
@@ -261,8 +277,9 @@ export async function requestAi(req: AiGatewayRequest): Promise<string> {
   }
   await setAiAuditOutcome(auditId, "ok");
 
+  // The cache keeps the placeholders; the originals are restored only for display.
   if (cacheKey) await setAiResult(cacheKey, result);
-  return result;
+  return redaction.restore(result);
 }
 
 /**
