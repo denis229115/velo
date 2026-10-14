@@ -23,7 +23,7 @@ function formatTimestamp(seconds: number | null): string {
 }
 
 const SELECT_CLASS =
-  "bg-bg-tertiary text-text-primary text-sm px-2 py-1.5 rounded-md border border-border-primary focus:border-accent outline-none w-full max-w-sm";
+  "block bg-bg-tertiary text-text-primary text-sm px-2 py-1.5 rounded-md border border-border-primary focus:border-accent outline-none w-full max-w-sm";
 
 export function ClickUpSettings() {
   const [settings, setSettings] = useState<ClickUpSettingsView | null>(null);
@@ -120,7 +120,7 @@ export function ClickUpSettings() {
             />
             {choices && (
               <label className="block space-y-1">
-                <span className="text-xs font-medium text-text-secondary">Workspace</span>
+                <span className="block text-xs font-medium text-text-secondary">Workspace</span>
                 <select
                   aria-label="Workspace"
                   value={workspaceId}
@@ -151,7 +151,7 @@ export function ClickUpSettings() {
       {settings && !isSample && (
         <Section title="Defaults">
           <label className="block space-y-1">
-            <span className="text-xs font-medium text-text-secondary">Default list</span>
+            <span className="block text-xs font-medium text-text-secondary">Default list</span>
             <select
               aria-label="Default list"
               value={settings.defaultListId ?? ""}
@@ -168,7 +168,7 @@ export function ClickUpSettings() {
             </select>
           </label>
           <label className="block space-y-1">
-            <span className="text-xs font-medium text-text-secondary">Ticket-ID field</span>
+            <span className="block text-xs font-medium text-text-secondary">Ticket-ID field</span>
             <select
               aria-label="Ticket-ID field"
               value={settings.ticketIdFieldId ?? ""}

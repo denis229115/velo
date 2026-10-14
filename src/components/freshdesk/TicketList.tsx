@@ -159,7 +159,7 @@ export function TicketList({ selectedTicketId, width }: { selectedTicketId: stri
                 aria-pressed={linkedOnly}
                 aria-label="Linked work only"
                 title="Show only tickets with linked ClickUp tasks"
-                className={`p-1.5 rounded-md hover:bg-bg-hover ${linkedOnly ? "text-accent bg-bg-selected" : "text-text-secondary hover:text-text-primary"}`}
+                className={`p-1.5 rounded-md ${linkedOnly ? "text-accent bg-accent/10 ring-1 ring-accent/40" : "text-text-secondary hover:text-text-primary hover:bg-bg-hover"}`}
               >
                 <ListChecks size={14} aria-hidden />
               </button>
