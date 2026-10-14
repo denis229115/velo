@@ -287,6 +287,50 @@ describe("AI gateway — request shape", () => {
     expect(sent).not.toContain("VIP-123");
     expect(sent).not.toContain("secret.pdf");
   });
+
+  it("sends the sender domain as an allowlisted field", async () => {
+    await approveClaude();
+
+    await requestAi({
+      feature: "categorization",
+      systemPrompt: "Categorize.",
+      items: [{ subject: "Weekly digest", body: "Top stories", senderDomain: "news.example.test" }],
+    });
+
+    expect(outbound()).toContain("Sender domain: news.example.test");
+  });
+
+  it.each([
+    ["a full address", "Jane.Fake@Example.test", "example.test"],
+    ["a display-name address", "Jane Fakeperson <jane.fake@example.test>", "example.test"],
+  ])("reduces %s passed as sender domain to the domain alone", async (_kind, passed, domain) => {
+    await approveClaude();
+
+    await requestAi({
+      feature: "categorization",
+      systemPrompt: "Categorize.",
+      items: [{ subject: "Hello", senderDomain: passed }],
+    });
+
+    const sent = outbound();
+    expect(sent).toContain(`Sender domain: ${domain}`);
+    expect(sent.toLowerCase()).not.toContain("jane.fake");
+    expect(sent).not.toContain("Jane Fakeperson");
+  });
+
+  it("drops a sender domain that is not a domain, such as a bare name", async () => {
+    await approveClaude();
+
+    await requestAi({
+      feature: "categorization",
+      systemPrompt: "Categorize.",
+      items: [{ subject: "Hello", senderDomain: "Jane Fakeperson" }],
+    });
+
+    const sent = outbound();
+    expect(sent).not.toContain("Sender domain");
+    expect(sent).not.toContain("Jane Fakeperson");
+  });
 });
 
 describe("AI gateway — result cache", () => {
@@ -446,6 +490,27 @@ describe("AI gateway — every email AI feature goes through it", () => {
     expect(outbound()).not.toContain("thread-1");
     expect(result.get("thread-1")).toBe("Primary");
     expect(result.get("thread-2")).toBe("Newsletters");
+  });
+
+  const namedSenders = [
+    { id: "thread-1", subject: "Invoice question", snippet: "Could you resend", fromAddress: "Jane Fakeperson <jane.fake@example.test>" },
+    { id: "thread-2", subject: "Weekly digest", snippet: "Top stories", fromAddress: "news.fake@digest.example.test" },
+  ];
+
+  it.each([
+    ["categorization", () => categorizeThreads(namedSenders)],
+    ["smart_labels", () => classifyThreadsBySmartLabels(namedSenders, [{ labelId: "l1", description: "Digests" }])],
+  ] as const)("%s sends each sender's domain, never the full address or name", async (_feature, run) => {
+    await approveClaude();
+
+    await run();
+
+    const user = captured[0]!.request.userContent;
+    expect(user).toContain("Sender domain: example.test");
+    expect(user).toContain("Sender domain: digest.example.test");
+    expect(user).not.toContain("jane.fake");
+    expect(user).not.toContain("Jane Fakeperson");
+    expect(user).not.toContain("news.fake");
   });
 
   it("maps smart labels back to the right threads", async () => {
