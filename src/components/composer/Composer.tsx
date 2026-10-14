@@ -318,6 +318,7 @@ export function Composer() {
       threadId: state.threadId,
       scheduledAt,
       signatureId: null,
+      fromEmail: state.fromEmail,
       attachments: state.attachments.map((a) => ({
         filename: a.filename,
         mimeType: a.mimeType,

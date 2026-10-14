@@ -814,6 +814,13 @@ const MIGRATIONS = [
       ALTER TABLE scheduled_emails ADD COLUMN last_error TEXT;
     `,
   },
+  {
+    version: 26,
+    description: "Send-as alias for scheduled emails",
+    sql: `
+      ALTER TABLE scheduled_emails ADD COLUMN from_email TEXT;
+    `,
+  },
 ];
 
 /**

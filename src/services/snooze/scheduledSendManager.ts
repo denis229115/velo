@@ -45,6 +45,11 @@ function scheduledMessageId(email: DbScheduledEmail, fromEmail: string): string 
   return `<scheduled.${email.id}@${domain}>`;
 }
 
+/** The send-as alias chosen in the composer, else the account's own address. */
+function senderOf(email: DbScheduledEmail, accountEmail: string): string {
+  return email.from_email ?? accountEmail;
+}
+
 async function wentOut(email: DbScheduledEmail, fromEmail: string): Promise<boolean> {
   return hasMessageWithIdHeader(email.account_id, scheduledMessageId(email, fromEmail));
 }
@@ -61,8 +66,10 @@ async function sendScheduledEmail(email: DbScheduledEmail): Promise<void> {
     return;
   }
 
+  const from = senderOf(email, account.email);
+
   // A timed-out earlier attempt may have been delivered after all
-  if (email.attempts > 0 && (await wentOut(email, account.email))) {
+  if (email.attempts > 0 && (await wentOut(email, from))) {
     await updateScheduledEmailStatus(email.id, "sent");
     return;
   }
@@ -73,7 +80,7 @@ async function sendScheduledEmail(email: DbScheduledEmail): Promise<void> {
   try {
     const provider = await getEmailProvider(email.account_id);
     const raw = buildRawEmail({
-      from: account.email,
+      from,
       to: splitAddresses(email.to_addresses) ?? [],
       cc: splitAddresses(email.cc_addresses),
       bcc: splitAddresses(email.bcc_addresses),
@@ -82,7 +89,7 @@ async function sendScheduledEmail(email: DbScheduledEmail): Promise<void> {
       inReplyTo: email.reply_to_message_id ?? undefined,
       threadId: email.thread_id ?? undefined,
       attachments: parseAttachments(email),
-      messageId: scheduledMessageId(email, account.email),
+      messageId: scheduledMessageId(email, from),
     });
 
     await provider.sendMessage(raw, email.thread_id ?? undefined);
@@ -120,7 +127,7 @@ export async function recoverInterruptedScheduledSends(): Promise<void> {
   const interrupted = await getScheduledEmailsInStatus("sending");
   for (const email of interrupted) {
     const account = await getAccount(email.account_id);
-    if (account && (await wentOut(email, account.email))) {
+    if (account && (await wentOut(email, senderOf(email, account.email)))) {
       await updateScheduledEmailStatus(email.id, "sent");
     } else {
       await failPermanently(

@@ -20,6 +20,8 @@ export interface DbScheduledEmail {
   attempts: number;
   next_attempt_at: number | null;
   last_error: string | null;
+  /** Send-as alias chosen in the composer; null sends from the account address */
+  from_email: string | null;
 }
 
 export async function getPendingScheduledEmails(): Promise<DbScheduledEmail[]> {
@@ -55,6 +57,8 @@ export async function insertScheduledEmail(email: {
   threadId: string | null;
   scheduledAt: number;
   signatureId: string | null;
+  /** Send-as alias chosen in the composer; null or omitted sends from the account address */
+  fromEmail?: string | null;
   /** Stored in the same INSERT as the row so concurrent schedules can't mix them up */
   attachments?: EmailAttachment[];
 }): Promise<string> {
@@ -65,8 +69,8 @@ export async function insertScheduledEmail(email: {
       ? JSON.stringify(email.attachments)
       : null;
   await db.execute(
-    `INSERT INTO scheduled_emails (id, account_id, to_addresses, cc_addresses, bcc_addresses, subject, body_html, reply_to_message_id, thread_id, scheduled_at, signature_id, attachment_paths)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+    `INSERT INTO scheduled_emails (id, account_id, to_addresses, cc_addresses, bcc_addresses, subject, body_html, reply_to_message_id, thread_id, scheduled_at, signature_id, attachment_paths, from_email)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
     [
       id,
       email.accountId,
@@ -80,6 +84,7 @@ export async function insertScheduledEmail(email: {
       email.scheduledAt,
       email.signatureId,
       attachmentData,
+      email.fromEmail ?? null,
     ],
   );
   return id;
