@@ -73,6 +73,22 @@ describe("ListRow", () => {
     expect(screen.getByRole("button", { name: "Unstar" })).not.toHaveClass("opacity-0");
   });
 
+  it.each(["compact", "default"] as const)("puts extra details on their own line under the subject in %s density", (density) => {
+    renderRow({ density, extraLine: "Due Thu, Oct 15" });
+    const extra = line("Due Thu, Oct 15");
+    expect(extra).not.toBeNull();
+    expect(extra).not.toBe(line("Quarterly report"));
+    expect(extra).not.toBe(line("Alice Walker"));
+    // The details come after the subject, and the row grows to hold them instead of clipping
+    expect(line("Quarterly report")?.compareDocumentPosition(extra as Node)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(screen.getByText("Alice Walker").closest("button")).not.toHaveClass("@2xl:h-11");
+  });
+
+  it("renders no extra line when there are no extra details", () => {
+    renderRow();
+    expect(document.querySelectorAll("[data-line]")).toHaveLength(1);
+  });
+
   it("opens the item when the row is clicked", () => {
     const props = renderRow();
     fireEvent.click(screen.getByText("Quarterly report"));
