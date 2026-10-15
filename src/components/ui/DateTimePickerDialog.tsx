@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 
@@ -21,6 +21,8 @@ interface DateTimePickerDialogProps {
   zIndex?: string;
   /** Optional explanatory line shown under the picker */
   note?: string;
+  /** Options chosen before picking a time, shown above the presets */
+  children?: ReactNode;
 }
 
 export function DateTimePickerDialog({
@@ -32,6 +34,7 @@ export function DateTimePickerDialog({
   submitLabel,
   zIndex,
   note,
+  children,
 }: DateTimePickerDialogProps) {
   const [customDate, setCustomDate] = useState("");
   const [customTime, setCustomTime] = useState("09:00");
@@ -48,6 +51,7 @@ export function DateTimePickerDialog({
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={title} zIndex={zIndex}>
+      {children && <div className="border-b border-border-secondary px-4 py-3">{children}</div>}
       <div className="py-1">
         {presets.map((preset) => (
           <button
