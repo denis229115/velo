@@ -10,7 +10,19 @@ import {
   retryFailedScheduledEmail,
   SCHEDULED_EMAILS_CHANGED_EVENT,
 } from "@/services/snooze/scheduledSendManager";
-import { ScheduledList, type ScheduledListItem, type ScheduledStatus } from "./ScheduledList";
+import {
+  cancelScheduledReply,
+  checkScheduledReply,
+  editScheduledReply,
+  listScheduledReplies,
+  SCHEDULED_REPLIES_CHANGED_EVENT,
+  sendScheduledReplyNow,
+  type ScheduledReply,
+} from "@/services/freshdesk/scheduledReplies";
+import { getStatusClassification } from "@/services/freshdesk/connection";
+import { useFreshdeskWritable } from "@/components/freshdesk/useFreshdeskWritable";
+import { navigateToTicket } from "@/router/navigate";
+import { ScheduledList, type ScheduledAction, type ScheduledListItem, type ScheduledStatus } from "./ScheduledList";
 
 function sourceOf(email: ScheduledEmailWithAccount): string {
   const account = email.account_email ?? "Removed email account";
@@ -31,14 +43,55 @@ function toListItem(email: ScheduledEmailWithAccount): ScheduledListItem {
   };
 }
 
+const REPLY_ACTIONS: Record<ScheduledStatus, ScheduledAction[]> = {
+  pending: ["edit", "cancel"],
+  held: ["send_anyway", "edit", "cancel"],
+  failed: ["retry", "edit", "cancel"],
+  unconfirmed: ["check"],
+  sending: [],
+  sent: [],
+};
+
+function replyDetail(reply: ScheduledReply, statusLabels: Map<string, string>): string | null {
+  if (reply.statusProblem) return `Reply sent; the status was not changed: ${reply.statusProblem}`;
+  if (reply.thenStatusId === null || reply.state === "sent") return null;
+  const label = statusLabels.get(reply.thenStatusId) ?? "the chosen status";
+  return `Then set ${label}, once Freshdesk confirms the reply`;
+}
+
+function toReplyItem(reply: ScheduledReply, statusLabels: Map<string, string>, remoteBlocked: string | null): ScheduledListItem {
+  return {
+    id: reply.id,
+    title: reply.subject || `Ticket #${reply.ticketId}`,
+    recipients: reply.recipient || "the customer",
+    source: `Freshdesk · #${reply.ticketId}`,
+    status: reply.state,
+    sendAt: reply.sendAt,
+    error: reply.state === "failed" || reply.state === "unconfirmed" ? reply.error : null,
+    reasons: reply.state === "held" ? reply.holdReasons : [],
+    detail: replyDetail(reply, statusLabels),
+    actions: REPLY_ACTIONS[reply.state],
+    remoteBlocked,
+  };
+}
+
 export function ScheduledEmailsPage() {
   const [items, setItems] = useState<ScheduledListItem[] | null>(null);
   const [busyIds, setBusyIds] = useState<ReadonlySet<string>>(new Set());
   const [notice, setNotice] = useState<string | null>(null);
+  const [replies, setReplies] = useState<ScheduledReply[]>([]);
+  const [statusLabels, setStatusLabels] = useState<Map<string, string>>(new Map());
+  const writable = useFreshdeskWritable();
 
   const load = useCallback(async () => {
-    const emails = await listScheduledEmails();
+    const [emails, ticketReplies, classification] = await Promise.all([
+      listScheduledEmails(),
+      listScheduledReplies(),
+      getStatusClassification(),
+    ]);
     setItems(emails.map(toListItem));
+    setReplies(ticketReplies);
+    setStatusLabels(new Map(classification.statuses.map((s) => [s.id, s.label])));
   }, []);
 
   /** Run a cancel or retry for one item, keeping its buttons disabled meanwhile. */
@@ -68,12 +121,35 @@ export function ScheduledEmailsPage() {
     return outcome.status === "not-retried" ? outcome.reason : null;
   }), [runFor]);
 
+  const handleReplyCancel = useCallback((id: string) => runFor(id, async () => {
+    const cancelled = await cancelScheduledReply(id);
+    return cancelled ? null : "This reply is already on its way or done, so it can no longer be cancelled.";
+  }), [runFor]);
+
+  const handleReplyEdit = useCallback((id: string) => runFor(id, async () => {
+    const result = await editScheduledReply(id);
+    if (!result.ok) return result.message;
+    navigateToTicket(result.ticketId);
+    return null;
+  }), [runFor]);
+
+  const handleReplySend = useCallback((id: string) => runFor(id, () => sendScheduledReplyNow(id)), [runFor]);
+  const handleReplyCheck = useCallback((id: string) => runFor(id, () => checkScheduledReply(id)), [runFor]);
+
   useEffect(() => {
     void load();
     const reload = () => void load();
     window.addEventListener(SCHEDULED_EMAILS_CHANGED_EVENT, reload);
-    return () => window.removeEventListener(SCHEDULED_EMAILS_CHANGED_EVENT, reload);
+    window.addEventListener(SCHEDULED_REPLIES_CHANGED_EVENT, reload);
+    return () => {
+      window.removeEventListener(SCHEDULED_EMAILS_CHANGED_EVENT, reload);
+      window.removeEventListener(SCHEDULED_REPLIES_CHANGED_EVENT, reload);
+    };
   }, [load]);
+
+  const replyItems = replies.map((r) => toReplyItem(r, statusLabels, writable.reason));
+  const total = items ? items.length + replyItems.length : null;
+  const sectionHeading = "px-4 pt-3 pb-1 text-xs font-medium uppercase tracking-wide text-text-tertiary";
 
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden">
@@ -81,21 +157,42 @@ export function ScheduledEmailsPage() {
         <div className="flex items-center gap-2">
           <CalendarClock size={18} className="text-text-secondary" />
           <h1 className="text-base font-semibold text-text-primary">Scheduled</h1>
-          {items && <span className="text-xs text-text-tertiary">({items.length})</span>}
+          {total !== null && <span className="text-xs text-text-tertiary">({total})</span>}
         </div>
         {notice && (
           <p role="status" className="mt-2 text-xs text-text-secondary">{notice}</p>
         )}
       </div>
       <div className="flex-1 overflow-y-auto">
-        {items && items.length === 0 ? (
+        {total === 0 ? (
           <EmptyState
             icon={CalendarClock}
-            title="No scheduled emails"
-            subtitle="Emails you send later appear here until they go out."
+            title="Nothing scheduled"
+            subtitle="Emails you send later and scheduled ticket replies appear here until they go out."
           />
         ) : items ? (
-          <ScheduledList items={items} busyIds={busyIds} onCancel={handleCancel} onRetry={handleRetry} />
+          <>
+            {items.length > 0 && (
+              <section aria-label="Scheduled emails">
+                {replyItems.length > 0 && <h2 className={sectionHeading}>Emails</h2>}
+                <ScheduledList items={items} busyIds={busyIds} onCancel={handleCancel} onRetry={handleRetry} />
+              </section>
+            )}
+            {replyItems.length > 0 && (
+              <section aria-label="Scheduled ticket replies">
+                <h2 className={sectionHeading}>Ticket replies</h2>
+                <ScheduledList
+                  items={replyItems}
+                  busyIds={busyIds}
+                  onCancel={handleReplyCancel}
+                  onRetry={handleReplySend}
+                  onEdit={handleReplyEdit}
+                  onSendAnyway={handleReplySend}
+                  onCheck={handleReplyCheck}
+                />
+              </section>
+            )}
+          </>
         ) : null}
       </div>
     </div>

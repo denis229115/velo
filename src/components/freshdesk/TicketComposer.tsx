@@ -2,9 +2,15 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
-import { AlertTriangle, CheckCircle2, HelpCircle, Lock, Reply, X } from "lucide-react";
+import { AlertTriangle, CalendarClock, CheckCircle2, Clock, HelpCircle, Lock, Reply, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { EditorToolbar } from "@/components/composer/EditorToolbar";
+import { ScheduleSendDialog } from "@/components/composer/ScheduleSendDialog";
+import { useComposerShortcuts } from "@/hooks/useComposerShortcuts";
+import { useShortcutStore } from "@/stores/shortcutStore";
+import { formatShortcut } from "@/utils/shortcutLabel";
+import { formatFullDate } from "@/utils/date";
+import { scheduleTicketReply } from "@/services/freshdesk/scheduledReplies";
 import { useTicketStore } from "@/stores/ticketStore";
 import type { TicketListItem } from "@/services/freshdesk/ticketSync";
 import { getHelpdeskConnection, getStatusClassification, type ClassifiableStatus } from "@/services/freshdesk/connection";
@@ -12,14 +18,19 @@ import type { HelpdeskAgent } from "@/services/freshdesk/metadata";
 import { UNCONFIRMED_MESSAGE, type ComposerMode, type StalenessBaseline, type TicketSendResult } from "@/services/freshdesk/ticketSend";
 import { discardTicketDraft, loadTicketDraft, saveTicketDraft, sendTicketDraft } from "@/services/freshdesk/ticketDrafts";
 import { FreshdeskWriteReason, useFreshdeskWritable } from "./useFreshdeskWritable";
+import type { TicketHistoryView } from "@/services/freshdesk/ticketHistory";
+import { TicketAiDraft } from "./TicketAiDraft";
 
 const MODE_NAME: Record<ComposerMode, string> = { reply: "Reply to customer", note: "Internal note" };
 const SENT_TEXT: Record<ComposerMode, string> = { reply: "Reply sent.", note: "Internal note added." };
 const AUTOSAVE_MS = 600;
+const SCHEDULE_NOTE =
+  "Your reply sends through Freshdesk when Velo is next open at or after this time — not while your Mac sleeps or Velo is closed. If the ticket changed by then, it is held for you instead.";
 
 /** What the last send attempt came to, as the composer shows it */
 type Outcome =
   | { kind: "sent"; statusProblem: string | null }
+  | { kind: "scheduled"; sendAt: number }
   | { kind: "stale"; changes: string[]; baseline: StalenessBaseline }
   | { kind: "unconfirmed"; message: string }
   | { kind: "not_sent"; message: string };
@@ -56,26 +67,31 @@ const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
  */
 export function TicketComposer({
   ticket,
+  history = null,
   mode,
   onModeChange,
   onClose,
 }: {
   ticket: TicketListItem;
+  /** The ticket's history, which AI drafts read; null while loading */
+  history?: TicketHistoryView | null;
   mode: ComposerMode;
   onModeChange: (mode: ComposerMode) => void;
   onClose: () => void;
 }) {
   // One pane per ticket and mode, so each loads and saves its own draft
-  return <ComposerPane key={`${ticket.id}:${mode}`} ticket={ticket} mode={mode} onModeChange={onModeChange} onClose={onClose} />;
+  return <ComposerPane key={`${ticket.id}:${mode}`} ticket={ticket} history={history} mode={mode} onModeChange={onModeChange} onClose={onClose} />;
 }
 
 function ComposerPane({
   ticket,
+  history,
   mode,
   onModeChange,
   onClose,
 }: {
   ticket: TicketListItem;
+  history: TicketHistoryView | null;
   mode: ComposerMode;
   onModeChange: (mode: ComposerMode) => void;
   onClose: () => void;
@@ -88,6 +104,8 @@ function ComposerPane({
   const [empty, setEmpty] = useState(true);
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
+  const [showSchedule, setShowSchedule] = useState(false);
+  const sendLaterKeys = useShortcutStore((s) => s.keyMap["app.sendLater"]);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dirty = useRef(false);
   const ccRef = useRef("");
@@ -169,6 +187,36 @@ function ComposerPane({
   const badCc = ccEmails.filter((e) => !EMAIL.test(e));
   const thenStatus = doneStatuses.find((s) => s.id === thenStatusId) ?? null;
 
+  /** Clears the composer once its text has left it (sent, or moved into the schedule) */
+  function clearComposer() {
+    editor?.commands.setContent("", { emitUpdate: false });
+    setEmpty(true);
+    setCcText("");
+    setThenStatusId("");
+    dirty.current = false;
+  }
+
+  const canSchedule = mode === "reply" && writable.writable && !busy && !empty && !unconfirmed && badCc.length === 0 && outcome?.kind !== "stale";
+  useComposerShortcuts({ onSendLater: () => canSchedule && setShowSchedule(true) }, mode === "reply");
+
+  async function schedule(sendAt: number) {
+    setShowSchedule(false);
+    if (busy || !writable.writable) return;
+    setBusy(true);
+    try {
+      await save();
+      const result = await scheduleTicketReply(ticket.id, { sendAt, ...(thenStatusId && { thenStatusId }) });
+      if (result.ok) {
+        clearComposer();
+        setOutcome({ kind: "scheduled", sendAt });
+      } else {
+        setOutcome({ kind: "not_sent", message: result.message });
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function send(options: { acknowledged?: StalenessBaseline } = {}) {
     if (busy || !writable.writable) return;
     setBusy(true);
@@ -180,13 +228,7 @@ function ComposerPane({
       });
       const next = toOutcome(result);
       setOutcome(next);
-      if (next.kind === "sent") {
-        editor?.commands.setContent("", { emitUpdate: false });
-        setEmpty(true);
-        setCcText("");
-        setThenStatusId("");
-        dirty.current = false;
-      }
+      if (next.kind === "sent") clearComposer();
       // The send or the Staleness check re-read the ticket: show what is new in the history and Last answered
       if (next.kind === "sent" || next.kind === "stale") await useTicketStore.getState().load();
     } finally {
@@ -244,6 +286,8 @@ function ComposerPane({
         scheduleSave();
       }} />
 
+      {mode === "reply" && <TicketAiDraft ticket={ticket} view={history} editor={editor} empty={empty} />}
+
       <div className="mx-3 mt-2 rounded-md border border-border-primary bg-bg-primary">
         <EditorToolbar editor={editor} />
         <EditorContent editor={editor} />
@@ -261,6 +305,20 @@ function ComposerPane({
               onClick={() => void send()}
             >
               {busy ? "Sending…" : sendLabel}
+            </Button>
+          )}
+          {mode === "reply" && !unconfirmed && outcome?.kind !== "stale" && (
+            <Button
+              variant="secondary"
+              size="sm"
+              className="border border-border-primary"
+              icon={<Clock size={13} aria-hidden />}
+              {...writable.controlProps}
+              title={writable.controlProps.title ?? (sendLaterKeys ? `Send later (${formatShortcut(sendLaterKeys)})` : "Send later")}
+              disabled={!canSchedule}
+              onClick={() => setShowSchedule(true)}
+            >
+              Send later
             </Button>
           )}
           {mode === "reply" && !unconfirmed && (
@@ -286,6 +344,26 @@ function ComposerPane({
         </div>
         <FreshdeskWriteReason writable={writable} />
       </div>
+      {showSchedule && (
+        <ScheduleSendDialog title="Schedule reply" note={SCHEDULE_NOTE} onSchedule={(at) => void schedule(at)} onClose={() => setShowSchedule(false)}>
+          <label className="flex items-center justify-between gap-2 text-xs text-text-secondary">
+            Then set status
+            <select
+              value={thenStatusId}
+              onChange={(e) => setThenStatusId(e.target.value)}
+              className="rounded-md border border-border-primary bg-bg-primary px-1.5 py-1 text-xs text-text-primary"
+            >
+              <option value="">Keep current status</option>
+              {doneStatuses.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <p className="mt-1.5 text-micro text-text-tertiary">Set only once Freshdesk confirms the reply was sent.</p>
+        </ScheduleSendDialog>
+      )}
     </section>
   );
 }
@@ -383,6 +461,16 @@ function OutcomeView({
   if (!outcome) return null;
   const box = "rounded-md border px-3 py-2 text-meta";
   switch (outcome.kind) {
+    case "scheduled":
+      return (
+        <p role="status" className={`${box} border-accent/40 bg-accent/5 text-text-primary flex gap-2`}>
+          <CalendarClock size={14} aria-hidden className="shrink-0 mt-0.5 text-accent" />
+          <span>
+            Reply scheduled for {formatFullDate(outcome.sendAt * 1000)}. It sends when Velo is next open at or after
+            that time; find it under Scheduled.
+          </span>
+        </p>
+      );
     case "sent":
       return outcome.statusProblem ? (
         <div role="alert" aria-label="Partly done" className={`${box} border-status-warning/40 bg-status-warning/5 text-text-primary flex gap-2`}>

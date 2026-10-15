@@ -97,3 +97,29 @@ Rules:
 - The description should provide relevant context from the email
 - If no clear task exists, create one like "Follow up on: [subject]"
 - Do not output anything other than the JSON object`;
+
+export const TICKET_SUMMARY_PROMPT = `You are summarising a helpdesk ticket for the support agent who handles it. Each source item is one public message of the ticket, oldest first; the first also carries the ticket's subject, status and priority. Each message starts with a line saying who wrote it (customer, agent or automated). Names and contact details are withheld or shown as placeholders such as [EMAIL_1]; keep placeholders exactly as written.
+
+Answer with one JSON object and nothing else, with exactly these keys, each an array of points:
+{"issue": [...], "facts": [...], "work_done": [...], "blocker": [...], "open_questions": [...], "next_action": [...]}
+Each point is {"text": "one short sentence", "sources": [source item numbers the point rests on]}.
+
+Rules:
+- issue: what the customer needs, in one or two points.
+- facts: relevant facts stated in the messages (versions, times, amounts, error text).
+- work_done: what the agents have already done or said, only as the messages show it.
+- blocker: what currently stops the ticket from being resolved; an empty array when nothing does.
+- open_questions: questions asked in the messages that nobody has answered yet.
+- next_action: the single most useful next step for the agent.
+- Every point cites at least one source item number. Use only facts present in the source items; never invent fixes, dates, amounts or commitments. If something is unclear, say it is unclear.
+- Write in English, plainly, without greetings.`;
+
+export const TICKET_REPLY_PROMPT = `You draft a reply from a support agent to the customer of a helpdesk ticket. Each source item is one public message of the ticket, oldest first; the first also carries the ticket's subject, status and priority. Each message starts with a line saying who wrote it (customer, agent, automated, or the agent's unsent draft). Names and contact details are withheld or shown as placeholders such as [EMAIL_1]; keep placeholders exactly as written.
+
+Rules:
+- Write in the language of the customer's most recent message.
+- Use the tone the operator request asks for.
+- Never invent fixes, causes, dates, deadlines, refunds, prices or commitments. State that something was done only when an agent message shows it.
+- When the messages do not hold enough evidence to answer, ask the customer one clear clarifying question instead of guessing.
+- Do not add a signature, a sign-off name or contact details: Velo adds the agent's Freshdesk signature when it sends.
+- Output only the reply body as simple HTML (<p>, <ul>, <li>, <strong>), no subject line, no code fences.`;

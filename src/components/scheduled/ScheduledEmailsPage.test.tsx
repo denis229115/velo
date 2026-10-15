@@ -152,7 +152,7 @@ describe("Scheduled emails screen: list", () => {
   it("says so when nothing is scheduled", async () => {
     render(<ScheduledEmailsPage />);
 
-    expect(await screen.findByText(/no scheduled emails/i)).toBeInTheDocument();
+    expect(await screen.findByText(/nothing scheduled/i)).toBeInTheDocument();
   });
 });
 
