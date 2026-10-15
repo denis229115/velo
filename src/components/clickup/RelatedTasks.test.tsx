@@ -96,6 +96,9 @@ const panel = async () => {
 /** A ticket with no linked tasks: Link task from the linked-work row, which then opens the full list */
 const linkFromRow = async () => fireEvent.click(await (await linkedWork()).findByRole("button", { name: "Link task" }));
 const ticket = (ticketId: string) => ({ kind: "ticket" as const, ticketId });
+/** A ticket link writes backlinks, so the dialog asks first */
+const confirmLink = async (dialog: HTMLElement) =>
+  fireEvent.click(await within(dialog).findByRole("button", { name: "Link and write backlinks" }));
 
 beforeEach(async () => {
   vi.useFakeTimers({ toFake: ["Date"] });
@@ -148,10 +151,13 @@ describe("Related tasks on a ticket", () => {
 
     fireEvent.change(field, { target: { value: "86a0nope9" } });
     fireEvent.submit(field.closest("form")!);
+    await confirmLink(dialog);
     expect(await within(dialog).findByRole("alert")).toHaveTextContent("No task 86a0nope9 in the connected workspace");
 
+    fireEvent.click(within(dialog).getByRole("button", { name: "Back" }));
     fireEvent.change(field, { target: { value: "https://app.clickup.com/t/86a0exp01" } });
     fireEvent.submit(field.closest("form")!);
+    await confirmLink(dialog);
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Link a ClickUp task" })).not.toBeInTheDocument());
     const region = await screen.findByRole("region", { name: "Related tasks" });
     expect(await within(region).findByText("Fixture: export fails for large accounts")).toBeInTheDocument();
@@ -161,6 +167,7 @@ describe("Related tasks on a ticket", () => {
     const field2 = within(again).getByLabelText("Search tasks or paste a task URL or ID");
     fireEvent.change(field2, { target: { value: "86a0exp01" } });
     fireEvent.submit(field2.closest("form")!);
+    await confirmLink(again);
     expect(await within(again).findByRole("alert")).toHaveTextContent(/already linked/);
   });
 
@@ -174,9 +181,24 @@ describe("Related tasks on a ticket", () => {
     fireEvent.submit(field.closest("form")!);
     const result = await within(dialog).findByRole("listitem", { name: /resend invoice copy/ });
     fireEvent.click(within(result).getByRole("button", { name: "Link" }));
+    await confirmLink(dialog);
 
     const region = await screen.findByRole("region", { name: "Related tasks" });
     expect(await within(region).findByText("Fixture: resend invoice copy")).toBeInTheDocument();
+  });
+
+  it("creates a task from the ticket header, and flags a backlink that was not written", async () => {
+    freshdesk.respondOnce(ALPHA_HOST, "/api/v2/tickets/1002/notes", { method: "POST", status: 500, body: {} });
+    renderFreshdesk("/freshdesk/ticket/1002");
+    fireEvent.click(await (await linkedWork()).findByRole("button", { name: "Create task" }));
+    const dialog = await screen.findByRole("dialog", { name: "Create a ClickUp task" });
+    await waitFor(() => expect(within(dialog).getByLabelText("Title")).toHaveValue("Fixture: export stuck"));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Create task" }));
+
+    const region = await screen.findByRole("region", { name: "Related tasks" });
+    expect(await within(region).findByRole("button", { name: "Retry missing backlink" })).toBeInTheDocument();
+    fireEvent.click((await linkedWork()).getByRole("button", { name: "Hide tasks" }));
+    expect((await linkedWork()).getByText("Backlink missing")).toBeInTheDocument();
   });
 
   it("unlinks a task from this ticket only", async () => {

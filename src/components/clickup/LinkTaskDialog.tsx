@@ -1,18 +1,72 @@
 import { useState, type FormEvent } from "react";
-import { CircleCheck, Search } from "lucide-react";
+import { CircleCheck, Link2, Search } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { TextField } from "@/components/ui/TextField";
+import { FreshdeskWriteReason } from "@/components/freshdesk/useFreshdeskWritable";
+import { BACKLINK_LABELS } from "@/services/clickup/backlinks";
+import { BACKLINK_STEPS } from "@/services/db/taskLinks";
 import { linkTask, searchTasksToLink, type LinkedItem, type TaskSearchResult } from "@/services/clickup/links";
 import { parseTaskReference } from "@/services/clickup/tasks";
+import { useClickUpWritable } from "./useClickUpWritable";
 
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : "Something went wrong.";
 }
 
+type TaskChoice = { reference: string | { taskId: string }; label: string };
+
+/** What linking to a ticket writes, shown before anything is written */
+function ConfirmLink({
+  choice,
+  busy,
+  disabled,
+  onConfirm,
+  onBack,
+}: {
+  choice: TaskChoice;
+  busy: boolean;
+  disabled: boolean;
+  onConfirm: () => void;
+  onBack: () => void;
+}) {
+  return (
+    <div
+      role="group"
+      aria-label="Confirm the link"
+      className="rounded-md border border-border-primary px-3 py-2.5 space-y-2"
+    >
+      <p className="text-sm text-text-primary">
+        Link <span className="font-medium">{choice.label}</span> to this ticket?
+      </p>
+      <p className="text-meta text-text-secondary">Velo checks the task with ClickUp, then writes these backlinks:</p>
+      <ul aria-label="Backlinks Velo writes" className="list-disc pl-5 text-meta text-text-primary">
+        {BACKLINK_STEPS.map((step) => (
+          <li key={step}>{BACKLINK_LABELS[step]}</li>
+        ))}
+      </ul>
+      <p className="text-micro text-text-tertiary">
+        If the task's list has no Ticket-ID field, or the field holds another ticket, that step is skipped and Velo says
+        so.
+      </p>
+      <div className="flex justify-end gap-2">
+        <Button size="sm" variant="secondary" onClick={onBack} disabled={busy}>
+          Back
+        </Button>
+        <Button size="sm" variant="primary" onClick={onConfirm} disabled={busy || disabled}>
+          <Link2 size={13} aria-hidden />
+          {busy ? "Linking…" : "Link and write backlinks"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 /**
  * Links an existing ClickUp task: search by name, or paste a task URL or ID.
  * Either way the task is verified through ClickUp before the link is stored.
+ * A ticket link writes three backlinks, so it is confirmed first; an email
+ * link writes nothing outside Velo and is stored at once.
  */
 export function LinkTaskDialog({
   item,
@@ -27,6 +81,14 @@ export function LinkTaskDialog({
   const [results, setResults] = useState<TaskSearchResult[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState<TaskChoice | null>(null);
+  const writable = useClickUpWritable(item);
+
+  const choose = (choice: TaskChoice) => {
+    setError(null);
+    if (item.kind === "ticket") setConfirming(choice);
+    else void link(choice.reference);
+  };
 
   const link = async (reference: string | { taskId: string }) => {
     setBusy(true);
@@ -46,7 +108,7 @@ export function LinkTaskDialog({
     const text = query.trim();
     if (!text || busy) return;
     if (parseTaskReference(text)) {
-      await link(text);
+      choose({ reference: text, label: text });
       return;
     }
     setBusy(true);
@@ -75,20 +137,39 @@ export function LinkTaskDialog({
               autoFocus
             />
           </div>
-          <Button type="submit" variant="primary" size="md" disabled={busy || !query.trim()}>
+          <Button
+            type="submit"
+            variant="primary"
+            size="md"
+            {...writable.controlProps}
+            disabled={busy || !query.trim() || writable.controlProps.disabled || confirming !== null}
+          >
             <Search size={14} aria-hidden />
             {busy ? "Checking…" : "Find"}
           </Button>
         </form>
         <p className="text-micro text-text-tertiary">
-          Velo checks the task with ClickUp before linking. Linking writes nothing to ClickUp or Freshdesk.
+          {item.kind === "ticket"
+            ? "Velo checks the task with ClickUp before linking, and asks before it writes the backlinks."
+            : "Velo checks the task with ClickUp before linking. Nothing from this email is written to ClickUp."}
         </p>
+        <FreshdeskWriteReason writable={writable} />
+        {confirming && (
+          <ConfirmLink
+            choice={confirming}
+            busy={busy}
+            disabled={writable.controlProps.disabled}
+            onBack={() => setConfirming(null)}
+            onConfirm={() => void link(confirming.reference)}
+          />
+        )}
         {error && (
           <p role="alert" className="text-meta text-danger">
             {error}
           </p>
         )}
         {results !== null &&
+          !confirming &&
           (results.length === 0 ? (
             <p className="text-meta text-text-tertiary">No task names in the workspace match “{query.trim()}”.</p>
           ) : (
@@ -114,7 +195,12 @@ export function LinkTaskDialog({
                       {r.listName ? ` · ${r.listName}` : ""}
                     </p>
                   </div>
-                  <Button size="sm" variant="secondary" disabled={busy || r.alreadyLinked} onClick={() => void link({ taskId: r.taskId })}>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={busy || r.alreadyLinked || writable.controlProps.disabled}
+                    onClick={() => choose({ reference: { taskId: r.taskId }, label: r.name })}
+                  >
                     {r.alreadyLinked ? "Linked" : "Link"}
                   </Button>
                 </li>

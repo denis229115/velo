@@ -14,6 +14,7 @@ import {
   startTaskOperation,
   type TaskOperation,
 } from "@/services/db/clickupOperations";
+import { getCachedTickets } from "@/services/db/freshdeskTickets";
 import { getSetting, setSetting } from "@/services/db/settings";
 import { getTaskLink, insertTaskLink, setLinkBacklink, type BacklinkStep, type LinkKey } from "@/services/db/taskLinks";
 import { ClickUpError, clickupGet, clickupWrite } from "./client";
@@ -27,6 +28,7 @@ import {
   getRelatedTasks,
   linkKey,
   nowS,
+  scopeFor,
   type LinkedItem,
   type RelatedTask,
 } from "./links";
@@ -106,12 +108,14 @@ export interface CreateTaskOptions {
   initialListId: string | null;
   /** For tickets: why the Ticket-ID field is not written, per list (absent when it is) */
   fieldGaps: Record<string, string>;
+  /** The ticket's subject, as the task title; empty for emails, whose content stays in Velo */
+  suggestedName: string;
 }
 
 /** The connected workspace's lists and the remembered destination. */
 export async function getCreateTaskOptions(item: LinkedItem): Promise<CreateTaskOptions> {
   const workspace = await getClickUpWorkspace();
-  if (!workspace) return { lists: [], initialListId: null, fieldGaps: {} };
+  if (!workspace) return { lists: [], initialListId: null, fieldGaps: {}, suggestedName: "" };
   const lists = (await getClickUpLists(workspace.tenantId)).map((l) => ({
     listId: l.listId,
     name: l.name,
@@ -121,13 +125,17 @@ export async function getCreateTaskOptions(item: LinkedItem): Promise<CreateTask
   const valid = (id: string | null) => (id && lists.some((l) => l.listId === id) ? id : null);
   const initialListId = valid(await getSetting(LAST_LIST_SETTING)) ?? valid(workspace.defaultListId) ?? lists[0]?.listId ?? null;
   const fieldGaps: Record<string, string> = {};
+  let suggestedName = "";
   if (item.kind === "ticket") {
     for (const l of lists) {
       const gap = await ticketIdFieldGap(workspace.tenantId, l.listId);
       if (gap) fieldGaps[l.listId] = gap;
     }
+    const scope = await scopeFor(item);
+    const ticket = scope ? (await getCachedTickets(scope)).find((t) => t.ticketId === item.ticketId) : undefined;
+    suggestedName = ticket?.subject ?? "";
   }
-  return { lists, initialListId, fieldGaps };
+  return { lists, initialListId, fieldGaps, suggestedName };
 }
 
 /** Who can be assigned in the list, read from ClickUp. */
