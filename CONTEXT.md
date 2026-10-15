@@ -67,6 +67,9 @@ _Avoid_: Thread, comment
 **Reply**:
 A conversation sent publicly to the customer by an agent.
 
+**Ticket CC**:
+The addresses Freshdesk copies on a ticket (its CC list and reply-CC list), stored per helpdesk with the ticket. A Reply starts with them, minus the customer; the operator can remove or add, and a restored draft keeps its own CC. Internal notes have none.
+
 **Automated reply**:
 A public reply produced by a Freshdesk rule or system rather than written by an agent; it never counts as an answer.
 
