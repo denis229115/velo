@@ -8,6 +8,8 @@ export type ClickUpErrorKind =
   | "not_found"
   | "not_in_workspace"
   | "network"
+  /** ClickUp refused the write (a 400 with its own reason) */
+  | "rejected"
   | "server";
 
 /**
@@ -51,13 +53,29 @@ function retryAfterSeconds(response: Response): number | undefined {
   return undefined;
 }
 
+/** How long a write waits for ClickUp's answer before its outcome counts as unknown */
+const WRITE_TIMEOUT_MS = 30_000;
+
 /** GET a ClickUp API v2 path through the Tauri HTTP boundary. */
-export async function clickupGet<T>(token: string, path: string): Promise<T> {
+export function clickupGet<T>(token: string, path: string): Promise<T> {
+  return clickupRequest<T>(token, "GET", path);
+}
+
+/**
+ * A write to ClickUp: a remote write, never retried here. A `network` error
+ * means the outcome is unknown (the write may have landed).
+ */
+export function clickupWrite<T>(token: string, method: "POST" | "PUT", path: string, payload: unknown): Promise<T> {
+  return clickupRequest<T>(token, method, path, payload);
+}
+
+async function clickupRequest<T>(token: string, method: "GET" | "POST" | "PUT", path: string, payload?: unknown): Promise<T> {
   let response: Response;
   try {
     response = await fetch(`${API_BASE}${path}`, {
-      method: "GET",
+      method,
       headers: { Authorization: token, "Content-Type": "application/json" },
+      ...(payload !== undefined && { body: JSON.stringify(payload), signal: AbortSignal.timeout(WRITE_TIMEOUT_MS) }),
     });
   } catch {
     throw new ClickUpError("network", "Could not reach ClickUp.");
@@ -84,6 +102,11 @@ export async function clickupGet<T>(token: string, path: string): Promise<T> {
   }
   if (status === 404 || (typeof ecode === "string" && ecode.startsWith("ITEM_"))) {
     throw new ClickUpError("not_found", "ClickUp has no such item.", status);
+  }
+  if (status === 400) {
+    const err = (body as { err?: unknown } | null)?.err;
+    const reason = typeof err === "string" && err ? `: ${err.replace(/[\u0000-\u001f]/g, "").slice(0, 200)}` : "";
+    throw new ClickUpError("rejected", `ClickUp did not accept the change${reason}.`, status);
   }
   throw new ClickUpError("server", `ClickUp answered with HTTP ${status}.`, status);
 }
