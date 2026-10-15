@@ -3,6 +3,7 @@ import type { Editor } from "@tiptap/react";
 import { Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { AiSendNote } from "@/components/ai/AiSendPreview";
+import { APPROVED_PROVIDER_LABEL } from "@/services/ai/gateway";
 import { AiError } from "@/services/ai/errors";
 import type { TicketListItem } from "@/services/freshdesk/ticketSync";
 import type { TicketHistoryView } from "@/services/freshdesk/ticketHistory";
@@ -10,7 +11,7 @@ import { REPLY_TONES, draftTicketReply, type DraftAction, type ReplyTone } from 
 import { ticketAiSource, useAiReadiness } from "./TicketSummaryCard";
 
 const NOT_SENT_CODES = new Set(["CANCELLED", "PREVIEW_REQUIRED", "SENSITIVE_DATA", "NOT_CONFIGURED", "NOT_APPROVED", "PROVIDER_REFUSED"]);
-const WORKING: Record<DraftAction, string> = { draft: "Drafting…", rewrite: "Rewriting…", shorten: "Shortening…" };
+const WORKING: Record<DraftAction, string> = { draft: "Drafting", rewrite: "Rewriting", shorten: "Shortening" };
 
 type State =
   | { kind: "idle" }
@@ -106,11 +107,11 @@ export function TicketAiDraft({
         <Button variant="ghost" size="xs" disabled={loading || locked || empty || !view} onClick={() => void generate("shorten")}>
           Shorten
         </Button>
-        {loading && (
-          <>
+        {loading ? (
+          <span className="ml-auto inline-flex items-center gap-2">
             <span role="status" className="inline-flex items-center gap-1.5 text-meta text-text-tertiary">
               <span className="w-3 h-3 border-2 border-accent/30 border-t-accent rounded-full animate-spin" aria-hidden />
-              {WORKING[state.action]}
+              {WORKING[state.action]} with {APPROVED_PROVIDER_LABEL}…
             </span>
             <Button
               variant="ghost"
@@ -122,11 +123,12 @@ export function TicketAiDraft({
             >
               Cancel
             </Button>
-          </>
+          </span>
+        ) : (
+          <span className="ml-auto">
+            <AiSendNote features={["ticket_reply"]} />
+          </span>
         )}
-        <span className="ml-auto">
-          <AiSendNote features={["ticket_reply"]} />
-        </span>
       </div>
 
       {state.kind === "failed" && (
