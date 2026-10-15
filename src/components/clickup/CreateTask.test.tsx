@@ -39,6 +39,8 @@ import { connectWorkspace, setTicketIdField } from "@/services/clickup/connectio
 import { linkTask, type LinkedItem } from "@/services/clickup/links";
 import { useUIStore } from "@/stores/uiStore";
 import { RelatedTasksPanel } from "./RelatedTasksPanel";
+import { LinkedWorkRow } from "./LinkedWorkRow";
+import { disconnectWorkspace } from "@/services/clickup/connection";
 
 vi.spyOn(console, "log").mockImplementation(() => {});
 vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -265,6 +267,30 @@ describe("creating and linking from an email thread", () => {
       }),
     ).toBeInTheDocument();
     expect(writes()).toEqual([]);
+  });
+});
+
+describe("linked work on an email thread", () => {
+  it("shows the email's tasks and opens its Related tasks panel; a ticket and the email share one task (A15)", async () => {
+    await linkTask(TICKET, "86a0inv02");
+    await linkTask(EMAIL, "86a0inv02");
+    render(<LinkedWorkRow item={EMAIL} />);
+    const row = within(await screen.findByRole("region", { name: "Linked work" }));
+    expect(await row.findByText(/1 task/)).toBeInTheDocument();
+    fireEvent.click(row.getByRole("button", { name: "Show tasks" }));
+
+    const task = await within(await panel()).findByRole("listitem", { name: "Fixture: resend invoice copy" });
+    // One-way: an email link has no backlinks to show
+    expect(within(task).queryByText(/Backlinks/)).not.toBeInTheDocument();
+    expect(within(task).getByRole("button", { name: /Unlink/ })).toHaveAttribute("title", expect.stringMatching(/this email/));
+  });
+
+  it("stays out of the way while no ClickUp workspace is connected", async () => {
+    await disconnectWorkspace();
+    const { container } = render(<LinkedWorkRow item={EMAIL} />);
+    await waitFor(() => expect(clickup.requests).toEqual([]));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(container).toBeEmptyDOMElement();
   });
 });
 

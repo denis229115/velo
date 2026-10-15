@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { AlertTriangle, ChevronDown, ChevronRight, CircleCheck, Link2, ListChecks, Plus } from "lucide-react";
 import { navigateToSettings } from "@/router/navigate";
 import { getRelatedTasks, refreshRelatedTasks, type LinkedItem, type RelatedTasksView } from "@/services/clickup/links";
@@ -14,26 +14,30 @@ const ACTION =
   "inline-flex items-center gap-1 shrink-0 rounded-md px-2 py-1 text-meta text-text-secondary hover:text-text-primary hover:bg-bg-hover focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-50 disabled:hover:bg-transparent";
 
 /**
- * A ticket's linked ClickUp work as one slim row: the count, Create task, Link
- * task, and the full Related tasks list on request.
+ * A ticket's or email thread's linked ClickUp work as one slim row: the count,
+ * Create task, Link task, and the full Related tasks list on request. An email
+ * thread shows nothing until a ClickUp workspace is connected.
  */
-export function LinkedWorkRow({ item }: { item: Extract<LinkedItem, { kind: "ticket" }> }) {
+export function LinkedWorkRow({ item }: { item: LinkedItem }) {
   const [view, setView] = useState<RelatedTasksView | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [linking, setLinking] = useState(false);
   const [creating, setCreating] = useState(false);
   const writable = useClickUpWritable(item);
   const panelId = useId();
-  const { ticketId } = item;
+  // The item object is rebuilt on every render; its key says when it really changed
+  const key = item.kind === "ticket" ? `ticket:${item.ticketId}` : `email:${item.accountId}:${item.threadId}`;
+  const itemRef = useRef(item);
+  itemRef.current = item;
 
-  const reload = useCallback(async () => setView(await getRelatedTasks({ kind: "ticket", ticketId })), [ticketId]);
+  const reload = useCallback(async () => setView(await getRelatedTasks(itemRef.current)), []);
 
   // The local copy at once, then tasks that are not fresh, as the Related tasks panel does
   useEffect(() => {
     let cancelled = false;
     setView(null);
     setExpanded(false);
-    const current = { kind: "ticket" as const, ticketId };
+    const current = itemRef.current;
     void (async () => {
       const local = await getRelatedTasks(current);
       if (cancelled) return;
@@ -48,11 +52,12 @@ export function LinkedWorkRow({ item }: { item: Extract<LinkedItem, { kind: "tic
       cancelled = true;
       window.removeEventListener("velo-task-links-changed", onChange);
     };
-  }, [ticketId]);
+  }, [key]);
 
-  if (!view) return <section aria-label="Linked work" className="h-8" />;
+  if (!view) return item.kind === "ticket" ? <section aria-label="Linked work" className="h-8" /> : null;
 
   if (view.state === "no_workspace") {
+    if (item.kind === "email") return null;
     return (
       <section aria-label="Linked work" className={`${ROW} text-text-tertiary`}>
         <ListChecks size={13} aria-hidden className="shrink-0" />
