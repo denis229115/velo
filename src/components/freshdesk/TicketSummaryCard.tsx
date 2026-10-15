@@ -1,18 +1,31 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { RefreshCw, Sparkles, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { AiSendNote } from "@/components/ai/AiSendPreview";
-import { getAiReadiness, type AiReadiness } from "@/services/ai/gateway";
+import { getAiReadiness, APPROVED_PROVIDER_LABEL, type AiReadiness } from "@/services/ai/gateway";
+import { getSetting } from "@/services/db/settings";
+import { useUIStore } from "@/stores/uiStore";
 import { AiError } from "@/services/ai/errors";
 import type { TicketListItem } from "@/services/freshdesk/ticketSync";
 import type { HistoryEntry, TicketHistoryView } from "@/services/freshdesk/ticketHistory";
 import {
+  publicActivityKey,
   SUMMARY_SECTIONS,
   summarizeTicket,
   TicketSummaryFormatError,
   type TicketAiSource,
   type TicketSummary,
 } from "@/services/freshdesk/ticketAi";
+import {
+  AUTO_SUMMARY_DEBOUNCE_MS,
+  AUTO_SUMMARY_MIN_INTERVAL_MS,
+  createAutoSummaryRefresher,
+  type AutoSummaryPhase,
+  type AutoSummaryRefresher,
+} from "@/services/freshdesk/ticketAutoSummary";
+
+/** Settings → AI: refresh the summary of the open ticket when new public messages arrive (on unless "false") */
+export const AUTO_SUMMARY_SETTING = "ticket_summary_auto_update";
 
 // The gateway refused or the operator cancelled: nothing left Velo, so say so rather than report a failure
 const NOT_SENT_CODES = new Set(["CANCELLED", "PREVIEW_REQUIRED", "SENSITIVE_DATA", "NOT_CONFIGURED", "NOT_APPROVED", "PROVIDER_REFUSED"]);
@@ -47,10 +60,26 @@ export function useAiReadiness(): AiReadiness | null {
   return readiness;
 }
 
+/** Whether summaries update by themselves; null until the setting is read */
+function useAutoSummarySetting(): boolean | null {
+  const [on, setOn] = useState<boolean | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void getSetting(AUTO_SUMMARY_SETTING)
+      .then((v) => !cancelled && setOn(v !== "false"))
+      .catch(() => !cancelled && setOn(true));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return on;
+}
+
 type State =
   | { kind: "idle" }
   | { kind: "loading" }
-  | { kind: "done"; summary: TicketSummary }
+  /** `key` is the public activity the summary rests on; `notice` says why the last automatic update did not happen */
+  | { kind: "done"; summary: TicketSummary; key: string; notice?: string; refreshing?: boolean }
   | { kind: "failed"; message: string };
 
 function failureText(err: unknown): string {
@@ -60,18 +89,66 @@ function failureText(err: unknown): string {
 }
 
 /**
- * The Ticket summary, on request: issue, facts, work done, blocker, open
- * questions and next action, each point linking to the messages it rests on.
- * Kept in Velo only; nothing is written to Freshdesk. With AI off it says so
- * in one line and the reader works as usual.
+ * The Ticket summary: issue, facts, work done, blocker, open questions and next
+ * action, each point linking to the messages it rests on. Kept in Velo only;
+ * nothing is written to Freshdesk. With AI off it says so in one line and the
+ * reader works as usual.
+ *
+ * It is made on request. Once one is on screen and a new public message
+ * arrives, it updates by itself (unless Settings → AI turns that off): through
+ * the same gateway as a manual summary, never opening a send preview on its
+ * own, never offline, never twice within a few minutes, and never again after
+ * a failure. Until the new summary is ready the old one stays, labelled
+ * Updating; when no update is coming it is labelled Out of date.
  */
 export function TicketSummaryCard({ ticket, view }: { ticket: TicketListItem; view: TicketHistoryView | null }) {
   const readiness = useAiReadiness();
+  const online = useUIStore((s) => s.isOnline);
+  const autoOn = useAutoSummarySetting();
   const [state, setState] = useState<State>({ kind: "idle" });
+  const [phase, setPhase] = useState<AutoSummaryPhase>("idle");
   const run = useRef(0);
+  const refresher = useRef<AutoSummaryRefresher | null>(null);
+  const ready = readiness?.status === "ready";
+  const latest = useRef({ ticket, view, online, autoOn, ready });
+  latest.current = { ticket, view, online, autoOn, ready };
 
-  // Leaving the ticket abandons a request in flight
+  // Leaving the ticket abandons a request in flight and anything planned
   useEffect(() => () => void run.current++, []);
+  useEffect(() => {
+    async function refresh(): Promise<string> {
+      const { ticket, view } = latest.current;
+      if (!view) throw new Error("The conversation is not loaded.");
+      const source = ticketAiSource(ticket, view);
+      const key = publicActivityKey(source);
+      const mine = ++run.current;
+      try {
+        const summary = await summarizeTicket(source, { unattended: true });
+        if (run.current === mine) setState({ kind: "done", summary, key });
+      } catch (err) {
+        if (run.current === mine) setState((prev) => (prev.kind === "done" ? { ...prev, notice: failureText(err) } : prev));
+        throw err;
+      }
+      return key;
+    }
+    const r = createAutoSummaryRefresher({
+      run: refresh,
+      canRun: () => latest.current.ready && latest.current.online && latest.current.autoOn === true,
+      debounceMs: AUTO_SUMMARY_DEBOUNCE_MS,
+      minIntervalMs: AUTO_SUMMARY_MIN_INTERVAL_MS,
+      onPhase: setPhase,
+    });
+    refresher.current = r;
+    return () => r.dispose();
+  }, []);
+
+  // New public activity makes a summary on screen out of date, and plans its update
+  const currentKey = useMemo(() => (view ? publicActivityKey(ticketAiSource(ticket, view)) : null), [ticket, view]);
+  const stale = state.kind === "done" && currentKey !== null && state.key !== currentKey;
+  const complete = view?.history === "complete";
+  useEffect(() => {
+    if (stale && currentKey !== null && complete && ready && online && autoOn) refresher.current?.request(currentKey);
+  }, [stale, currentKey, complete, ready, online, autoOn]);
 
   if (!readiness) return null;
 
@@ -91,18 +168,24 @@ export function TicketSummaryCard({ ticket, view }: { ticket: TicketListItem; vi
   async function summarize(refresh = false) {
     if (!view) return;
     const mine = ++run.current;
-    setState({ kind: "loading" });
+    const source = ticketAiSource(ticket, view);
+    const key = publicActivityKey(source);
+    setState((prev) => (prev.kind === "done" ? { ...prev, refreshing: true, notice: undefined } : { kind: "loading" }));
     try {
-      const summary = await summarizeTicket(ticketAiSource(ticket, view), { refresh });
-      if (run.current === mine) setState({ kind: "done", summary });
+      const summary = await summarizeTicket(source, { refresh });
+      if (run.current !== mine) return;
+      refresher.current?.reset();
+      setState({ kind: "done", summary, key });
     } catch (err) {
-      if (run.current === mine) setState({ kind: "failed", message: failureText(err) });
+      if (run.current !== mine) return;
+      setState((prev) => (prev.kind === "done" ? { ...prev, refreshing: false, notice: failureText(err) } : { kind: "failed", message: failureText(err) }));
     }
   }
 
   function cancel() {
     run.current++;
-    setState({ kind: "idle" });
+    refresher.current?.block();
+    setState((prev) => (prev.kind === "done" ? { ...prev, refreshing: false } : { kind: "idle" }));
   }
 
   const entries = view?.entries ?? [];
@@ -136,15 +219,38 @@ export function TicketSummaryCard({ ticket, view }: { ticket: TicketListItem; vi
     );
   }
 
+  const updating = !!state.refreshing || (stale && (phase === "debouncing" || phase === "running"));
+  const hint = state.notice ?? (stale && !online ? "Offline: it updates when you are back online." : null);
+
   return (
     <section aria-label="AI summary" className="max-w-4xl mb-4 rounded-lg border border-accent/30 bg-accent/5 px-4 py-3">
-      <div className="flex items-center gap-2 mb-2">
+      <div className="flex flex-wrap items-center gap-2 mb-2">
         <Sparkles size={14} aria-hidden className="shrink-0 text-accent" />
         <span className="text-preview font-medium text-text-primary">AI summary</span>
-        <span className="text-micro text-text-tertiary">Kept in Velo only, never written to Freshdesk</span>
-        <Button variant="ghost" size="xs" iconOnly aria-label="Summarize again" title="Summarize again" className="ml-auto" onClick={() => void summarize(true)} icon={<RefreshCw size={12} aria-hidden />} />
+        {updating ? (
+          <>
+            <span role="status" className="inline-flex items-center gap-1.5 text-micro text-text-secondary">
+              <span className="w-3 h-3 border-2 border-accent/30 border-t-accent rounded-full animate-spin" aria-hidden />
+              Updating with {APPROVED_PROVIDER_LABEL}…
+            </span>
+            <Button variant="ghost" size="xs" onClick={cancel}>
+              Cancel
+            </Button>
+          </>
+        ) : stale ? (
+          <>
+            <span className="rounded border border-status-warning/40 bg-status-warning/10 px-1.5 py-px text-micro font-medium text-status-warning">Out of date</span>
+            <Button variant="secondary" size="xs" className="border border-border-primary" disabled={!view} onClick={() => void summarize()}>
+              Update summary
+            </Button>
+          </>
+        ) : (
+          <span className="text-micro text-text-tertiary">Kept in Velo only, never written to Freshdesk</span>
+        )}
+        <Button variant="ghost" size="xs" iconOnly aria-label="Summarize again" title="Summarize again" className="ml-auto" disabled={updating} onClick={() => void summarize(true)} icon={<RefreshCw size={12} aria-hidden />} />
         <Button variant="ghost" size="xs" iconOnly aria-label="Hide summary" title="Hide summary" onClick={() => setState({ kind: "idle" })} icon={<X size={12} aria-hidden />} />
       </div>
+      {hint && <p className="mb-2 text-meta text-text-secondary">{hint}</p>}
       <dl className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2.5">
         {SUMMARY_SECTIONS.map(({ key, label }) => (
           <div key={key} className="min-w-0">

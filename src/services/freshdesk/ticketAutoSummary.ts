@@ -34,10 +34,20 @@ export interface AutoSummaryOptions {
   /** Refresh the summary; resolves with the activity key it covered, rejects when it failed */
   run: () => Promise<string>;
   canRun: () => boolean;
+  /** Defaults to AUTO_SUMMARY_DEBOUNCE_MS */
+  debounceMs?: number;
+  /** Defaults to AUTO_SUMMARY_MIN_INTERVAL_MS */
+  minIntervalMs?: number;
   onPhase?: (phase: AutoSummaryPhase) => void;
 }
 
-export function createAutoSummaryRefresher({ run, canRun, onPhase }: AutoSummaryOptions): AutoSummaryRefresher {
+export function createAutoSummaryRefresher({
+  run,
+  canRun,
+  debounceMs = AUTO_SUMMARY_DEBOUNCE_MS,
+  minIntervalMs = AUTO_SUMMARY_MIN_INTERVAL_MS,
+  onPhase,
+}: AutoSummaryOptions): AutoSummaryRefresher {
   let current: AutoSummaryPhase = "idle";
   let timer: ReturnType<typeof setTimeout> | null = null;
   let plannedKey: string | null = null;
@@ -81,10 +91,10 @@ export function createAutoSummaryRefresher({ run, canRun, onPhase }: AutoSummary
   function plan(key: string) {
     clearPlan();
     const now = Date.now();
-    const due = Math.max(now + AUTO_SUMMARY_DEBOUNCE_MS, lastStart + AUTO_SUMMARY_MIN_INTERVAL_MS);
+    const due = Math.max(now + debounceMs, lastStart + minIntervalMs);
     plannedKey = key;
     timer = setTimeout(() => void fire(), due - now);
-    setPhase(due > now + AUTO_SUMMARY_DEBOUNCE_MS ? "cooling" : "debouncing");
+    setPhase(due > now + debounceMs ? "cooling" : "debouncing");
   }
 
   return {
