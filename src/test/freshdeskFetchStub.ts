@@ -9,8 +9,27 @@ export interface RecordedRequest {
   url: string;
   method: string;
   authorization: string | null;
-  /** Parsed JSON body of a write */
+  /** Parsed JSON body of a write, or a multipart body's fields with its files as `attachments` */
   body?: unknown;
+  /** The Content-Type the caller set (null for multipart: the request itself adds the boundary) */
+  contentType: string | null;
+}
+
+/** A multipart body as Freshdesk reads it: `name[]` fields become arrays, files become `attachments` */
+function readMultipart(form: FormData): Record<string, unknown> {
+  const fields: Record<string, unknown> = {};
+  const attachments: { name: string; content_type: string; size: number }[] = [];
+  for (const [key, value] of form.entries()) {
+    if (typeof value !== "string") {
+      attachments.push({ name: value.name, content_type: value.type, size: value.size });
+    } else if (key.endsWith("[]")) {
+      const name = key.slice(0, -2);
+      fields[name] = [...((fields[name] as string[] | undefined) ?? []), value];
+    } else {
+      fields[key] = value;
+    }
+  }
+  return attachments.length > 0 ? { ...fields, attachments } : fields;
 }
 
 interface CannedResponse {
@@ -60,7 +79,7 @@ export function createFreshdeskFetchStub(
       body: html,
       body_text: html.replace(/<[^>]+>/g, ""),
       incoming: false,
-      private: kind === "notes" ? body.private !== false : false,
+      private: kind === "notes" ? body.private !== false && body.private !== "false" : false,
       user_id: me?.id ?? 0,
       source: kind === "notes" ? 2 : 0,
       ticket_id: ticketId,
@@ -69,7 +88,15 @@ export function createFreshdeskFetchStub(
       to_emails: [],
       cc_emails: Array.isArray(body.cc_emails) ? (body.cc_emails as string[]) : [],
       bcc_emails: [],
-      attachments: [],
+      attachments: Array.isArray(body.attachments)
+        ? (body.attachments as { name: string; content_type: string; size: number }[]).map((a, i) => ({
+            id: 9_000_000_000 + nextConversationId * 10 + i,
+            name: a.name,
+            content_type: a.content_type,
+            size: a.size,
+            attachment_url: `https://${host}/fixture-attachments/${encodeURIComponent(a.name)}`,
+          }))
+        : [],
       automation_id: null,
       automation_type_id: null,
       created_at: at,
@@ -109,8 +136,13 @@ export function createFreshdeskFetchStub(
     const headers = new Headers(init?.headers);
     const authorization = headers.get("authorization");
     const method = init?.method ?? "GET";
-    const body = typeof init?.body === "string" ? (JSON.parse(init.body) as Record<string, unknown>) : undefined;
-    requests.push({ url: url.href, method, authorization, ...(body !== undefined && { body }) });
+    const body =
+      typeof init?.body === "string"
+        ? (JSON.parse(init.body) as Record<string, unknown>)
+        : init?.body instanceof FormData
+          ? readMultipart(init.body)
+          : undefined;
+    requests.push({ url: url.href, method, authorization, contentType: headers.get("content-type"), ...(body !== undefined && { body }) });
 
     const pending = queued.get(`${url.host}${url.pathname}`) ?? [];
     const cannedIndex = pending.findIndex(
