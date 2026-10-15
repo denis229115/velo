@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { createSqliteTestDb, type SqliteTestDb } from "@/test/sqliteTestDb";
 import { createFreshdeskFetchStub } from "@/test/freshdeskFetchStub";
 import { ALPHA_HOST, BETA_HOST, betaTenant } from "./__fixtures__/freshdeskFixtures";
-import { FIXTURE_NOW, alphaTenantWithTickets, rateLimited } from "./__fixtures__/freshdeskTicketFixtures";
+import { CC_TICKET_ID, FIXTURE_NOW, NO_CC_TICKET_ID, UNTRUSTED_CC_TICKET_ID, alphaTenantWithCcTickets, alphaTenantWithTickets, rateLimited } from "./__fixtures__/freshdeskTicketFixtures";
 
 let db: SqliteTestDb;
 vi.mock("@tauri-apps/plugin-sql", () => ({
@@ -211,5 +211,57 @@ describe("freshness and coverage", () => {
     await connectHelpdesk({ host: BETA_HOST, apiKey: BETA_KEY });
 
     expect(await ids()).toEqual([]);
+  });
+});
+
+describe("ticket CC lists", () => {
+  beforeEach(() => {
+    stub = createFreshdeskFetchStub({
+      [ALPHA_HOST]: { apiKey: ALPHA_KEY, tenant: alphaTenantWithCcTickets },
+      [BETA_HOST]: { apiKey: BETA_KEY, tenant: betaTenant },
+    });
+  });
+
+  const ticketById = async (id: string) => (await getTicketList()).tickets.find((t) => t.id === id);
+
+  it("keeps the CC, reply-CC and forward lists of a synced ticket", async () => {
+    await connectAlpha();
+    await syncTickets({ trigger: "manual" });
+
+    const ticket = await ticketById(CC_TICKET_ID);
+
+    expect(ticket?.ccEmails).toEqual(["cc.one@example.test", "Cc.Two@example.test", "ada.fixture@example.test"]);
+    expect(ticket?.replyCcEmails).toEqual(["CC.ONE@example.test", "reply.only@example.test"]);
+    expect(ticket?.fwdEmails).toEqual(["forward.person@example.test"]);
+  });
+
+  it("has empty lists for a ticket nobody is copied on", async () => {
+    await connectAlpha();
+    await syncTickets({ trigger: "manual" });
+
+    const ticket = await ticketById(NO_CC_TICKET_ID);
+
+    expect(ticket?.ccEmails).toEqual([]);
+    expect(ticket?.replyCcEmails).toEqual([]);
+    expect(ticket?.fwdEmails).toEqual([]);
+  });
+
+  it("drops entries that are not email addresses instead of storing them", async () => {
+    await connectAlpha();
+    await syncTickets({ trigger: "manual" });
+
+    expect((await ticketById(UNTRUSTED_CC_TICKET_ID))?.ccEmails).toEqual(["fine.one@example.test"]);
+  });
+
+  it("keeps the stored lists when a later copy of the ticket carries none", async () => {
+    await connectAlpha();
+    await syncTickets({ trigger: "manual" });
+    stub.respondOnce(ALPHA_HOST, "/api/v2/tickets/1101", {
+      body: { id: 1101, subject: "Fixture: copied colleagues", status: 2, priority: 2, requester_id: 5000000001, responder_id: 1, group_id: 8000000001, tags: [], created_at: "2026-10-12T12:00:00Z", updated_at: "2026-10-14T11:00:00Z" },
+    });
+
+    await fetchOlderTicket(CC_TICKET_ID);
+
+    expect((await ticketById(CC_TICKET_ID))?.ccEmails).toEqual(["cc.one@example.test", "Cc.Two@example.test", "ada.fixture@example.test"]);
   });
 });

@@ -87,6 +87,12 @@ export interface TicketListItem {
   group: { id: string; name: string } | null;
   companyId: string | null;
   tags: string[];
+  /** Addresses copied on the ticket (cc_emails); valid addresses only */
+  ccEmails: string[];
+  /** Addresses copied on replies (reply_cc_emails) */
+  replyCcEmails: string[];
+  /** Addresses the ticket was forwarded to (fwd_emails) */
+  fwdEmails: string[];
   /** Resolution due (SLA), unix ms */
   dueBy: number | null;
   /** Created, unix ms */
@@ -183,6 +189,9 @@ function sampleList(classes: Map<string, StatusClass>): TicketListData {
         group: null,
         companyId: null,
         tags: [],
+        ccEmails: [],
+        replyCcEmails: [],
+        fwdEmails: [],
         dueBy: null,
         createdAt: now - (t.updatedMinutesAgo + 60) * 60_000,
         updatedAt: now - t.updatedMinutesAgo * 60_000,
@@ -248,6 +257,9 @@ async function readTicketList(): Promise<TicketListData> {
         group: t.groupId !== null ? { id: t.groupId, name: groupNames.get(t.groupId) ?? `Group ${t.groupId}` } : null,
         companyId: t.companyId,
         tags: t.tags,
+        ccEmails: t.ccEmails ?? [],
+        replyCcEmails: t.replyCcEmails ?? [],
+        fwdEmails: t.fwdEmails ?? [],
         dueBy: msOrNull(t.dueBy),
         createdAt: t.createdAt * 1000,
         updatedAt: t.updatedAt * 1000,
