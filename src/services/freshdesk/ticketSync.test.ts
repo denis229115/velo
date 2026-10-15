@@ -30,6 +30,7 @@ vi.mock("@tauri-apps/plugin-http", () => ({
 import { runMigrations } from "@/services/db/migrations";
 import { classifyStatus, connectHelpdesk } from "./connection";
 import { fetchOlderTicket, getTicketList, syncTickets } from "./ticketSync";
+import { saveTicketDraft } from "./ticketDrafts";
 
 vi.spyOn(console, "log").mockImplementation(() => {});
 vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -251,6 +252,20 @@ describe("ticket CC lists", () => {
     await syncTickets({ trigger: "manual" });
 
     expect((await ticketById(UNTRUSTED_CC_TICKET_ID))?.ccEmails).toEqual(["fine.one@example.test"]);
+  });
+
+  it("holds no CC address of the previous helpdesk after connecting a different one", async () => {
+    await connectAlpha();
+    await syncTickets({ trigger: "manual" });
+    await saveTicketDraft(CC_TICKET_ID, "reply", { bodyHtml: "<p>Hi</p>", ccEmails: ["draft.cc@example.test"] });
+
+    await connectHelpdesk({ host: BETA_HOST, apiKey: BETA_KEY });
+
+    const tables = await db.select<{ name: string }[]>("SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'freshdesk_%'");
+    const stored = JSON.stringify(await Promise.all(tables.map(({ name }) => db.select(`SELECT * FROM "${name}"`))));
+    for (const address of ["cc.one@example.test", "reply.only@example.test", "forward.person@example.test", "draft.cc@example.test"]) {
+      expect(stored.toLowerCase()).not.toContain(address);
+    }
   });
 
   it("keeps the stored lists when a later copy of the ticket carries none", async () => {
