@@ -44,7 +44,7 @@ import { startJournalEntry } from "@/services/db/freshdeskJournal";
 import { classifyStatus, connectHelpdesk, currentTenantId } from "./connection";
 import { syncTickets } from "./ticketSync";
 import { getOperationJournal } from "./ticketEdits";
-import { loadTicketDraft, saveTicketDraft } from "./ticketDrafts";
+import { attachToTicketDraft, loadTicketDraft, saveTicketDraft } from "./ticketDrafts";
 import {
   cancelScheduledReply,
   checkScheduledReply,
@@ -439,3 +439,50 @@ describe("the operator checking an Unconfirmed scheduled reply", () => {
     expect((await listScheduledReplies()).find((r) => r.id === id)).toMatchObject({ state: "sent" });
   });
 });
+
+describe("a scheduled reply with attachments (#34)", () => {
+  const sentFiles = () => posts().map((r) => (r.body as { attachments?: { name: string }[] }).attachments?.map((a) => a.name));
+
+  async function scheduleWithFile() {
+    await saveTicketDraft("1001", "reply", { bodyHtml: "<p>The report is attached.</p>" });
+    await attachToTicketDraft("1001", "reply", { name: "report.csv", contentType: "text/csv", dataBase64: btoa("a,b\n1,2") });
+    const scheduled = await scheduleTicketReply("1001", { sendAt: nowS() + HOUR_S });
+    if (!scheduled.ok) throw new Error(scheduled.message);
+    stub.requests.length = 0;
+    return scheduled.id;
+  }
+
+  it("keeps its files with the schedule and sends them with it when due", async () => {
+    const id = await scheduleWithFile();
+    expect(await loadTicketDraft("1001", "reply")).toBeNull();
+    expect((await listScheduledReplies()).find((r) => r.id === id)?.attachments).toEqual([{ name: "report.csv", size: 7 }]);
+
+    later(HOUR_S * 1000);
+    await processDueScheduledReplies();
+
+    expect(sentFiles()).toEqual([["report.csv"]]);
+    expect((await listScheduledReplies()).find((r) => r.id === id)).toMatchObject({ state: "sent" });
+  });
+
+  it("takes its files back into the draft when moved back to edit", async () => {
+    const id = await scheduleWithFile();
+
+    expect(await editScheduledReply(id)).toEqual({ ok: true, ticketId: "1001" });
+
+    expect((await loadTicketDraft("1001", "reply"))?.attachments.map((a) => a.name)).toEqual(["report.csv"]);
+  });
+
+  it("sends its files when the operator sends a held reply anyway", async () => {
+    const id = await scheduleWithFile();
+    later(60_000);
+    stub.addConversation(ALPHA_HOST, 1001, { user_id: COLLEAGUE_ID, body: "<p>I had a look too.</p>" });
+    later(HOUR_S * 1000);
+    await processDueScheduledReplies();
+    expect((await listScheduledReplies()).find((r) => r.id === id)).toMatchObject({ state: "held" });
+    stub.requests.length = 0;
+
+    expect(await sendScheduledReplyNow(id)).toBeNull();
+    expect(sentFiles()).toEqual([["report.csv"]]);
+  });
+});
+
