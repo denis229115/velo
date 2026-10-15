@@ -16,7 +16,18 @@ import type { TicketListItem } from "@/services/freshdesk/ticketSync";
 import { getHelpdeskConnection, getStatusClassification, type ClassifiableStatus } from "@/services/freshdesk/connection";
 import type { HelpdeskAgent } from "@/services/freshdesk/metadata";
 import { UNCONFIRMED_MESSAGE, type ComposerMode, type StalenessBaseline, type TicketSendResult } from "@/services/freshdesk/ticketSend";
-import { discardTicketDraft, loadTicketDraft, saveTicketDraft, sendTicketDraft } from "@/services/freshdesk/ticketDrafts";
+import {
+  attachToTicketDraft,
+  discardTicketDraft,
+  loadTicketDraft,
+  removeTicketDraftAttachment,
+  saveTicketDraft,
+  sendTicketDraft,
+  type DraftAttachment,
+} from "@/services/freshdesk/ticketDrafts";
+import { attachRefusal, attachmentLimitProblem, formatAttachmentSize } from "@/services/freshdesk/replyAttachments";
+import { readFileAsBase64 } from "@/utils/fileUtils";
+import { TicketAttachments } from "./TicketAttachments";
 import { FreshdeskWriteReason, useFreshdeskWritable } from "./useFreshdeskWritable";
 import type { TicketHistoryView } from "@/services/freshdesk/ticketHistory";
 import { TicketAiDraft } from "./TicketAiDraft";
@@ -105,6 +116,11 @@ function ComposerPane({
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const [showSchedule, setShowSchedule] = useState(false);
+  const [attachments, setAttachments] = useState<DraftAttachment[]>([]);
+  const [attachError, setAttachError] = useState<string | null>(null);
+  const [attaching, setAttaching] = useState(false);
+  const attachmentsRef = useRef<DraftAttachment[]>([]);
+  attachmentsRef.current = attachments;
   const sendLaterKeys = useShortcutStore((s) => s.keyMap["app.sendLater"]);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dirty = useRef(false);
@@ -137,7 +153,8 @@ function ComposerPane({
     if (!dirty.current || !editor) return;
     dirty.current = false;
     const ccEmails = parseCc(ccRef.current);
-    if (editor.isEmpty && ccEmails.length === 0) await discardTicketDraft(ticket.id, mode);
+    // A draft holding files is kept even with no text
+    if (editor.isEmpty && ccEmails.length === 0 && attachmentsRef.current.length === 0) await discardTicketDraft(ticket.id, mode);
     else await saveTicketDraft(ticket.id, mode, { bodyHtml: editor.getHTML(), ccEmails });
   }, [editor, ticket.id, mode]);
 
@@ -166,6 +183,7 @@ function ComposerPane({
         editor.commands.setContent(draft.bodyHtml, { emitUpdate: false });
         setEmpty(editor.isEmpty);
         setCcText(draft.ccEmails.join(", "));
+        setAttachments(draft.attachments);
         if (draft.unconfirmedEntryId !== null) setOutcome({ kind: "unconfirmed", message: UNCONFIRMED_MESSAGE });
       }
     })();
@@ -193,10 +211,53 @@ function ComposerPane({
     setEmpty(true);
     setCcText("");
     setThenStatusId("");
+    setAttachments([]);
+    setAttachError(null);
     dirty.current = false;
   }
 
-  const canSchedule = mode === "reply" && writable.writable && !busy && !empty && !unconfirmed && badCc.length === 0 && outcome?.kind !== "stale";
+  /** Keeps the picked files with the draft, one by one; a file over the limit is refused with the reason */
+  async function addFiles(files: File[]) {
+    setAttaching(true);
+    setAttachError(null);
+    try {
+      await save();
+      let kept = attachmentsRef.current;
+      for (const file of files) {
+        // Checked before reading, so a huge file is never loaded
+        const refusal = attachRefusal(file.name, kept, file.size);
+        if (refusal) {
+          setAttachError(refusal);
+          continue;
+        }
+        const result = await attachToTicketDraft(ticket.id, mode, {
+          name: file.name,
+          contentType: file.type,
+          dataBase64: await readFileAsBase64(file),
+        });
+        if (result.ok) {
+          kept = [...kept, result.attachment];
+          setAttachments(kept);
+        } else {
+          setAttachError(result.message);
+        }
+      }
+    } catch {
+      setAttachError("Velo could not read that file. Nothing was attached.");
+    } finally {
+      setAttaching(false);
+    }
+  }
+
+  async function removeFile(attachmentId: string) {
+    setAttachError(null);
+    await removeTicketDraftAttachment(ticket.id, mode, attachmentId);
+    setAttachments((current) => current.filter((a) => a.attachmentId !== attachmentId));
+  }
+
+  const tooLarge = attachmentLimitProblem(attachments);
+  const canSchedule =
+    mode === "reply" && writable.writable && !busy && !attaching && !empty && !unconfirmed && badCc.length === 0 && !tooLarge && outcome?.kind !== "stale";
   useComposerShortcuts({ onSendLater: () => canSchedule && setShowSchedule(true) }, mode === "reply");
 
   async function schedule(sendAt: number) {
@@ -280,7 +341,7 @@ function ComposerPane({
           : "The customer receives this by email."}
       </p>
 
-      <Summary ticket={ticket} mode={mode} me={me} ccText={ccText} badCc={badCc} locked={unconfirmed} onCcChange={(v) => {
+      <Summary ticket={ticket} mode={mode} me={me} ccText={ccText} badCc={badCc} attachments={attachments} tooLarge={tooLarge} locked={unconfirmed} onCcChange={(v) => {
         setCcText(v);
         ccRef.current = v;
         scheduleSave();
@@ -289,9 +350,17 @@ function ComposerPane({
       {mode === "reply" && <TicketAiDraft ticket={ticket} view={history} editor={editor} empty={empty} />}
 
       <div className="mx-3 mt-2 rounded-md border border-border-primary bg-bg-primary">
-        <EditorToolbar editor={editor} />
+        <EditorToolbar editor={editor} allowImages={false} />
         <EditorContent editor={editor} />
       </div>
+
+      <TicketAttachments
+        attachments={attachments}
+        error={attachError}
+        locked={unconfirmed}
+        onAdd={(files) => void addFiles(files)}
+        onRemove={(id) => void removeFile(id)}
+      />
 
       <div className="px-3 py-2.5 space-y-2">
         <OutcomeView outcome={outcome} mode={mode} busy={busy} writable={writable.writable} onSendAnyway={(baseline) => void send({ acknowledged: baseline })} onCheck={() => void send()} />
@@ -301,7 +370,7 @@ function ComposerPane({
               variant="primary"
               size="sm"
               {...writable.controlProps}
-              disabled={writable.controlProps.disabled || busy || empty || badCc.length > 0}
+              disabled={writable.controlProps.disabled || busy || attaching || empty || badCc.length > 0 || tooLarge !== null}
               onClick={() => void send()}
             >
               {busy ? "Sending…" : sendLabel}
@@ -375,6 +444,8 @@ function Summary({
   me,
   ccText,
   badCc,
+  attachments,
+  tooLarge,
   locked,
   onCcChange,
 }: {
@@ -383,6 +454,9 @@ function Summary({
   me: HelpdeskAgent | null;
   ccText: string;
   badCc: string[];
+  attachments: DraftAttachment[];
+  /** Why the files can't go out as they are, or null */
+  tooLarge: string | null;
   locked: boolean;
   onCcChange: (text: string) => void;
 }) {
@@ -430,7 +504,21 @@ function Summary({
         )}
         <div className={row}>
           <dt className={term}>Attachments</dt>
-          <dd className={value}>No attachments</dd>
+          <dd className="min-w-0 text-meta text-text-primary">
+            {attachments.length === 0 ? (
+              "No attachments"
+            ) : (
+              <ul className="space-y-0.5">
+                {attachments.map((a) => (
+                  <li key={a.attachmentId} className="flex min-w-0 gap-2">
+                    <span className="min-w-0 truncate">{a.name}</span>
+                    <span className="shrink-0 text-text-tertiary">{formatAttachmentSize(a.size)}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {tooLarge && <p className="text-micro text-status-error mt-0.5">{tooLarge}</p>}
+          </dd>
         </div>
         {mode === "reply" && (
           <div className={row}>

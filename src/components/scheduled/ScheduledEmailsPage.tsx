@@ -23,6 +23,7 @@ import { getStatusClassification } from "@/services/freshdesk/connection";
 import { useFreshdeskWritable } from "@/components/freshdesk/useFreshdeskWritable";
 import { navigateToTicket } from "@/router/navigate";
 import { ScheduledList, type ScheduledAction, type ScheduledListItem, type ScheduledStatus } from "./ScheduledList";
+import { formatAttachmentSize } from "@/services/freshdesk/replyAttachments";
 
 function sourceOf(email: ScheduledEmailWithAccount): string {
   const account = email.account_email ?? "Removed email account";
@@ -59,6 +60,15 @@ function replyDetail(reply: ScheduledReply, statusLabels: Map<string, string>): 
   return `Then set ${label}, once Freshdesk confirms the reply`;
 }
 
+/** The files kept with the reply and the status to set, in one line */
+function replyDetails(reply: ScheduledReply, statusLabels: Map<string, string>): string | null {
+  const files =
+    reply.attachments.length > 0 && reply.state !== "sent"
+      ? `With ${reply.attachments.map((a) => `${a.name} (${formatAttachmentSize(a.size)})`).join(", ")}`
+      : null;
+  return [files, replyDetail(reply, statusLabels)].filter(Boolean).join(" · ") || null;
+}
+
 function toReplyItem(reply: ScheduledReply, statusLabels: Map<string, string>, remoteBlocked: string | null): ScheduledListItem {
   return {
     id: reply.id,
@@ -69,7 +79,7 @@ function toReplyItem(reply: ScheduledReply, statusLabels: Map<string, string>, r
     sendAt: reply.sendAt,
     error: reply.state === "failed" || reply.state === "unconfirmed" ? reply.error : null,
     reasons: reply.state === "held" ? reply.holdReasons : [],
-    detail: replyDetail(reply, statusLabels),
+    detail: replyDetails(reply, statusLabels),
     actions: REPLY_ACTIONS[reply.state],
     remoteBlocked,
   };

@@ -14,7 +14,7 @@ import {
   insertStoredAttachment,
   type StoredAttachment,
 } from "@/services/db/freshdeskReplyAttachments";
-import { attachmentLimitProblem, cleanAttachmentName, cleanContentType } from "./replyAttachments";
+import { attachRefusal, cleanAttachmentName, cleanContentType } from "./replyAttachments";
 import { currentTenantId } from "./connection";
 import {
   captureStalenessBaseline,
@@ -107,8 +107,8 @@ export async function attachToTicketDraft(
   if (!draft) await saveTicketDraft(ticketId, mode, { bodyHtml: "" });
   const name = cleanAttachmentName(file.name);
   const size = decodedSize(file.dataBase64);
-  const problem = attachmentLimitProblem([...(draft?.attachments ?? []), { size }]);
-  if (problem) return { ok: false, message: `${name} was not attached. ${problem.replace(/ Remove files to send\.$/, "")}` };
+  const refusal = attachRefusal(name, draft?.attachments ?? [], size);
+  if (refusal) return { ok: false, message: refusal };
   const key = await withReadSnapshot(() => keyFor(ticketId, mode));
   const attachment = await insertStoredAttachment(draftAttachmentOwner(key), {
     name,

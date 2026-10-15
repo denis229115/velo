@@ -54,6 +54,12 @@ export function attachmentLimitProblem(files: readonly { size: number }[]): stri
   return `The attachments add up to ${formatAttachmentSize(total)}. Freshdesk accepts at most ${formatAttachmentSize(MAX_ATTACHMENT_TOTAL_BYTES)} per reply or note. Remove files to send.`;
 }
 
+/** Why a file can't join the files already attached, or null when it can */
+export function attachRefusal(name: string, attached: readonly { size: number }[], size: number): string | null {
+  const problem = attachmentLimitProblem([...attached, { size }]);
+  return problem ? `${cleanAttachmentName(name)} was not attached. ${problem.replace(/ Remove files to send\.$/, "")}` : null;
+}
+
 function blobOf(file: ReplyAttachment): Blob {
   const binary = atob(file.dataBase64);
   const bytes = new Uint8Array(binary.length);
