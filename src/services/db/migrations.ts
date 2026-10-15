@@ -1111,6 +1111,39 @@ const MIGRATIONS = [
       ALTER TABLE integration_accounts ADD COLUMN me_signature TEXT;
     `,
   },
+  {
+    version: 34,
+    description: "Scheduled Freshdesk ticket replies, kept apart from scheduled emails",
+    sql: `
+      CREATE TABLE IF NOT EXISTS freshdesk_scheduled_replies (
+        reply_id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        agent_id TEXT NOT NULL,
+        ticket_id TEXT NOT NULL,
+        subject TEXT NOT NULL DEFAULT '',
+        recipient TEXT NOT NULL DEFAULT '',
+        body_html TEXT NOT NULL,
+        cc_json TEXT NOT NULL DEFAULT '[]',
+        send_at INTEGER NOT NULL,
+        then_status_id TEXT,
+        baseline_started_at INTEGER NOT NULL,
+        baseline_assignee TEXT,
+        baseline_status TEXT,
+        state TEXT NOT NULL DEFAULT 'pending'
+          CHECK (state IN ('pending', 'sending', 'held', 'unconfirmed', 'sent', 'failed')),
+        hold_reasons_json TEXT NOT NULL DEFAULT '[]',
+        journal_entry_id INTEGER,
+        claimed_at INTEGER,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        next_attempt_at INTEGER,
+        last_error TEXT,
+        status_problem TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_freshdesk_scheduled_replies_due ON freshdesk_scheduled_replies(state, send_at);
+    `,
+  },
 ];
 
 /**

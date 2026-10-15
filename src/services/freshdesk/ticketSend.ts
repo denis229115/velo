@@ -5,7 +5,7 @@
  */
 import { useUIStore } from "@/stores/uiStore";
 import { withReadSnapshot } from "@/services/db/connection";
-import { getAgents, getIntegrationAccount, getStatusClasses } from "@/services/db/freshdesk";
+import { getAgents, getFieldChoices, getIntegrationAccount, getStatusClasses } from "@/services/db/freshdesk";
 import { getCachedTickets } from "@/services/db/freshdeskTickets";
 import { finishJournalEntry, getJournalEntries, startJournalEntry } from "@/services/db/freshdeskJournal";
 import { sanitizeHtml } from "@/utils/sanitize";
@@ -23,6 +23,8 @@ export interface StalenessBaseline {
   /** Unix seconds */
   startedAt: number;
   assigneeId: string | null;
+  /** The ticket's status then; when given, a status change counts as a change (Scheduled replies) */
+  statusId?: string | null;
 }
 
 export interface TicketSendRequest {
@@ -94,11 +96,16 @@ function changesSince(
   fresh: FreshTicket,
   meId: string | null,
   agentNames: Map<string, string>,
+  statusLabels: Map<string, string>,
 ): string[] {
   const changes: string[] = [];
   const assignee = fresh.ticket.responderId;
   if (assignee !== baseline.assigneeId) {
     changes.push(assignee ? `Reassigned to ${agentNames.get(assignee) ?? "another agent"}.` : "Unassigned meanwhile.");
+  }
+  const status = fresh.ticket.statusId;
+  if (baseline.statusId !== undefined && status !== baseline.statusId) {
+    changes.push(`Status changed to ${statusLabels.get(status) ?? "a status Velo does not know"}.`);
   }
   const newer = fresh.conversations.filter((c) => c.createdAt > baseline.startedAt && (meId === null || c.userId !== meId));
   for (const c of newer) {
@@ -140,10 +147,11 @@ export async function sendTicketResponse(request: TicketSendRequest): Promise<Ti
   const { tenantId, credentials } = current;
   const { ticketId, mode } = request;
 
-  const { account, agents, classes } = await withReadSnapshot(async () => ({
+  const { account, agents, classes, statuses } = await withReadSnapshot(async () => ({
     account: await getIntegrationAccount("freshdesk"),
     agents: await getAgents(tenantId),
     classes: await getStatusClasses(tenantId),
+    statuses: await getFieldChoices(tenantId, "status"),
   }));
   const thenStatusId = mode === "reply" ? (request.thenStatusId ?? null) : null;
   if (thenStatusId !== null && classes.get(thenStatusId) !== "done") {
@@ -159,9 +167,12 @@ export async function sendTicketResponse(request: TicketSendRequest): Promise<Ti
     return { outcome: "failed", message: `Velo could not re-check the ticket before sending: ${failureMessage(error)} Nothing was sent.` };
   }
   const agentNames = new Map(agents.map((a) => [a.agentId, a.name]));
-  const changes = changesSince(request.baseline, fresh, meId, agentNames);
+  const statusLabels = new Map(statuses.map((s) => [s.choiceId, s.label]));
+  const changes = changesSince(request.baseline, fresh, meId, agentNames, statusLabels);
   if (changes.length > 0) {
-    return { outcome: "stale", changes, baseline: { startedAt: nowS(), assigneeId: fresh.ticket.responderId } };
+    const baseline: StalenessBaseline = { startedAt: nowS(), assigneeId: fresh.ticket.responderId };
+    if (request.baseline.statusId !== undefined) baseline.statusId = fresh.ticket.statusId;
+    return { outcome: "stale", changes, baseline };
   }
 
   const draft = sanitizeHtml(request.bodyHtml);
