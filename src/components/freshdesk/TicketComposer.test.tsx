@@ -59,6 +59,7 @@ import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { saveTicketDraft, loadTicketDraft } from "@/services/freshdesk/ticketDrafts";
 import { useTicketStore } from "@/stores/ticketStore";
 import { useUIStore } from "@/stores/uiStore";
+import { listScheduledReplies } from "@/services/freshdesk/scheduledReplies";
 import { FreshdeskPage } from "./FreshdeskPage";
 import { FreshdeskViewNav } from "./FreshdeskViewNav";
 
@@ -283,5 +284,46 @@ describe("the ticket composer", () => {
     expect(reply.getByRole("textbox", { name: "Reply text" })).toHaveAttribute("contenteditable", "true");
     fireEvent.click(send);
     expect(writes()).toEqual([]);
+  });
+});
+
+describe("scheduling a reply", () => {
+  const pressSendLater = () => fireEvent.keyDown(window, { key: "L", metaKey: true, shiftKey: true });
+
+  it("opens the schedule picker on Cmd+Shift+L, says it sends only while Velo runs, and schedules with the chosen status (A26)", async () => {
+    await openTicket();
+    await draft("reply", "<p>Later then</p>");
+    const reply = await openComposer("Reply");
+    await reply.findByText("Later then");
+    stub.requests.length = 0;
+
+    pressSendLater();
+
+    const picker = within(await screen.findByRole("group", { name: "Schedule reply" }));
+    expect(picker.getByText(/sends through Freshdesk when Velo is next open/)).toBeInTheDocument();
+    expect(picker.getByText(/not while your Mac sleeps or Velo is closed/)).toBe(picker.getByText(/next open/));
+    fireEvent.change(picker.getByLabelText("Then set status"), { target: { value: "4" } });
+    fireEvent.click(picker.getByRole("button", { name: /Tomorrow morning/ }));
+
+    expect(await reply.findByText(/Reply scheduled for/)).toBeInTheDocument();
+    const [scheduled] = await listScheduledReplies();
+    expect(scheduled).toMatchObject({ ticketId: "1001", state: "pending", thenStatusId: "4", bodyHtml: "<p>Later then</p>" });
+    expect(await loadTicketDraft("1001", "reply")).toBeNull();
+    expect(writes()).toEqual([]);
+  });
+
+  it("offers Send later only for a reply, and not while offline: nothing is queued", async () => {
+    await openTicket();
+    await draft("reply", "<p>Later then</p>");
+    const reply = await openComposer("Reply");
+    await reply.findByText("Later then");
+    expect(reply.getByRole("button", { name: "Send later" })).toBeEnabled();
+
+    act(() => useUIStore.setState({ isOnline: false }));
+    expect(reply.getByRole("button", { name: "Send later" })).toBeDisabled();
+    pressSendLater();
+
+    expect(screen.queryByRole("group", { name: "Schedule reply" })).not.toBeInTheDocument();
+    expect(await listScheduledReplies()).toEqual([]);
   });
 });
