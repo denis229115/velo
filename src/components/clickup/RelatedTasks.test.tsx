@@ -63,6 +63,14 @@ import { linkTask } from "@/services/clickup/links";
 import { useTicketStore } from "@/stores/ticketStore";
 import { FreshdeskPage } from "@/components/freshdesk/FreshdeskPage";
 
+// The ticket reader sizes conversation bodies, such as the backlink's internal note
+class MockResizeObserver {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+globalThis.ResizeObserver = MockResizeObserver as unknown as typeof ResizeObserver;
+
 vi.spyOn(console, "log").mockImplementation(() => {});
 vi.spyOn(console, "warn").mockImplementation(() => {});
 
@@ -174,6 +182,7 @@ describe("Related tasks on a ticket", () => {
   it("unlinks a task from this ticket only", async () => {
     await linkTask(ticket("1002"), "86a0exp01");
     await linkTask(ticket("1001"), "86a0exp01");
+    clickup.requests.length = 0;
     renderFreshdesk("/freshdesk/ticket/1002");
     const region = await panel();
 
@@ -185,6 +194,8 @@ describe("Related tasks on a ticket", () => {
 
   it("shows a done badge and the Follow-up cue when the task completes in ClickUp, without changing the ticket (A16)", async () => {
     await linkTask(ticket("1002"), "86a0exp01");
+    // The backlinks are written; what follows must change nothing in the helpdesk
+    freshdesk.requests.length = 0;
     clickup.replaceTask(alphaExportBugDone);
     renderFreshdesk("/freshdesk/ticket/1002");
     const region = await panel();

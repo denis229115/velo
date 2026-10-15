@@ -78,7 +78,7 @@ export interface FixtureTask {
   folder: { id: string; name: string; hidden: boolean; access: boolean };
   space: { id: string };
   team_id: string;
-  custom_fields: unknown[];
+  custom_fields: { id: string; value?: unknown }[];
 }
 
 export interface ClickUpFixtureWorkspace {
@@ -87,6 +87,8 @@ export interface ClickUpFixtureWorkspace {
   members: FixtureUser[];
   spaces: FixtureSpace[];
   fields: Record<string, FixtureField[]>;
+  /** Who can be assigned in a list, when not every workspace member */
+  listMembers?: Record<string, FixtureUser[]>;
   tasks: FixtureTask[];
 }
 
@@ -177,6 +179,8 @@ function task(
 
 const alphaBugsList = { id: "li_a_bugs", name: "Fixture bugs", access: true };
 const alphaFollowUpList = { id: "li_a_follow", name: "Fixture follow-ups", access: true };
+/** A list without the Ticket-ID field */
+export const ALPHA_BACKLOG_LIST_ID = "li_a_backlog";
 
 /** A linked task the tests complete remotely by swapping in `alphaExportBugDone`. */
 export const alphaExportBug = task({
@@ -242,13 +246,16 @@ export const alphaWorkspace: ClickUpFixtureWorkspace = {
           archived: false,
           statuses: [ALPHA_STATUSES.todo, status("sc_a_4", "fixture waiting on vendor", "custom", 1, "#f9d900"), ALPHA_STATUSES.complete],
         },
+        { id: ALPHA_BACKLOG_LIST_ID, name: "Fixture backlog", orderindex: 2, archived: false },
       ],
     },
   ],
   fields: {
     [alphaBugsList.id]: [ticketIdField, effortField],
     [alphaFollowUpList.id]: [ticketIdField],
+    [ALPHA_BACKLOG_LIST_ID]: [],
   },
+  listMembers: { [alphaFollowUpList.id]: [alphaOperator] },
   tasks: [alphaExportBug, alphaInvoiceTask, alphaHostileTask],
 };
 

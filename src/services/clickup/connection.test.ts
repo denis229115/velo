@@ -67,6 +67,7 @@ describe("connecting a ClickUp workspace", () => {
     expect(settings.lists.map((l) => [l.name, l.location, l.statuses.map((s) => s.name)])).toEqual([
       ["Fixture bugs", "Fixture space / Fixture folder", ["fixture to do", "fixture in progress", "fixture complete"]],
       ["Fixture follow-ups", "Fixture space", ["fixture to do", "fixture waiting on vendor", "fixture complete"]],
+      ["Fixture backlog", "Fixture space", ["fixture to do", "fixture in progress", "fixture complete"]],
     ]);
     expect(settings.members.map((m) => m.name)).toEqual(["Fixture Colleague", "Fixture Operator"]);
     expect(settings.customFields.map((f) => [f.name, f.listNames])).toEqual([

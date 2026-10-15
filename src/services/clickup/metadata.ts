@@ -144,3 +144,9 @@ export async function fetchWorkspaceMetadata(token: string, workspaceId: string)
 
   return { lists, members, customFields };
 }
+
+/** Who can be assigned tasks in one list (ClickUp limits this per list). */
+export async function fetchListMembers(token: string, listId: string): Promise<ClickUpMember[]> {
+  const { members } = await clickupGet<{ members: ApiUser[] }>(token, `/list/${encodeURIComponent(listId)}/member`);
+  return members.map(memberFrom);
+}
