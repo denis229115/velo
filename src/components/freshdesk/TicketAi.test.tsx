@@ -193,6 +193,9 @@ async function cancelPreview() {
 }
 
 Element.prototype.scrollIntoView = vi.fn();
+// jsdom has no layout; the editor measures the cursor when it scrolls to it
+Range.prototype.getClientRects = () => [] as unknown as DOMRectList;
+Range.prototype.getBoundingClientRect = () => new DOMRect();
 
 describe("the ticket summary", () => {
   it("summarises on request after the send preview, with six sections citing the conversations, and writes nothing to Freshdesk", async () => {
@@ -261,5 +264,112 @@ describe("the ticket summary", () => {
 
     expect(await card.findByText(/Not sent/)).toBeInTheDocument();
     expect(ai.captured).toEqual([]);
+  });
+});
+
+const AI_DRAFT = "<p>Thanks for trying again. Which error message do you see?</p>";
+const replyText = (reply: ReturnType<typeof within>) => reply.getByRole("textbox", { name: "Reply text" }).textContent;
+
+describe("AI drafts in the composer", () => {
+  beforeEach(async () => {
+    await approveClaude();
+    ai.respond = () => Promise.resolve(AI_DRAFT);
+  });
+
+  it("puts a draft into an empty reply only when the operator takes it, and keeps it as the ticket draft", async () => {
+    await openTicket();
+    const reply = await openComposer("Reply");
+
+    expect(reply.getByRole("combobox", { name: "Tone" })).toHaveValue("friendly_professional");
+    fireEvent.click(reply.getByRole("button", { name: "Draft reply" }));
+    await confirmPreview();
+
+    const proposal = within(await reply.findByRole("region", { name: "AI draft" }));
+    expect(proposal.getByText("Thanks for trying again. Which error message do you see?")).toBeInTheDocument();
+    expect(replyText(reply)).toBe("");
+    fireEvent.click(proposal.getByRole("button", { name: "Use draft" }));
+
+    expect(replyText(reply)).toContain("Which error message do you see?");
+    expect(reply.queryByRole("region", { name: "AI draft" })).not.toBeInTheDocument();
+    await waitFor(async () => expect((await loadTicketDraft("1001", "reply"))?.bodyHtml).toContain("Which error message"));
+    expect(writes()).toEqual([]);
+  });
+
+  it("never overwrites the operator's text without a Replace or Insert choice", async () => {
+    await openTicket();
+    await draft("reply", "<p>My own words.</p>");
+    const reply = await openComposer("Reply");
+    await reply.findByText("My own words.");
+
+    fireEvent.click(reply.getByRole("button", { name: "Draft reply" }));
+    await confirmPreview();
+    const proposal = within(await reply.findByRole("region", { name: "AI draft" }));
+    expect(replyText(reply)).toBe("My own words.");
+
+    fireEvent.click(proposal.getByRole("button", { name: "Insert" }));
+    expect(replyText(reply)).toContain("My own words.");
+    expect(replyText(reply)).toContain("Which error message do you see?");
+
+    fireEvent.click(reply.getByRole("button", { name: "Draft reply" }));
+    fireEvent.click(within(await reply.findByRole("region", { name: "AI draft" })).getByRole("button", { name: "Replace" }));
+    expect(replyText(reply)).not.toContain("My own words.");
+    expect(replyText(reply)).toContain("Which error message do you see?");
+    await waitFor(async () => expect((await loadTicketDraft("1001", "reply"))?.bodyHtml).not.toContain("My own words"));
+  });
+
+  it("follows the tone switch and rewrites the operator's own draft", async () => {
+    await openTicket();
+    await draft("reply", "<p>We looked into it.</p>");
+    const reply = await openComposer("Reply");
+    await reply.findByText("We looked into it.");
+
+    fireEvent.change(reply.getByRole("combobox", { name: "Tone" }), { target: { value: "formal" } });
+    fireEvent.click(reply.getByRole("button", { name: "Rewrite" }));
+    await confirmPreview();
+    await reply.findByRole("region", { name: "AI draft" });
+
+    expect(ai.captured[0]!.userContent).toMatch(/Tone: formal/);
+    expect(ai.captured[0]!.userContent).toContain("We looked into it.");
+    expect(ai.captured[0]!.userContent).not.toContain("SSO provider had an outage");
+  });
+
+  it("can be cancelled, and the reply stays as it was and can still be sent (A12)", async () => {
+    let finish: (text: string) => void = () => {};
+    ai.respond = () => new Promise((resolve) => (finish = resolve));
+    await openTicket();
+    await draft("reply", "<p>My own words.</p>");
+    const reply = await openComposer("Reply");
+    await reply.findByText("My own words.");
+
+    fireEvent.click(reply.getByRole("button", { name: "Draft reply" }));
+    await confirmPreview();
+    fireEvent.click(await reply.findByRole("button", { name: "Cancel" }));
+    await act(async () => finish(AI_DRAFT));
+
+    expect(reply.queryByRole("region", { name: "AI draft" })).not.toBeInTheDocument();
+    expect(replyText(reply)).toBe("My own words.");
+    fireEvent.click(reply.getByRole("button", { name: "Send reply" }));
+    await screen.findByText("Reply sent.");
+  });
+
+  it("says when drafting failed and keeps the operator's text (A12)", async () => {
+    ai.respond = () => Promise.reject(new Error("fetch failed"));
+    await openTicket();
+    await draft("reply", "<p>My own words.</p>");
+    const reply = await openComposer("Reply");
+    await reply.findByText("My own words.");
+
+    fireEvent.click(reply.getByRole("button", { name: "Draft reply" }));
+    await confirmPreview();
+
+    expect(await reply.findByText(/AI draft unavailable/)).toBeInTheDocument();
+    expect(replyText(reply)).toBe("My own words.");
+    expect(reply.getByRole("button", { name: "Send reply" })).toBeEnabled();
+  });
+
+  it("offers no AI draft on internal notes", async () => {
+    await openTicket();
+    const note = await openComposer("Internal note");
+    expect(note.queryByRole("button", { name: "Draft reply" })).not.toBeInTheDocument();
   });
 });

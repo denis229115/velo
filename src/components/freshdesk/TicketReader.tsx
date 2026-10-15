@@ -180,7 +180,7 @@ export function TicketReader({ ticket, ticketId }: { ticket: TicketListItem | nu
           {editor.element}
           <TicketSummaryCard key={ticket.id} ticket={ticket} view={view} />
           {composerMode && (
-            <TicketComposer ticket={ticket} mode={composerMode} onModeChange={compose} onClose={() => setComposing(null)} />
+            <TicketComposer ticket={ticket} history={view} mode={composerMode} onModeChange={compose} onClose={() => setComposing(null)} />
           )}
           <HistoryNotice view={view} />
           {view && view.entries.length > 0 && <History key={view.ticketId} entries={view.entries} />}

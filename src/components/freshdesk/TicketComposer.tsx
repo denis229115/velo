@@ -12,6 +12,8 @@ import type { HelpdeskAgent } from "@/services/freshdesk/metadata";
 import { UNCONFIRMED_MESSAGE, type ComposerMode, type StalenessBaseline, type TicketSendResult } from "@/services/freshdesk/ticketSend";
 import { discardTicketDraft, loadTicketDraft, saveTicketDraft, sendTicketDraft } from "@/services/freshdesk/ticketDrafts";
 import { FreshdeskWriteReason, useFreshdeskWritable } from "./useFreshdeskWritable";
+import type { TicketHistoryView } from "@/services/freshdesk/ticketHistory";
+import { TicketAiDraft } from "./TicketAiDraft";
 
 const MODE_NAME: Record<ComposerMode, string> = { reply: "Reply to customer", note: "Internal note" };
 const SENT_TEXT: Record<ComposerMode, string> = { reply: "Reply sent.", note: "Internal note added." };
@@ -56,26 +58,31 @@ const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
  */
 export function TicketComposer({
   ticket,
+  history = null,
   mode,
   onModeChange,
   onClose,
 }: {
   ticket: TicketListItem;
+  /** The ticket's history, which AI drafts read; null while loading */
+  history?: TicketHistoryView | null;
   mode: ComposerMode;
   onModeChange: (mode: ComposerMode) => void;
   onClose: () => void;
 }) {
   // One pane per ticket and mode, so each loads and saves its own draft
-  return <ComposerPane key={`${ticket.id}:${mode}`} ticket={ticket} mode={mode} onModeChange={onModeChange} onClose={onClose} />;
+  return <ComposerPane key={`${ticket.id}:${mode}`} ticket={ticket} history={history} mode={mode} onModeChange={onModeChange} onClose={onClose} />;
 }
 
 function ComposerPane({
   ticket,
+  history,
   mode,
   onModeChange,
   onClose,
 }: {
   ticket: TicketListItem;
+  history: TicketHistoryView | null;
   mode: ComposerMode;
   onModeChange: (mode: ComposerMode) => void;
   onClose: () => void;
@@ -243,6 +250,8 @@ function ComposerPane({
         ccRef.current = v;
         scheduleSave();
       }} />
+
+      {mode === "reply" && <TicketAiDraft ticket={ticket} view={history} editor={editor} empty={empty} />}
 
       <div className="mx-3 mt-2 rounded-md border border-border-primary bg-bg-primary">
         <EditorToolbar editor={editor} />
