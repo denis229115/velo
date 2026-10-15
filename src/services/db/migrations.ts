@@ -1144,6 +1144,23 @@ const MIGRATIONS = [
       CREATE INDEX IF NOT EXISTS idx_freshdesk_scheduled_replies_due ON freshdesk_scheduled_replies(state, send_at);
     `,
   },
+  {
+    version: 35,
+    description: "Files attached to Freshdesk ticket drafts and scheduled replies",
+    sql: `
+      CREATE TABLE IF NOT EXISTS freshdesk_reply_attachments (
+        attachment_id TEXT PRIMARY KEY,
+        owner TEXT NOT NULL,
+        position INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        content_type TEXT NOT NULL,
+        size INTEGER NOT NULL,
+        data_base64 TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_freshdesk_reply_attachments_owner ON freshdesk_reply_attachments(owner, position);
+    `,
+  },
 ];
 
 /**
