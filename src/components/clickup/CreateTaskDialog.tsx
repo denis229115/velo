@@ -170,184 +170,192 @@ export function CreateTaskDialog({
         role="dialog"
         aria-label="Create a ClickUp task"
         onSubmit={handleSubmit}
-        className="p-4 space-y-3 max-h-[75vh] overflow-y-auto"
+        className="flex flex-col max-h-[75vh]"
       >
-        {item.kind === "ticket" ? (
-          <p className="text-meta text-text-secondary">From ticket #{item.ticketId}</p>
-        ) : (
-          <p className="text-meta text-text-secondary">
-            Nothing from this email is sent to ClickUp; the link is kept only in Velo.
-          </p>
-        )}
-        {options && options.lists.length === 0 && (
-          <p role="alert" className="text-meta text-danger">
-            Connect a ClickUp workspace in Settings → ClickUp to create tasks.
-          </p>
-        )}
-        <div>
-          <label htmlFor="create-task-list" className={LABEL_CLASS}>
-            List
-          </label>
-          <select
-            id="create-task-list"
-            value={listId}
-            disabled={locked || !options}
-            onChange={(e) => chooseList(e.target.value)}
-            className={FIELD_CLASS}
-          >
-            {options?.lists.map((l) => (
-              <option key={l.listId} value={l.listId}>
-                {l.name} ({l.location})
-              </option>
-            ))}
-          </select>
-          {fieldGap && (
-            <p role="status" className="mt-1.5 flex items-start gap-1.5 text-meta text-status-warning">
-              <AlertTriangle size={13} className="mt-0.5 shrink-0" aria-hidden />
-              <span>{fieldGap} The ticket link and the internal note are still written.</span>
+        {/* The fields scroll; the actions below them stay in view */}
+        <div className="p-4 space-y-3 overflow-y-auto min-h-0">
+          {item.kind === "ticket" ? (
+            <p className="text-meta text-text-secondary">From ticket #{item.ticketId}</p>
+          ) : (
+            <p className="text-meta text-text-secondary">
+              Nothing from this email is sent to ClickUp; the link is kept only in Velo.
             </p>
           )}
-        </div>
-        {proposalSlot}
-        <TextField
-          id="create-task-title"
-          label="Title"
-          size="md"
-          value={name}
-          disabled={locked}
-          onChange={(e) => setName(e.target.value)}
-          autoComplete="off"
-          autoFocus
-        />
-        <div>
-          <label htmlFor="create-task-description" className={LABEL_CLASS}>
-            Description
-          </label>
-          <textarea
-            id="create-task-description"
-            value={description}
+          {options && options.lists.length === 0 && (
+            <p role="alert" className="text-meta text-danger">
+              Connect a ClickUp workspace in Settings → ClickUp to create tasks.
+            </p>
+          )}
+          <div>
+            <label htmlFor="create-task-list" className={LABEL_CLASS}>
+              List
+            </label>
+            <select
+              id="create-task-list"
+              value={listId}
+              disabled={locked || !options}
+              onChange={(e) => chooseList(e.target.value)}
+              className={FIELD_CLASS}
+            >
+              {options?.lists.map((l) => (
+                <option key={l.listId} value={l.listId}>
+                  {l.name} ({l.location})
+                </option>
+              ))}
+            </select>
+            {fieldGap && (
+              <p role="status" className="mt-1.5 flex items-start gap-1.5 text-meta text-status-warning">
+                <AlertTriangle size={13} className="mt-0.5 shrink-0" aria-hidden />
+                <span>{fieldGap} The ticket link and the internal note are still written.</span>
+              </p>
+            )}
+          </div>
+          {proposalSlot}
+          <TextField
+            id="create-task-title"
+            label="Title"
+            size="md"
+            value={name}
             disabled={locked}
-            onChange={(e) => setDescription(e.target.value)}
-            rows={4}
-            className={`${FIELD_CLASS} resize-y placeholder:text-text-tertiary`}
-            placeholder={item.kind === "ticket" ? "Velo adds the ticket link below what you write." : undefined}
+            onChange={(e) => setName(e.target.value)}
+            autoComplete="off"
+            autoFocus
           />
-        </div>
-        <div className="grid grid-cols-3 gap-3">
           <div>
-            <label htmlFor="create-task-status" className={LABEL_CLASS}>
-              Status
+            <label htmlFor="create-task-description" className={LABEL_CLASS}>
+              Description
             </label>
-            <select
-              id="create-task-status"
-              value={status}
-              disabled={locked || !list}
-              onChange={(e) => setStatus(e.target.value)}
-              className={FIELD_CLASS}
-            >
-              {list?.statuses.map((s, i) => (
-                <option key={s} value={i === 0 ? "" : s}>
-                  {s}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label htmlFor="create-task-priority" className={LABEL_CLASS}>
-              Priority
-            </label>
-            <select
-              id="create-task-priority"
-              value={priority ?? ""}
+            <textarea
+              id="create-task-description"
+              value={description}
               disabled={locked}
-              onChange={(e) => setPriority(e.target.value ? (Number(e.target.value) as TaskPriority) : null)}
-              className={FIELD_CLASS}
-            >
-              <option value="">No priority</option>
-              {PRIORITIES.map((p) => (
-                <option key={p.value} value={p.value}>
-                  {p.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label htmlFor="create-task-due" className={LABEL_CLASS}>
-              Due date
-            </label>
-            <input
-              id="create-task-due"
-              type="date"
-              value={dueDate}
-              disabled={locked}
-              onChange={(e) => setDueDate(e.target.value)}
-              className={FIELD_CLASS}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={4}
+              className={`${FIELD_CLASS} resize-y placeholder:text-text-tertiary`}
+              placeholder={item.kind === "ticket" ? "Velo adds the ticket link below what you write." : undefined}
             />
           </div>
-        </div>
-        <fieldset>
-          <legend className={LABEL_CLASS}>Assignees</legend>
-          {membersError ? (
-            <p className="text-meta text-danger">{membersError}</p>
-          ) : members === null ? (
-            <p className="text-meta text-text-tertiary">
-              {listId ? "Reading the list's members…" : "Choose a list first."}
-            </p>
-          ) : members.length === 0 ? (
-            <p className="text-meta text-text-tertiary">Nobody can be assigned in this list.</p>
-          ) : (
-            <div className="flex flex-wrap gap-x-4 gap-y-1.5">
-              {members.map((m) => (
-                <label key={m.userId} className="inline-flex items-center gap-1.5 text-sm text-text-primary">
-                  <input
-                    type="checkbox"
-                    checked={assigneeIds.includes(m.userId)}
-                    disabled={locked}
-                    onChange={() => toggleAssignee(m.userId)}
-                    className="accent-accent"
-                  />
-                  {m.name}
-                </label>
-              ))}
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label htmlFor="create-task-status" className={LABEL_CLASS}>
+                Status
+              </label>
+              <select
+                id="create-task-status"
+                value={status}
+                disabled={locked || !list}
+                onChange={(e) => setStatus(e.target.value)}
+                className={FIELD_CLASS}
+              >
+                {list?.statuses.map((s, i) => (
+                  <option key={s} value={i === 0 ? "" : s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label htmlFor="create-task-priority" className={LABEL_CLASS}>
+                Priority
+              </label>
+              <select
+                id="create-task-priority"
+                value={priority ?? ""}
+                disabled={locked}
+                onChange={(e) => setPriority(e.target.value ? (Number(e.target.value) as TaskPriority) : null)}
+                className={FIELD_CLASS}
+              >
+                <option value="">No priority</option>
+                {PRIORITIES.map((p) => (
+                  <option key={p.value} value={p.value}>
+                    {p.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label htmlFor="create-task-due" className={LABEL_CLASS}>
+                Due date
+              </label>
+              <input
+                id="create-task-due"
+                type="date"
+                value={dueDate}
+                disabled={locked}
+                onChange={(e) => setDueDate(e.target.value)}
+                className={`${FIELD_CLASS} dark:[color-scheme:dark]`}
+              />
+            </div>
+          </div>
+          <fieldset>
+            <legend className={LABEL_CLASS}>Assignees</legend>
+            {membersError ? (
+              <p className="text-meta text-danger">{membersError}</p>
+            ) : members === null ? (
+              <p className="text-meta text-text-tertiary">
+                {listId ? "Reading the list's members…" : "Choose a list first."}
+              </p>
+            ) : members.length === 0 ? (
+              <p className="text-meta text-text-tertiary">Nobody can be assigned in this list.</p>
+            ) : (
+              <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+                {members.map((m) => (
+                  <label key={m.userId} className="inline-flex items-center gap-1.5 text-sm text-text-primary">
+                    <input
+                      type="checkbox"
+                      checked={assigneeIds.includes(m.userId)}
+                      disabled={locked}
+                      onChange={() => toggleAssignee(m.userId)}
+                      className="accent-accent"
+                    />
+                    {m.name}
+                  </label>
+                ))}
+              </div>
+            )}
+          </fieldset>
+          {item.kind === "ticket" && (
+            <div className="rounded-md border border-border-primary px-3 py-2">
+              <p id="create-task-backlinks" className="text-meta text-text-secondary mb-1">
+                Velo then writes these backlinks:
+              </p>
+              <ul aria-label="Backlinks Velo writes" className="list-disc pl-5 text-meta text-text-primary">
+                {BACKLINK_STEPS.map((step) => (
+                  <li key={step}>
+                    {BACKLINK_LABELS[step]}
+                    {step === "ticketIdField" && fieldGap && (
+                      <span className="text-text-tertiary"> (skipped for this list)</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
-        </fieldset>
-        {item.kind === "ticket" && (
-          <div className="rounded-md border border-border-primary px-3 py-2">
-            <p id="create-task-backlinks" className="text-meta text-text-secondary mb-1">
-              Velo then writes these backlinks:
-            </p>
-            <ul aria-label="Backlinks Velo writes" className="list-disc pl-5 text-meta text-text-primary">
-              {BACKLINK_STEPS.map((step) => (
-                <li key={step}>{BACKLINK_LABELS[step]}</li>
-              ))}
-            </ul>
-          </div>
-        )}
-        {unconfirmed && (
-          <div
-            role="alert"
-            className="rounded-md border border-status-warning/40 bg-status-warning/10 px-3 py-2 space-y-2"
-          >
-            <p className="text-meta text-text-primary">{unconfirmed.message}</p>
-            <Button
-              size="sm"
-              variant="secondary"
-              {...writable.controlProps}
-              disabled={busy || writable.controlProps.disabled}
-              onClick={() => void run(() => reconcileTaskCreation(unconfirmed.operationId))}
+          {unconfirmed && (
+            <div
+              role="alert"
+              className="rounded-md border border-status-warning/40 bg-status-warning/10 px-3 py-2 space-y-2"
             >
-              <RefreshCw size={13} aria-hidden />
-              Check ClickUp
-            </Button>
-          </div>
-        )}
-        {error && (
-          <p role="alert" className="text-meta text-danger">
-            {error}
-          </p>
-        )}
-        <div className="flex items-center justify-end gap-2 pt-1">
+              <p className="text-meta text-text-primary">{unconfirmed.message}</p>
+              <Button
+                size="sm"
+                variant="secondary"
+                {...writable.controlProps}
+                disabled={busy || writable.controlProps.disabled}
+                onClick={() => void run(() => reconcileTaskCreation(unconfirmed.operationId))}
+              >
+                <RefreshCw size={13} aria-hidden />
+                Check ClickUp
+              </Button>
+            </div>
+          )}
+          {error && (
+            <p role="alert" className="text-meta text-danger">
+              {error}
+            </p>
+          )}
+        </div>
+        <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-border-primary">
           <FreshdeskWriteReason writable={writable} className="text-meta text-text-tertiary mr-auto" />
           <Button type="button" variant="secondary" size="md" onClick={onClose}>
             {unconfirmed ? "Close" : "Cancel"}
