@@ -3,6 +3,7 @@
  * always through Freshdesk's own API (never Gmail/SMTP). Every send is a
  * journalled remote write; it needs a connection and is never queued.
  */
+import { isEmailAddress, uniqueValidAddresses } from "./emailAddress";
 import { useUIStore } from "@/stores/uiStore";
 import { withReadSnapshot } from "@/services/db/connection";
 import { getAgents, getFieldChoices, getIntegrationAccount, getStatusClasses } from "@/services/db/freshdesk";
@@ -154,6 +155,11 @@ function failureMessage(error: FreshdeskError): string {
  * acted since the draft started, nothing is sent and the changes come back.
  */
 export async function sendTicketResponse(request: TicketSendRequest): Promise<TicketSendResult> {
+  const invalid = request.mode === "reply" ? (request.ccEmails ?? []).filter((e) => !isEmailAddress(e.trim())) : [];
+  if (invalid.length > 0) {
+    const shown = invalid.map((e) => e.replace(/\s+/g, " ").slice(0, 60)).join(", ");
+    return { outcome: "failed", message: `Not an email address: ${shown}. Nothing was sent.` };
+  }
   if (!useUIStore.getState().isOnline) return { outcome: "unavailable", message: OFFLINE_MESSAGE };
   const current = await currentCredentials();
   if (!current) return { outcome: "unavailable", message: SAMPLE_MESSAGE };
@@ -191,7 +197,7 @@ export async function sendTicketResponse(request: TicketSendRequest): Promise<Ti
 
   const draft = sanitizeHtml(request.bodyHtml);
   const body = outgoingBody(mode, draft, account?.me?.signature);
-  const ccEmails = mode === "reply" ? (request.ccEmails ?? []) : [];
+  const ccEmails = mode === "reply" ? uniqueValidAddresses(request.ccEmails ?? []) : [];
   const payload = mode === "reply" ? { body, ...(ccEmails.length > 0 && { cc_emails: ccEmails }) } : { body, private: true };
   const record: SendRecord = { mode, sentAfter: nowS(), fingerprint: squash(textOf(draft)).slice(0, 200), ccEmails, thenStatusId };
   const entryId = await startJournalEntry(tenantId, ticketId, mode === "reply" ? "send_reply" : "add_note", { ...record });
