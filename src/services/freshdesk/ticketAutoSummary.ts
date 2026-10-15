@@ -7,6 +7,9 @@
  * all (online, switch on) is the caller's `canRun`, asked when it is due.
  */
 
+/** Settings → AI: summaries update by themselves unless this is "false" */
+export const AUTO_SUMMARY_SETTING = "ticket_summary_auto_update";
+
 /** Quick messages within this wait become one refresh */
 export const AUTO_SUMMARY_DEBOUNCE_MS = 15_000;
 /** Automatic refreshes of one ticket start at least this far apart */

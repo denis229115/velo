@@ -6,6 +6,7 @@ import { useAccountStore } from "@/stores/accountStore";
 import { getSetting, setSetting, getSecureSetting, setSecureSetting } from "@/services/db/settings";
 import { TimeZoneSettings } from "./TimeZoneSettings";
 import { AiProviderSettings } from "./AiProviderSettings";
+import { TicketSummaryAutoUpdate } from "./TicketSummaryAutoUpdate";
 import { FreshdeskSettings } from "./FreshdeskSettings";
 import { ClickUpSettings } from "./ClickUpSettings";
 import { deleteAccount } from "@/services/db/accounts";
@@ -1052,6 +1053,7 @@ export function SettingsPage() {
                         await setSetting("ai_auto_summarize", newVal ? "true" : "false");
                       }}
                     />
+                    <TicketSummaryAutoUpdate />
                   </Section>
 
                   <Section title="Auto-Draft Replies">

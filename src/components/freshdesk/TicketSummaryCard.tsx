@@ -18,14 +18,12 @@ import {
 } from "@/services/freshdesk/ticketAi";
 import {
   AUTO_SUMMARY_DEBOUNCE_MS,
+  AUTO_SUMMARY_SETTING,
   AUTO_SUMMARY_MIN_INTERVAL_MS,
   createAutoSummaryRefresher,
   type AutoSummaryPhase,
   type AutoSummaryRefresher,
 } from "@/services/freshdesk/ticketAutoSummary";
-
-/** Settings → AI: refresh the summary of the open ticket when new public messages arrive (on unless "false") */
-export const AUTO_SUMMARY_SETTING = "ticket_summary_auto_update";
 
 // The gateway refused or the operator cancelled: nothing left Velo, so say so rather than report a failure
 const NOT_SENT_CODES = new Set(["CANCELLED", "PREVIEW_REQUIRED", "SENSITIVE_DATA", "NOT_CONFIGURED", "NOT_APPROVED", "PROVIDER_REFUSED"]);
