@@ -242,4 +242,4 @@ The local record of every AI request: when, which feature, which provider and mo
 Editable text the AI proposes for the operator; it never sends and never overwrites the operator's edits without a replace-or-insert choice.
 
 **Ticket summary**:
-A Velo-only AI overview of a ticket; never written into Freshdesk.
+A Velo-only AI overview of a ticket; never written into Freshdesk. While one is on screen, a new public message refreshes it by itself (never an internal note, never in the background for a ticket that is not open); the old summary stays, labelled Updating, until the new one replaces it, and Out of date when no update is coming.
