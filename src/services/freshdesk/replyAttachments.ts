@@ -56,8 +56,9 @@ export function attachmentLimitProblem(files: readonly { size: number }[]): stri
 
 /** Why a file can't join the files already attached, or null when it can */
 export function attachRefusal(name: string, attached: readonly { size: number }[], size: number): string | null {
-  const problem = attachmentLimitProblem([...attached, { size }]);
-  return problem ? `${cleanAttachmentName(name)} was not attached. ${problem.replace(/ Remove files to send\.$/, "")}` : null;
+  const total = attached.reduce((sum, f) => sum + f.size, size);
+  if (total <= MAX_ATTACHMENT_TOTAL_BYTES) return null;
+  return `${cleanAttachmentName(name)} was not attached. With it, the attachments would add up to ${formatAttachmentSize(total)}; Freshdesk accepts at most ${formatAttachmentSize(MAX_ATTACHMENT_TOTAL_BYTES)} per reply or note.`;
 }
 
 function blobOf(file: ReplyAttachment): Blob {
