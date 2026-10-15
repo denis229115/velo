@@ -85,6 +85,34 @@ describe("sending a reply to the customer (A09)", () => {
   });
 });
 
+describe("CC addresses of a reply", () => {
+  it("sends valid CC addresses in the reply call", async () => {
+    const baseline = await captureStalenessBaseline("1001");
+
+    const result = await sendTicketResponse({ ticketId: "1001", mode: "reply", bodyHtml: "<p>Hi</p>", ccEmails: ["boss@example.test", "team.lead@example.test"], baseline });
+
+    expect(result).toEqual({ outcome: "sent" });
+    expect(posts()[0]!.body).toMatchObject({ cc_emails: ["boss@example.test", "team.lead@example.test"] });
+  });
+
+  it("rejects text that is not an email address before anything is sent or even looked up", async () => {
+    const baseline = await captureStalenessBaseline("1001");
+    stub.requests.length = 0;
+
+    const result = await sendTicketResponse({
+      ticketId: "1001",
+      mode: "reply",
+      bodyHtml: "<p>Hi</p>",
+      ccEmails: ["boss@example.test", "not an address", "a@example.test\r\nBcc: x@example.test"],
+      baseline,
+    });
+
+    expect(result).toEqual({ outcome: "failed", message: expect.stringContaining("not an address") });
+    expect(stub.requests).toEqual([]);
+    expect((await getOperationJournal("1001")).map((e) => e.operation)).not.toContain("send_reply");
+  });
+});
+
 describe("adding an internal note (A09)", () => {
   it("posts a private note through Freshdesk's notes call, without signature or CC", async () => {
     const baseline = await captureStalenessBaseline("1001");

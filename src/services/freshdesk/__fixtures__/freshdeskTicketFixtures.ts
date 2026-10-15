@@ -44,6 +44,9 @@ function ticket(
     source: 1,
     type: null,
     tags: [],
+    cc_emails: [],
+    reply_cc_emails: [],
+    fwd_emails: [],
     is_escalated: false,
     due_by: iso(-DAY),
     fr_due_by: iso(-DAY),
@@ -68,6 +71,36 @@ export const alphaTenantWithTickets: FreshdeskFixtureTenant = {
   ...alphaTenant,
   tickets: fixtureTickets,
   contacts: fixtureContacts,
+};
+
+/**
+ * Tickets with CC lists as Freshdesk API v2 returns them: cc_emails (copied on the
+ * ticket), reply_cc_emails (copied on replies) and fwd_emails (forwarded to).
+ * 1101 has all three (one address repeats across lists, one differs in case, one
+ * is the customer's own address); 1102 has none; 1103 holds text that is not an address.
+ */
+export const CC_TICKET_ID = "1101";
+export const NO_CC_TICKET_ID = "1102";
+export const UNTRUSTED_CC_TICKET_ID = "1103";
+export const ccFixtureTickets: FixtureTicket[] = [
+  {
+    ...ticket(1101, "Fixture: copied colleagues", 2, 2, ME_ID, DAY),
+    cc_emails: ["cc.one@example.test", "Cc.Two@example.test", "ada.fixture@example.test"],
+    reply_cc_emails: ["CC.ONE@example.test", "reply.only@example.test"],
+    fwd_emails: ["forward.person@example.test"],
+  },
+  ticket(1102, "Fixture: nobody copied", 2, 2, ME_ID, 2 * DAY),
+  {
+    ...ticket(1103, "Fixture: odd copy list", 2, 2, ME_ID, 3 * DAY),
+    cc_emails: ["fine.one@example.test", "not an address", "evil@example.test\r\nBcc: x@example.test"],
+    reply_cc_emails: [],
+  },
+];
+
+/** Alpha helpdesk with the ordinary fixture tickets plus the CC ones. */
+export const alphaTenantWithCcTickets: FreshdeskFixtureTenant = {
+  ...alphaTenantWithTickets,
+  tickets: [...fixtureTickets, ...ccFixtureTickets],
 };
 
 export const rateLimited = { status: 429, body: { message: "You have exceeded the limit of requests per minute" }, headers: { "Retry-After": "42" } };
