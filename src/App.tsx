@@ -32,6 +32,10 @@ import {
   stopScheduledSendChecker,
 } from "./services/snooze/scheduledSendManager";
 import {
+  startScheduledReplyChecker,
+  stopScheduledReplyChecker,
+} from "./services/freshdesk/scheduledReplies";
+import {
   startFollowUpChecker,
   stopFollowUpChecker,
 } from "./services/followup/followupManager";
@@ -353,6 +357,7 @@ export default function App() {
         // Start snooze, scheduled send, follow-up, bundle, and queue checkers
         startSnoozeChecker();
         startScheduledSendChecker();
+        startScheduledReplyChecker();
         startFollowUpChecker();
         startBundleChecker();
         startQueueProcessor();
@@ -395,6 +400,7 @@ export default function App() {
       stopBackgroundSync();
       stopSnoozeChecker();
       stopScheduledSendChecker();
+      stopScheduledReplyChecker();
       stopFollowUpChecker();
       stopBundleChecker();
       stopQueueProcessor();

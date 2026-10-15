@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { createSqliteTestDb, type SqliteTestDb } from "@/test/sqliteTestDb";
 import { createFreshdeskFetchStub } from "@/test/freshdeskFetchStub";
 import { ALPHA_HOST } from "./__fixtures__/freshdeskFixtures";
-import { COLLEAGUE_ID, FIXTURE_NOW } from "./__fixtures__/freshdeskTicketFixtures";
+import { COLLEAGUE_ID, FIXTURE_NOW, ME_ID } from "./__fixtures__/freshdeskTicketFixtures";
 import { alphaTenantWithHistory } from "./__fixtures__/freshdeskConversationFixtures";
 
 let db: SqliteTestDb;
@@ -39,11 +39,22 @@ vi.mock("@/services/notifications/notificationManager", () => ({
 }));
 
 import { runMigrations } from "@/services/db/migrations";
-import { classifyStatus, connectHelpdesk } from "./connection";
+import { moveScheduledReply } from "@/services/db/freshdeskScheduledReplies";
+import { startJournalEntry } from "@/services/db/freshdeskJournal";
+import { classifyStatus, connectHelpdesk, currentTenantId } from "./connection";
 import { syncTickets } from "./ticketSync";
 import { getOperationJournal } from "./ticketEdits";
 import { loadTicketDraft, saveTicketDraft } from "./ticketDrafts";
-import { listScheduledReplies, processDueScheduledReplies, scheduleTicketReply } from "./scheduledReplies";
+import {
+  cancelScheduledReply,
+  editScheduledReply,
+  listScheduledReplies,
+  MAX_ATTEMPTS,
+  processDueScheduledReplies,
+  recoverInterruptedScheduledReplies,
+  scheduleTicketReply,
+  sendScheduledReplyNow,
+} from "./scheduledReplies";
 import { useUIStore } from "@/stores/uiStore";
 
 vi.spyOn(console, "log").mockImplementation(() => {});
@@ -198,5 +209,177 @@ describe("the status to set after a scheduled reply (A26)", () => {
     const sent = (await listScheduledReplies()).find((r) => r.id === id);
     expect(sent?.state).toBe("sent");
     expect(sent?.statusProblem).toMatch(/Status is locked/);
+  });
+});
+
+describe("a scheduled reply due while offline", () => {
+  it("waits without using up attempts, then checks the ticket again before sending once online", async () => {
+    const id = await scheduleReply();
+    later(HOUR_S * 1000);
+    useUIStore.setState({ isOnline: false });
+
+    for (let i = 0; i < 8; i++) {
+      await processDueScheduledReplies();
+      later(HOUR_S * 1000);
+    }
+    expect(stub.requests).toEqual([]);
+    expect((await listScheduledReplies()).find((r) => r.id === id)).toMatchObject({ state: "pending", error: null });
+
+    stub.addConversation(ALPHA_HOST, 1001, { user_id: 5000000001, incoming: true, body: "<p>Hello?</p>" });
+    useUIStore.setState({ isOnline: true });
+    await processDueScheduledReplies();
+
+    expect(stub.requests.map((r) => `${r.method} ${new URL(r.url).pathname}`)[0]).toBe("GET /api/v2/tickets/1001");
+    expect(writes()).toEqual([]);
+    expect((await listScheduledReplies()).find((r) => r.id === id)).toMatchObject({ state: "held", holdReasons: ["The customer wrote."] });
+  });
+});
+
+describe("the operator deciding about a held reply", () => {
+  async function heldReply() {
+    const id = await scheduleReply();
+    later(60_000);
+    stub.addConversation(ALPHA_HOST, 1001, { user_id: COLLEAGUE_ID, body: "<p>I've got this one.</p>" });
+    later(HOUR_S * 1000);
+    await processDueScheduledReplies();
+    stub.requests.length = 0;
+    return id;
+  }
+  const reply = async (id: string) => (await listScheduledReplies()).find((r) => r.id === id);
+
+  it("sends it anyway, having seen the change", async () => {
+    const id = await heldReply();
+
+    expect(await sendScheduledReplyNow(id)).toBeNull();
+
+    expect(posts().map((r) => new URL(r.url).pathname)).toEqual(["/api/v2/tickets/1001/reply"]);
+    expect(await reply(id)).toMatchObject({ state: "sent" });
+  });
+
+  it("holds it again instead when the ticket changed once more since it was held", async () => {
+    const id = await heldReply();
+    later(60_000);
+    stub.addConversation(ALPHA_HOST, 1001, { user_id: 5000000001, incoming: true, body: "<p>Hello?</p>" });
+
+    expect(await sendScheduledReplyNow(id)).toMatch(/changed again/);
+
+    expect(writes()).toEqual([]);
+    expect(await reply(id)).toMatchObject({ state: "held", holdReasons: ["The customer wrote."] });
+  });
+
+  it("moves it back into the ticket's reply draft to edit, removing it from the schedule", async () => {
+    const id = await heldReply();
+
+    expect(await editScheduledReply(id)).toEqual({ ok: true, ticketId: "1001" });
+
+    expect((await loadTicketDraft("1001", "reply"))?.bodyHtml).toBe("<p>We fixed your sign-in.</p>");
+    expect(await reply(id)).toBeUndefined();
+  });
+
+  it("does not overwrite a reply draft the operator started meanwhile", async () => {
+    const id = await heldReply();
+    await saveTicketDraft("1001", "reply", { bodyHtml: "<p>A newer thought.</p>" });
+
+    expect(await editScheduledReply(id)).toMatchObject({ ok: false });
+
+    expect((await loadTicketDraft("1001", "reply"))?.bodyHtml).toBe("<p>A newer thought.</p>");
+    expect(await reply(id)).toMatchObject({ state: "held" });
+  });
+
+  it("cancels it: nothing is sent, ever", async () => {
+    const id = await heldReply();
+
+    expect(await cancelScheduledReply(id)).toBe(true);
+    later(HOUR_S * 1000);
+    await processDueScheduledReplies();
+
+    expect(await reply(id)).toBeUndefined();
+    expect(writes()).toEqual([]);
+  });
+
+  it("cannot send it while offline; nothing is queued", async () => {
+    const id = await heldReply();
+    useUIStore.setState({ isOnline: false });
+
+    expect(await sendScheduledReplyNow(id)).toMatch(/connection/);
+    useUIStore.setState({ isOnline: true });
+    later(HOUR_S * 1000);
+    await processDueScheduledReplies();
+
+    expect(stub.requests).toEqual([]);
+    expect(await reply(id)).toMatchObject({ state: "held" });
+  });
+});
+
+describe("changing a pending scheduled reply", () => {
+  it("can be cancelled or moved back to the draft before it is due", async () => {
+    const first = await scheduleReply();
+    expect(await editScheduledReply(first)).toEqual({ ok: true, ticketId: "1001" });
+    const second = await scheduleReply();
+    expect(await cancelScheduledReply(second)).toBe(true);
+
+    later(HOUR_S * 1000);
+    await processDueScheduledReplies();
+
+    expect(await listScheduledReplies()).toEqual([]);
+    expect(writes()).toEqual([]);
+  });
+});
+
+describe("a scheduled reply Freshdesk keeps refusing", () => {
+  it("is tried a bounded number of times with backoff, then fails visibly and is not tried again", async () => {
+    const id = await scheduleReply();
+    for (let i = 0; i < MAX_ATTEMPTS + 2; i++) {
+      stub.respondOnce(ALPHA_HOST, "/api/v2/tickets/1001/reply", { method: "POST", status: 500, body: {} });
+    }
+    later(HOUR_S * 1000);
+
+    await processDueScheduledReplies();
+    await processDueScheduledReplies(); // still backing off
+    expect(posts()).toHaveLength(1);
+    for (let i = 0; i < 10; i++) {
+      later(2 * HOUR_S * 1000);
+      await processDueScheduledReplies();
+    }
+
+    expect(posts()).toHaveLength(MAX_ATTEMPTS);
+    expect((await listScheduledReplies()).find((r) => r.id === id)).toMatchObject({ state: "failed" });
+    expect(notified.map((n) => n.title)).toEqual(["failed"]);
+  });
+});
+
+describe("a scheduled reply interrupted by a crash or quit while sending", () => {
+  /** The background run took the reply, then Velo stopped */
+  async function interrupted(options: { postStarted: boolean }) {
+    const id = await scheduleReply();
+    later(HOUR_S * 1000);
+    const claimedAt = Math.floor(Date.now() / 1000);
+    await moveScheduledReply(id, ["pending"], "sending", { claimedAt, attempts: 1 });
+    // What the send journals just before it posts
+    const record = { mode: "reply", sentAfter: claimedAt, fingerprint: "Wefixedyoursign-in.", ccEmails: [], thenStatusId: null };
+    if (options.postStarted) await startJournalEntry(await currentTenantId(), "1001", "send_reply", record);
+    return id;
+  }
+
+  it("is sent normally when it never reached Freshdesk", async () => {
+    const id = await interrupted({ postStarted: false });
+
+    await recoverInterruptedScheduledReplies();
+    await processDueScheduledReplies();
+
+    expect(posts()).toHaveLength(1);
+    expect((await listScheduledReplies()).find((r) => r.id === id)).toMatchObject({ state: "sent" });
+  });
+
+  it("is Unconfirmed when its send had started, and reconciliation finds it without posting again", async () => {
+    const id = await interrupted({ postStarted: true });
+    stub.addConversation(ALPHA_HOST, 1001, { user_id: ME_ID, body: "<p>We fixed your sign-in.</p>" });
+
+    await recoverInterruptedScheduledReplies();
+    expect((await listScheduledReplies()).find((r) => r.id === id)).toMatchObject({ state: "unconfirmed" });
+    await processDueScheduledReplies();
+
+    expect(posts()).toEqual([]);
+    expect((await listScheduledReplies()).find((r) => r.id === id)).toMatchObject({ state: "sent" });
   });
 });
