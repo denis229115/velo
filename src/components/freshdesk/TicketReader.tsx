@@ -15,6 +15,7 @@ import { useTicketEditControls } from "./TicketEditControls";
 import { TicketHeader } from "./TicketHeader";
 import { FreshdeskWriteReason } from "./useFreshdeskWritable";
 import { TicketComposer } from "./TicketComposer";
+import { TicketSummaryCard, ticketEntryAnchor } from "./TicketSummaryCard";
 import type { ComposerMode } from "@/services/freshdesk/ticketSend";
 
 function formatSize(bytes: number | null): string | null {
@@ -52,10 +53,11 @@ function Attachments({ attachments }: { attachments: ConversationAttachment[] })
   );
 }
 
-function Entry({ entry }: { entry: HistoryEntry }) {
+/** One message of the history; `n` is its number, which summary references cite */
+function Entry({ entry, n }: { entry: HistoryEntry; n: number }) {
   const internal = entry.visibility === "internal";
   return (
-    <li>
+    <li id={ticketEntryAnchor(entry.id)} className="scroll-mt-4">
       <article
         aria-label={`${entry.kind === "request" ? "Original request" : "Conversation"} by ${entry.author}`}
         className={`rounded-lg border px-4 py-3 ${
@@ -72,6 +74,7 @@ function Entry({ entry }: { entry: HistoryEntry }) {
             </span>
           )}
           <span className="ml-auto shrink-0 text-meta text-text-tertiary">
+            <span className="font-mono text-micro mr-2" title={`Message ${n}`}>#{n}</span>
             <Timestamp at={entry.at} />
           </span>
         </header>
@@ -95,7 +98,7 @@ function History({ entries }: { entries: HistoryEntry[] }) {
   const hidden = expanded ? 0 : Math.max(0, conversations.length - RECENT_ENTRIES);
   return (
     <ol aria-label="Conversation history" className="flex flex-col gap-3 max-w-4xl">
-      {request && <Entry entry={request} />}
+      {request && <Entry entry={request} n={1} />}
       {hidden > 0 && (
         <li>
           <button
@@ -107,8 +110,8 @@ function History({ entries }: { entries: HistoryEntry[] }) {
           </button>
         </li>
       )}
-      {conversations.slice(hidden).map((entry) => (
-        <Entry key={entry.id} entry={entry} />
+      {conversations.slice(hidden).map((entry, i) => (
+        <Entry key={entry.id} entry={entry} n={hidden + i + 2} />
       ))}
     </ol>
   );
@@ -175,8 +178,9 @@ export function TicketReader({ ticket, ticketId }: { ticket: TicketListItem | nu
             }
           />
           {editor.element}
+          <TicketSummaryCard key={ticket.id} ticket={ticket} view={view} />
           {composerMode && (
-            <TicketComposer ticket={ticket} mode={composerMode} onModeChange={compose} onClose={() => setComposing(null)} />
+            <TicketComposer ticket={ticket} history={view} mode={composerMode} onModeChange={compose} onClose={() => setComposing(null)} />
           )}
           <HistoryNotice view={view} />
           {view && view.entries.length > 0 && <History key={view.ticketId} entries={view.entries} />}
