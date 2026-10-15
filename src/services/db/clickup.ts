@@ -60,6 +60,7 @@ const CLICKUP_TENANT_TABLES = [
   ["clickup_tasks", "tenant_id"],
   ["clickup_sync_state", "tenant_id"],
   ["task_links", "workspace_id"],
+  ["clickup_task_operations", "workspace_id"],
 ] as const;
 
 interface WorkspaceRow {

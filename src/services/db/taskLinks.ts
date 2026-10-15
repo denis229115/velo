@@ -14,6 +14,28 @@ export interface LinkKey {
   workspaceId: string;
 }
 
+/** The three Backlinks of a ticket link, in the order they are written */
+export const BACKLINK_STEPS = ["description", "ticketIdField", "internalNote"] as const;
+export type BacklinkStep = (typeof BACKLINK_STEPS)[number];
+
+export type BacklinkState =
+  | "pending"
+  | "done"
+  | "failed"
+  /** Sent, but the answer never came: settled by reconciliation before any new write */
+  | "unconfirmed"
+  /** Not written, for a reason the operator is told (no Ticket-ID field on the list) */
+  | "skipped";
+
+export interface BacklinkRecord {
+  state: BacklinkState;
+  message: string | null;
+  /** The Freshdesk operation journal entry of the internal note */
+  entryId?: number;
+}
+
+export type Backlinks = Partial<Record<BacklinkStep, BacklinkRecord>>;
+
 export interface TaskLink extends LinkKey {
   id: number;
   taskId: string;
@@ -22,6 +44,8 @@ export interface TaskLink extends LinkKey {
   createdAt: number;
   origin: LinkOrigin;
   state: string;
+  /** Empty for email links, which have no backlinks */
+  backlinks: Backlinks;
 }
 
 interface LinkRow {
@@ -35,6 +59,16 @@ interface LinkRow {
   created_at: number;
   origin: LinkOrigin;
   state: string;
+  backlinks_json: string;
+}
+
+function parseBacklinks(json: string): Backlinks {
+  try {
+    const value = JSON.parse(json) as unknown;
+    return value && typeof value === "object" ? (value as Backlinks) : {};
+  } catch {
+    return {};
+  }
 }
 
 function linkFromRow(r: LinkRow): TaskLink {
@@ -49,6 +83,7 @@ function linkFromRow(r: LinkRow): TaskLink {
     createdAt: r.created_at,
     origin: r.origin,
     state: r.state,
+    backlinks: parseBacklinks(r.backlinks_json),
   };
 }
 
@@ -64,6 +99,20 @@ export async function insertTaskLink(
     [key.itemKind, key.scopeId, key.itemId, key.workspaceId, link.taskId, link.createdBy, link.origin],
   );
   return result.rowsAffected > 0;
+}
+
+/** Records one backlink step's outcome on the link (the journal of its stages). */
+export async function setLinkBacklink(key: LinkKey, taskId: string, step: BacklinkStep, record: BacklinkRecord): Promise<void> {
+  const db = await getDb();
+  await db.execute(
+    `UPDATE task_links SET backlinks_json = json_set(backlinks_json, $1, json($2))
+     WHERE item_kind = $3 AND scope_id = $4 AND item_id = $5 AND workspace_id = $6 AND task_id = $7`,
+    [`$.${step}`, JSON.stringify(record), key.itemKind, key.scopeId, key.itemId, key.workspaceId, taskId],
+  );
+}
+
+export async function getTaskLink(key: LinkKey, taskId: string): Promise<TaskLink | null> {
+  return (await getTaskLinks(key)).find((l) => l.taskId === taskId) ?? null;
 }
 
 /** Removes only this item's link to the task; other items' links and the task stay. */

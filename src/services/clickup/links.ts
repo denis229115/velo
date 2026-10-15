@@ -1,4 +1,6 @@
 import { createBackgroundChecker } from "@/services/backgroundCheckers";
+import { useUIStore } from "@/stores/uiStore";
+import { getTicketWebUrl } from "@/services/freshdesk/connection";
 import { getIntegrationAccount } from "@/services/db/freshdesk";
 import {
   getCachedTasks,
@@ -16,9 +18,14 @@ import {
   getTaskLinks,
   getTaskLinksInScope,
   insertTaskLink,
+  BACKLINK_STEPS,
+  type BacklinkState,
+  type BacklinkStep,
+  type Backlinks,
   type LinkKey,
   type LinkOrigin,
 } from "@/services/db/taskLinks";
+import { BACKLINK_LABELS, writeBacklinks, type BacklinkTarget } from "./backlinks";
 import { ClickUpError } from "./client";
 import { currentClickUpCredentials } from "./connection";
 import {
@@ -34,6 +41,15 @@ import {
 export type LinkedItem =
   | { kind: "ticket"; ticketId: string }
   | { kind: "email"; accountId: string; threadId: string };
+
+/** One Backlink step of a ticket link, as the operator sees it */
+export interface BacklinkView {
+  step: BacklinkStep;
+  label: string;
+  state: BacklinkState;
+  /** Why it failed or was skipped; never contains credentials */
+  message: string | null;
+}
 
 export interface RelatedTask {
   taskId: string;
@@ -56,6 +72,8 @@ export interface RelatedTask {
   origin: LinkOrigin;
   /** Unix ms */
   linkedAt: number;
+  /** The ticket link's backlinks, in writing order; empty for email links (one-way) */
+  backlinks: BacklinkView[];
 }
 
 export interface TaskRefreshStatus {
@@ -85,7 +103,10 @@ export const CLICKUP_AUTH_MESSAGE =
   "ClickUp rejected the API token; it may have expired or been revoked. Reconnect the workspace in Settings → ClickUp.";
 const RATE_LIMIT_MESSAGE = "ClickUp asked Velo to slow down. Task refresh resumes automatically.";
 
-const nowS = () => Math.floor(Date.now() / 1000);
+export const nowS = () => Math.floor(Date.now() / 1000);
+
+/** Why a remote write is not even tried: there is no connection. Nothing is queued. */
+export const NEEDS_CONNECTION_MESSAGE = "Needs a connection. Nothing was written and nothing is queued.";
 const MAX_BACKOFF_S = 60 * 60;
 /** Tasks read per refresh run, so a large set of links never floods ClickUp */
 const MAX_TASKS_PER_REFRESH = 25;
@@ -100,7 +121,7 @@ function timeOf(unixS: number): string {
   return new Date(unixS * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
-async function scopeFor(item: LinkedItem): Promise<string | null> {
+export async function scopeFor(item: LinkedItem): Promise<string | null> {
   if (item.kind === "email") return item.accountId;
   return (await getIntegrationAccount("freshdesk"))?.tenantId ?? null;
 }
@@ -109,7 +130,7 @@ function itemId(item: LinkedItem): string {
   return item.kind === "ticket" ? item.ticketId : item.threadId;
 }
 
-async function linkKey(item: LinkedItem, workspaceTenantId: string): Promise<LinkKey | null> {
+export async function linkKey(item: LinkedItem, workspaceTenantId: string): Promise<LinkKey | null> {
   const scopeId = await scopeFor(item);
   if (!scopeId) return null;
   return { itemKind: item.kind, scopeId, itemId: itemId(item), workspaceId: workspaceTenantId };
@@ -164,7 +185,7 @@ async function recordSuccess(tenantId: string): Promise<void> {
 }
 
 /** Throws instead of calling ClickUp while a Retry-After wait runs. */
-async function assertNotWaiting(tenantId: string): Promise<void> {
+export async function assertNotWaiting(tenantId: string): Promise<void> {
   const state = await getClickUpSyncState(tenantId);
   const now = nowS();
   if (state.retryAfterUntil !== null && state.retryAfterUntil > now) {
@@ -178,7 +199,7 @@ async function assertNotWaiting(tenantId: string): Promise<void> {
 }
 
 /** A user-facing error for a failed operator action, after recording it. */
-async function failAction(tenantId: string, err: unknown): Promise<never> {
+export async function failAction(tenantId: string, err: unknown): Promise<never> {
   if (err instanceof ClickUpError && (err.kind === "not_found" || err.kind === "not_in_workspace")) throw err;
   const recorded = await recordFailure(tenantId, err);
   if (recorded.state === "auth_error") throw new ClickUpError("auth", CLICKUP_AUTH_MESSAGE);
@@ -188,7 +209,7 @@ async function failAction(tenantId: string, err: unknown): Promise<never> {
   throw err;
 }
 
-async function requireLinkContext(item: LinkedItem) {
+export async function requireLinkContext(item: LinkedItem) {
   const credentials = await currentClickUpCredentials();
   if (!credentials) throw new Error("Connect a ClickUp workspace in Settings → ClickUp to link tasks.");
   const key = await linkKey(item, credentials.tenantId);
@@ -196,14 +217,29 @@ async function requireLinkContext(item: LinkedItem) {
   return { credentials, key };
 }
 
+/** A ticket link's backlink target; null for email links, which have none */
+export async function backlinkTarget(
+  item: LinkedItem,
+  key: LinkKey,
+  credentials: { tenantId: string; token: string },
+  task: { taskId: string; url: string; name: string },
+): Promise<BacklinkTarget | null> {
+  if (item.kind !== "ticket") return null;
+  const ticketUrl = await getTicketWebUrl(item.ticketId);
+  if (!ticketUrl) return null;
+  return { key, credentials, ticketId: item.ticketId, ticketUrl, taskId: task.taskId, taskUrl: task.url, taskName: task.name };
+}
+
 /**
- * Links an existing task to the item. The pasted URL or ID (or a search
- * result's task ID) is verified through ClickUp first; nothing is written to
- * ClickUp or Freshdesk.
+ * Links an existing task to the item, once the operator has confirmed it.
+ * The pasted URL or ID (or a search result's task ID) is verified through
+ * ClickUp first. A ticket link then writes its three backlinks; an email link
+ * writes nothing to ClickUp.
  */
 export async function linkTask(item: LinkedItem, reference: string | { taskId: string }): Promise<RelatedTask> {
   const ref: TaskReference | null = typeof reference === "string" ? parseTaskReference(reference) : reference;
   if (!ref) throw new ClickUpError("not_found", "That is not a ClickUp task URL or ID.");
+  if (!useUIStore.getState().isOnline) throw new Error(NEEDS_CONNECTION_MESSAGE);
   const { credentials, key } = await requireLinkContext(item);
   await assertNotWaiting(credentials.tenantId);
 
@@ -220,6 +256,9 @@ export async function linkTask(item: LinkedItem, reference: string | { taskId: s
   const inserted = await insertTaskLink(key, { taskId: cached.taskId, createdBy: me?.userId ?? null, origin: "linked" });
   if (!inserted) throw new Error(`“${cached.name}” is already linked here.`);
 
+  const target = await backlinkTarget(item, key, credentials, cached);
+  if (target) await writeBacklinks(target, [...BACKLINK_STEPS], {});
+
   const related = (await getRelatedTasks(item)).tasks.find((t) => t.taskId === cached.taskId);
   if (!related) throw new Error("The link could not be saved.");
   return related;
@@ -234,7 +273,17 @@ export async function unlinkTask(item: LinkedItem, taskId: string): Promise<void
   await deleteTaskLink(key, taskId);
 }
 
-function relatedFrom(link: { taskId: string; origin: LinkOrigin; createdAt: number }, task: CachedTask | undefined): RelatedTask {
+function backlinkViews(backlinks: Backlinks): BacklinkView[] {
+  return BACKLINK_STEPS.flatMap((step) => {
+    const record = backlinks[step];
+    return record ? [{ step, label: BACKLINK_LABELS[step], state: record.state, message: record.message }] : [];
+  });
+}
+
+function relatedFrom(
+  link: { taskId: string; origin: LinkOrigin; createdAt: number; backlinks: Backlinks },
+  task: CachedTask | undefined,
+): RelatedTask {
   return {
     taskId: link.taskId,
     customId: task?.customId ?? null,
@@ -250,6 +299,7 @@ function relatedFrom(link: { taskId: string; origin: LinkOrigin; createdAt: numb
     missing: task?.missing ?? false,
     origin: link.origin,
     linkedAt: link.createdAt * 1000,
+    backlinks: backlinkViews(link.backlinks),
   };
 }
 

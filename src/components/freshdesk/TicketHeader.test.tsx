@@ -370,6 +370,8 @@ describe("ticket header: linked work", () => {
     await connectWorkspace({ token: ALPHA_TOKEN });
     const item = { kind: "ticket" as const, ticketId: "1002" };
     await linkTask(item, "86a0exp01");
+    // The backlinks are written; what follows must change nothing in the helpdesk
+    freshdesk.requests.length = 0;
     clickup.replaceTask(alphaExportBugDone);
     await refreshRelatedTasks(item, { trigger: "manual" });
     renderFreshdesk("/freshdesk/ticket/1002");

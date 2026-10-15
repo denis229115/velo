@@ -79,7 +79,8 @@ describe("linking an existing task to a ticket", () => {
   it("verifies a pasted task URL through ClickUp and shows the task in Related tasks", async () => {
     await linkTask(ticket("101"), "https://app.clickup.com/t/86a0exp01");
 
-    expect(clickup.requests.map((r) => `${r.method} ${r.path}`)).toEqual(["GET /task/86a0exp01"]);
+    // Verified first; the ticket's backlinks follow (see taskCreate.test.ts)
+    expect(`${clickup.requests[0]?.method} ${clickup.requests[0]?.path}`).toBe("GET /task/86a0exp01");
     const related = await getRelatedTasks(ticket("101"));
     expect(related.state).toBe("ready");
     expect(related.tasks).toHaveLength(1);
@@ -137,6 +138,7 @@ describe("one task linked from two tickets (A15)", () => {
     await linkTask(ticket("101"), "86a0exp01");
     await linkTask(ticket("102"), "86a0exp01");
     clickup.requests.length = 0;
+    freshdesk.requests.length = 0;
 
     await unlinkTask(ticket("101"), "86a0exp01");
 
@@ -188,7 +190,7 @@ describe("linking by search", () => {
 
     await linkTask(ticket("101"), results[0]!.taskId);
 
-    expect(clickup.requests.map((r) => r.path)).toEqual(["/task/86a0inv02"]);
+    expect(`${clickup.requests[0]?.method} ${clickup.requests[0]?.path}`).toBe("GET /task/86a0inv02");
     expect((await searchTasksToLink(ticket("101"), "invoice"))[0]?.alreadyLinked).toBe(true);
   });
 });
@@ -197,6 +199,7 @@ describe("a linked task completing in ClickUp (A16)", () => {
   it("shows the task as done after a refresh and makes no request to the helpdesk", async () => {
     await linkTask(ticket("101"), "86a0exp01");
     clickup.replaceTask(alphaExportBugDone);
+    clickup.requests.length = 0;
     freshdesk.requests.length = 0;
 
     const view = await refreshRelatedTasks(ticket("101"), { trigger: "manual" });
