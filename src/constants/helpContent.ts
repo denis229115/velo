@@ -1302,6 +1302,20 @@ export const HELP_CATEGORIES: HelpCategory[] = [
         relatedSettingsTab: "freshdesk",
       },
       {
+        id: "freshdesk-ticket-ai",
+        icon: LifeBuoy,
+        title: "Ticket summary and AI reply drafts",
+        summary: "Summarise a ticket and draft a reply with AI, always under your control.",
+        description:
+          "With the Claude API approved in Settings > AI, the reader offers an AI summary: choose Summarize to see the issue, relevant facts, work done, the current blocker, unanswered questions and the next action. Each point cites the numbered messages it rests on; click a number to jump to that message. The summary stays in Velo and is never written to Freshdesk; it is kept until the ticket's public messages, status or priority change. In Reply to customer, choose a tone (friendly-professional, neutral or formal) and Draft reply, or Rewrite or Shorten what you wrote. The draft is in the customer's language and asks a clarifying question rather than inventing fixes, dates or commitments. It appears as a proposal: Use draft fills an empty reply; when you have written something, Replace or Insert decide what happens to your text, and Discard drops the proposal. Velo adds your Freshdesk signature when it sends, and nothing is sent until you choose Send reply. Only the subject, status, priority and the text of public messages are sent, with contact and payment details replaced by placeholders and secrets removed; internal notes, attachments, names and addresses never leave Velo. With AI off, failing or cancelled, reading and replying work as usual.",
+        tips: [
+          { text: "The send preview shows exactly what goes to the Claude API before the first request and whenever a new kind of data is included." },
+          { text: "Cancel stops waiting for a summary or draft; your reply stays as it was." },
+          { text: "AI drafts are offered on replies only, never on internal notes." },
+        ],
+        relatedSettingsTab: "ai",
+      },
+      {
         id: "clickup-links",
         icon: ListChecks,
         title: "Link ClickUp tasks to tickets",
