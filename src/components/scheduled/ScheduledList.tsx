@@ -93,14 +93,14 @@ export function ScheduledList({ items, busyIds, onCancel, onRetry, onEdit, onSen
                 <span aria-hidden>·</span>
                 <span className="truncate">To: {item.recipients}</span>
               </div>
-              {item.detail && <p className="mt-0.5 text-xs text-text-secondary break-words">{item.detail}</p>}
               {item.reasons && item.reasons.length > 0 && (
-                <ul className="mt-1 list-disc pl-4 text-xs text-text-secondary">
+                <ul aria-label="Why it is on hold" className="mt-1 list-disc pl-4 text-xs text-text-primary">
                   {item.reasons.map((reason) => (
                     <li key={reason}>{reason}</li>
                   ))}
                 </ul>
               )}
+              {item.detail && <p className="mt-0.5 text-xs text-text-secondary break-words">{item.detail}</p>}
               {item.error && (
                 <p className="mt-1 text-xs text-danger break-words">{item.error}</p>
               )}
