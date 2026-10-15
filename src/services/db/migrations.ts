@@ -1144,6 +1144,29 @@ const MIGRATIONS = [
       CREATE INDEX IF NOT EXISTS idx_freshdesk_scheduled_replies_due ON freshdesk_scheduled_replies(state, send_at);
     `,
   },
+  {
+    version: 35,
+    description: "Operation journal for ClickUp task creation, keyed by its operation marker",
+    sql: `
+      CREATE TABLE IF NOT EXISTS clickup_task_operations (
+        operation_id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        item_kind TEXT NOT NULL CHECK (item_kind IN ('ticket', 'email')),
+        scope_id TEXT NOT NULL,
+        item_id TEXT NOT NULL,
+        list_id TEXT NOT NULL,
+        task_name TEXT NOT NULL,
+        request_json TEXT NOT NULL,
+        outcome TEXT NOT NULL CHECK (outcome IN ('pending', 'confirmed', 'failed', 'unconfirmed')),
+        task_id TEXT,
+        error_message TEXT,
+        created_at INTEGER NOT NULL,
+        completed_at INTEGER
+      );
+      CREATE INDEX IF NOT EXISTS idx_clickup_task_operations_item
+        ON clickup_task_operations(workspace_id, item_kind, scope_id, item_id);
+    `,
+  },
 ];
 
 /**

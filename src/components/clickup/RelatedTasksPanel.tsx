@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { CircleCheck, ExternalLink, Link2, RefreshCw, Unlink } from "lucide-react";
+import { CircleCheck, ExternalLink, Link2, Plus, RefreshCw, Unlink } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { Timestamp, useDisplayTimeZone } from "@/components/ui/Timestamp";
+import { FreshdeskWriteReason, type FreshdeskWritable } from "@/components/freshdesk/useFreshdeskWritable";
 import {
   getRelatedTasks,
   refreshRelatedTasks,
@@ -10,7 +11,15 @@ import {
   type RelatedTask,
   type RelatedTasksView,
 } from "@/services/clickup/links";
+import {
+  getPendingTaskCreations,
+  reconcileTaskCreation,
+  retryMissingBacklinks,
+  type PendingTaskCreation,
+} from "@/services/clickup/taskCreate";
+import { CreateTaskDialog } from "./CreateTaskDialog";
 import { LinkTaskDialog } from "./LinkTaskDialog";
+import { useClickUpWritable } from "./useClickUpWritable";
 
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : "Something went wrong.";
@@ -42,11 +51,95 @@ function TaskStatus({ task }: { task: RelatedTask }) {
 
 function DueDate({ at }: { at: number }) {
   const timeZone = useDisplayTimeZone();
-  const text = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeZone }).format(at);
+  const text = new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeZone,
+  }).format(at);
   return <span>Due {text}</span>;
 }
 
-function TaskRow({ task, onUnlink, busy }: { task: RelatedTask; onUnlink: () => void; busy: boolean }) {
+const BACKLINK_STATE_TEXT: Record<RelatedTask["backlinks"][number]["state"], string> = {
+  done: "Written",
+  pending: "Not written yet",
+  failed: "Failed",
+  unconfirmed: "Not confirmed",
+  skipped: "Skipped",
+};
+
+const BACKLINK_STATE_CLASS: Record<RelatedTask["backlinks"][number]["state"], string> = {
+  done: "text-status-success",
+  pending: "text-status-warning",
+  failed: "text-danger",
+  unconfirmed: "text-status-warning",
+  skipped: "text-text-tertiary",
+};
+
+/** Whether a backlink still has to be written: a retry writes exactly these */
+const isMissing = (state: RelatedTask["backlinks"][number]["state"]) => state !== "done" && state !== "skipped";
+
+/** A ticket link's three backlinks; shown in full only while one is missing or was skipped */
+function Backlinks({
+  task,
+  busy,
+  writable,
+  onRetry,
+}: {
+  task: RelatedTask;
+  busy: boolean;
+  writable: FreshdeskWritable;
+  onRetry: () => void;
+}) {
+  if (task.backlinks.length === 0) return null;
+  const missing = task.backlinks.some((b) => isMissing(b.state));
+  const notable = missing || task.backlinks.some((b) => b.state === "skipped");
+  if (!notable) return <p className="mt-1 text-micro text-text-tertiary">Backlinks written</p>;
+  return (
+    <div className="mt-2 rounded-md border border-border-primary px-2.5 py-2">
+      <ul aria-label={`Backlinks of ${task.name}`} className="space-y-1">
+        {task.backlinks.map((b) => (
+          <li key={b.step} aria-label={b.label} className="text-meta">
+            <span className="text-text-primary">{b.label}</span>
+            {": "}
+            <span className={`font-medium ${BACKLINK_STATE_CLASS[b.state]}`}>{BACKLINK_STATE_TEXT[b.state]}</span>
+            {b.message && <span className="block text-micro text-text-secondary">{b.message}</span>}
+          </li>
+        ))}
+      </ul>
+      {missing && (
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={onRetry}
+            {...writable.controlProps}
+            disabled={busy || writable.controlProps.disabled}
+            className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-border-primary text-meta text-text-primary hover:bg-bg-hover disabled:opacity-50"
+          >
+            <RefreshCw size={12} aria-hidden />
+            Retry missing backlink
+          </button>
+          <span className="text-micro text-text-tertiary">Only what is missing is written again.</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TaskRow({
+  task,
+  item,
+  onUnlink,
+  onRetry,
+  busy,
+  writable,
+}: {
+  task: RelatedTask;
+  item: LinkedItem;
+  onUnlink: () => void;
+  onRetry: () => void;
+  busy: boolean;
+  writable: FreshdeskWritable;
+}) {
+  const unlinkHint = `Unlink from this ${item.kind === "ticket" ? "ticket" : "email"}. The task stays in ClickUp.`;
   return (
     <li aria-label={task.name} className="py-2.5 border-t border-border-primary first:border-t-0">
       <div className="flex items-start gap-3">
@@ -71,10 +164,11 @@ function TaskRow({ task, onUnlink, busy }: { task: RelatedTask; onUnlink: () => 
               "Not read from ClickUp yet"
             )}
           </p>
+          <Backlinks task={task} busy={busy} writable={writable} onRetry={onRetry} />
           {task.done && (
             <p className="mt-2 text-meta text-text-secondary rounded-md border border-status-success/30 bg-status-success/5 px-2 py-1.5">
-              <span className="font-medium text-text-primary">Follow up with customer:</span> this task is done in ClickUp.
-              The ticket is unchanged.
+              <span className="font-medium text-text-primary">Follow up with customer:</span> this task is done in
+              ClickUp. The ticket is unchanged.
             </p>
           )}
         </div>
@@ -94,7 +188,7 @@ function TaskRow({ task, onUnlink, busy }: { task: RelatedTask; onUnlink: () => 
             onClick={onUnlink}
             disabled={busy}
             aria-label={`Unlink ${task.name}`}
-            title="Unlink from this ticket. The task stays in ClickUp."
+            title={unlinkHint}
             className="p-1.5 rounded-md text-text-tertiary hover:text-text-primary hover:bg-bg-hover disabled:opacity-50"
           >
             <Unlink size={13} aria-hidden />
@@ -132,23 +226,33 @@ export function RelatedTasksPanel({ item }: { item: LinkedItem }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [linking, setLinking] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [pending, setPending] = useState<PendingTaskCreation[]>([]);
+  const writable = useClickUpWritable(item);
   // The item object is rebuilt on every render; its key says when it really changed
   const key = itemKey(item);
   const itemRef = useRef(item);
   itemRef.current = item;
 
-  const reload = useCallback(async () => setView(await getRelatedTasks(itemRef.current)), []);
+  const reload = useCallback(async () => {
+    const current = itemRef.current;
+    setView(await getRelatedTasks(current));
+    setPending(await getPendingTaskCreations(current));
+  }, []);
 
   // Show the local copy at once, then re-read tasks that are not fresh
   useEffect(() => {
     let cancelled = false;
     setView(null);
+    setPending([]);
     setError(null);
     const current = itemRef.current;
     void (async () => {
       const local = await getRelatedTasks(current);
+      const unsettled = await getPendingTaskCreations(current);
       if (cancelled) return;
       setView(local);
+      setPending(unsettled);
       if (local.state !== "ready" || local.tasks.length === 0) return;
       const fresh = await refreshRelatedTasks(current, { trigger: "open" });
       if (!cancelled) setView(fresh);
@@ -172,6 +276,7 @@ export function RelatedTasksPanel({ item }: { item: LinkedItem }) {
   };
 
   const ready = view?.state === "ready";
+  const linksChanged = () => window.dispatchEvent(new Event("velo-task-links-changed"));
 
   return (
     <section aria-label="Related tasks" className="max-w-4xl mb-6 rounded-lg border border-border-primary px-4 py-3">
@@ -193,8 +298,18 @@ export function RelatedTasksPanel({ item }: { item: LinkedItem }) {
             )}
             <button
               type="button"
+              onClick={() => setCreating(true)}
+              {...writable.controlProps}
+              className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-meta text-text-secondary hover:text-text-primary hover:bg-bg-hover disabled:opacity-50 disabled:hover:bg-transparent"
+            >
+              <Plus size={13} aria-hidden />
+              Create task
+            </button>
+            <button
+              type="button"
               onClick={() => setLinking(true)}
-              className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-meta text-text-secondary hover:text-text-primary hover:bg-bg-hover"
+              {...writable.controlProps}
+              className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-meta text-text-secondary hover:text-text-primary hover:bg-bg-hover disabled:opacity-50 disabled:hover:bg-transparent"
             >
               <Link2 size={13} aria-hidden />
               Link task
@@ -202,23 +317,65 @@ export function RelatedTasksPanel({ item }: { item: LinkedItem }) {
           </>
         )}
       </div>
-      {view && !ready && <p className="text-meta text-text-tertiary">{EMPTY_TEXT[view.state as keyof typeof EMPTY_TEXT]}</p>}
+      {view && !ready && (
+        <p className="text-meta text-text-tertiary">{EMPTY_TEXT[view.state as keyof typeof EMPTY_TEXT]}</p>
+      )}
       {view && ready && (
         <div className="space-y-2">
+          <FreshdeskWriteReason writable={writable} />
           <RefreshNotice view={view} />
+          {pending.length > 0 && (
+            <ul aria-label="Task creations to check" className="space-y-2">
+              {pending.map((p) => (
+                <li
+                  key={p.operationId}
+                  aria-label={p.taskName}
+                  className="rounded-md border border-status-warning/40 bg-status-warning/10 px-3 py-2"
+                >
+                  <p className="text-sm text-text-primary truncate" title={p.taskName}>
+                    {p.taskName}
+                  </p>
+                  <p className="mt-0.5 text-meta text-text-secondary">{p.message}</p>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      run(async () => {
+                        const result = await reconcileTaskCreation(p.operationId);
+                        if (result.outcome === "created") linksChanged();
+                        else if (result.outcome !== "unconfirmed") throw new Error(result.message);
+                      })
+                    }
+                    {...writable.controlProps}
+                    disabled={busy || writable.controlProps.disabled}
+                    className="mt-2 inline-flex items-center gap-1 px-2 py-1 rounded-md border border-border-primary text-meta text-text-primary hover:bg-bg-hover disabled:opacity-50"
+                  >
+                    <RefreshCw size={12} aria-hidden />
+                    Check ClickUp
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
           {view.tasks.length === 0 ? (
-            <p className="text-meta text-text-tertiary">No tasks linked. Link an existing ClickUp task by search or by its URL or ID.</p>
+            pending.length === 0 && (
+              <p className="text-meta text-text-tertiary">
+                No tasks linked. Create a task, or link an existing one by search or by its URL or ID.
+              </p>
+            )
           ) : (
             <ul aria-label="Linked tasks">
               {view.tasks.map((task) => (
                 <TaskRow
                   key={task.taskId}
                   task={task}
+                  item={item}
                   busy={busy}
+                  writable={writable}
+                  onRetry={() => run(() => retryMissingBacklinks(item, task.taskId))}
                   onUnlink={() =>
                     run(async () => {
                       await unlinkTask(item, task.taskId);
-                      window.dispatchEvent(new Event("velo-task-links-changed"));
+                      linksChanged();
                     })
                   }
                 />
@@ -239,7 +396,22 @@ export function RelatedTasksPanel({ item }: { item: LinkedItem }) {
           onLinked={() => {
             setLinking(false);
             void reload();
-            window.dispatchEvent(new Event("velo-task-links-changed"));
+            linksChanged();
+          }}
+        />
+      )}
+      {creating && (
+        <CreateTaskDialog
+          item={item}
+          onClose={() => {
+            setCreating(false);
+            // A creation ClickUp never answered stays here, with Check ClickUp
+            void reload();
+          }}
+          onCreated={() => {
+            setCreating(false);
+            void reload();
+            linksChanged();
           }}
         />
       )}
