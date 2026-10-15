@@ -66,6 +66,17 @@ function publicEntries(source: TicketAiSource): { entry: HistoryEntry; text: str
   return [first, ...kept];
 }
 
+/**
+ * What the public conversation looks like to Ticket AI. It changes when a
+ * public message arrives and never for an internal note, so it tells a summary
+ * that new activity has made it out of date.
+ */
+export function publicActivityKey(source: TicketAiSource): string {
+  return publicEntries(source)
+    .map(({ entry, text }) => `${entry.id}:${text}`)
+    .join("\u0000");
+}
+
 function toItems(source: TicketAiSource, picked: { entry: HistoryEntry; text: string }[]): AiSourceItem[] {
   return picked.map(({ entry, text }, i) => ({
     ...(i === 0 && { subject: source.subject, status: source.status, priority: source.priority }),
@@ -156,7 +167,7 @@ function parseSummary(raw: string, sourceIds: string[]): TicketSummary {
  */
 export async function summarizeTicket(
   source: TicketAiSource,
-  options: { refresh?: boolean } = {},
+  options: { refresh?: boolean; unattended?: boolean } = {},
 ): Promise<TicketSummary> {
   const picked = publicEntries(source);
   const raw = await requestAi({
@@ -166,6 +177,7 @@ export async function summarizeTicket(
     maxChars: MAX_CHARS,
     maxTokens: 1200,
     cache: { scope: await currentTenantId(), sourceId: source.ticketId, refresh: options.refresh },
+    unattended: options.unattended,
   });
   return parseSummary(raw, picked.map((p) => p.entry.id));
 }
