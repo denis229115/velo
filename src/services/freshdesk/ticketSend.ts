@@ -25,7 +25,16 @@ export interface StalenessBaseline {
   assigneeId: string | null;
   /** The ticket's status then; when given, a status change counts as a change (Scheduled replies) */
   statusId?: string | null;
+  /**
+   * Unix seconds; when given, any answer to the customer after this, mine
+   * included, counts as a change (a Scheduled reply must not be a second answer)
+   */
+  repliesSince?: number;
 }
+
+/** What the customer receives: a public reply, or a note made public */
+const ANSWERS: ReadonlySet<DecodedConversation["kind"]> = new Set(["reply", "unverified_reply", "public_note"]);
+const ALREADY_ANSWERED = "A reply was already sent since you scheduled this.";
 
 export interface TicketSendRequest {
   ticketId: string;
@@ -112,6 +121,10 @@ function changesSince(
     const change = describe(c, agentNames);
     if (!changes.includes(change)) changes.push(change);
   }
+  const since = baseline.repliesSince;
+  if (since !== undefined && fresh.conversations.some((c) => c.createdAt > since && ANSWERS.has(c.kind) && !newer.includes(c))) {
+    changes.push(ALREADY_ANSWERED);
+  }
   return changes;
 }
 
@@ -172,6 +185,7 @@ export async function sendTicketResponse(request: TicketSendRequest): Promise<Ti
   if (changes.length > 0) {
     const baseline: StalenessBaseline = { startedAt: nowS(), assigneeId: fresh.ticket.responderId };
     if (request.baseline.statusId !== undefined) baseline.statusId = fresh.ticket.statusId;
+    if (request.baseline.repliesSince !== undefined) baseline.repliesSince = baseline.startedAt;
     return { outcome: "stale", changes, baseline };
   }
 

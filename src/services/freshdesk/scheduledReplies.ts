@@ -124,7 +124,13 @@ export async function listScheduledReplies(): Promise<ScheduledReply[]> {
 }
 
 function baselineOf(reply: StoredScheduledReply): StalenessBaseline {
-  return { startedAt: reply.baselineStartedAt, assigneeId: reply.baselineAssignee, statusId: reply.baselineStatus };
+  return {
+    startedAt: reply.baselineStartedAt,
+    assigneeId: reply.baselineAssignee,
+    statusId: reply.baselineStatus,
+    // Since scheduling, or since it was held: Send anyway acknowledges what the hold showed
+    repliesSince: Math.max(reply.createdAt, reply.baselineStartedAt),
+  };
 }
 
 /** Total automatic attempts before a Scheduled reply is failed; the same bound for Reconciliation */

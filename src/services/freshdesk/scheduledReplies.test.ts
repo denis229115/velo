@@ -142,6 +142,47 @@ describe("holding a scheduled reply when the ticket changed (A26)", () => {
   });
 });
 
+describe("a reply already sent on the ticket since scheduling", () => {
+  it("holds the scheduled reply even when I sent it myself, so the customer cannot get two answers", async () => {
+    const id = await scheduleReply();
+    later(30 * 60_000);
+    stub.addConversation(ALPHA_HOST, 1001, { user_id: ME_ID, body: "<p>Quick answer from the web app.</p>" });
+    later(30 * 60_000);
+
+    await processDueScheduledReplies();
+
+    expect(writes()).toEqual([]);
+    expect((await listScheduledReplies()).find((r) => r.id === id)).toMatchObject({
+      state: "held",
+      holdReasons: ["A reply was already sent since you scheduled this."],
+    });
+  });
+
+  it("does not hold it for my own internal note alone", async () => {
+    const id = await scheduleReply();
+    later(30 * 60_000);
+    stub.addConversation(ALPHA_HOST, 1001, { user_id: ME_ID, private: true, source: 2, body: "<p>Note to self</p>" });
+    later(30 * 60_000);
+
+    await processDueScheduledReplies();
+
+    expect(posts().map((r) => new URL(r.url).pathname)).toEqual(["/api/v2/tickets/1001/reply"]);
+    expect((await listScheduledReplies()).find((r) => r.id === id)).toMatchObject({ state: "sent" });
+  });
+
+  it("sends once the operator chose Send anyway, having seen it", async () => {
+    const id = await scheduleReply();
+    later(30 * 60_000);
+    stub.addConversation(ALPHA_HOST, 1001, { user_id: ME_ID, body: "<p>Quick answer from the web app.</p>" });
+    later(30 * 60_000);
+    await processDueScheduledReplies();
+    later(60_000);
+
+    expect(await sendScheduledReplyNow(id)).toBeNull();
+    expect((await listScheduledReplies()).find((r) => r.id === id)).toMatchObject({ state: "sent" });
+  });
+});
+
 describe("the status to set after a scheduled reply (A26)", () => {
   const dropped = (apply: boolean) =>
     stub.respondOnce(ALPHA_HOST, "/api/v2/tickets/1001/reply", { method: "POST", networkError: true, apply });
