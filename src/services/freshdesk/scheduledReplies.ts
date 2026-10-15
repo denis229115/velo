@@ -191,7 +191,8 @@ async function settle(reply: StoredScheduledReply, from: ScheduledReplyState, at
         lastError: gaveUp ? NEVER_CONFIRMED : result.message,
         nextAttemptAt: gaveUp ? null : nowS() + backoff,
       });
-      if (gaveUp) notifyScheduledReplyFailed(reply.subject, NEVER_CONFIRMED);
+      // Notified once, when the automatic checks run out
+      if (gaveUp && checks > reply.attempts) notifyScheduledReplyFailed(reply.subject, NEVER_CONFIRMED);
       return;
     }
     case "failed":
@@ -326,6 +327,22 @@ export async function sendScheduledReplyNow(id: string): Promise<string | null> 
       if (result.outcome === "stale") return "The ticket changed again since the reply was held. Nothing was sent.";
       return result.outcome === "unconfirmed" ? result.message : null;
   }
+}
+
+/**
+ * The operator's "Check Freshdesk" on an Unconfirmed reply: Reconciliation
+ * now, outside the backoff. Returns what is still open, or null once settled as sent.
+ */
+export async function checkScheduledReply(id: string): Promise<string | null> {
+  if (!useUIStore.getState().isOnline) return OFFLINE_MESSAGE;
+  const reply = await getScheduledReply(id);
+  if (!reply || reply.state !== "unconfirmed" || reply.journalEntryId === null) {
+    return "This reply is no longer unconfirmed.";
+  }
+  const result = await reconcileTicketSend(reply.ticketId, reply.journalEntryId);
+  await settle(reply, "unconfirmed", reply.attempts, result);
+  announceScheduledRepliesChanged();
+  return result.outcome === "sent" || result.outcome === "stale" ? null : result.message;
 }
 
 /**

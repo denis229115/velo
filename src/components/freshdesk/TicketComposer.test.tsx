@@ -299,7 +299,7 @@ describe("scheduling a reply", () => {
 
     pressSendLater();
 
-    const picker = within(await screen.findByRole("dialog", { name: "Schedule reply" }));
+    const picker = within(await screen.findByRole("group", { name: "Schedule reply" }));
     expect(picker.getByText(/sends through Freshdesk when Velo is next open/)).toBeInTheDocument();
     expect(picker.getByText(/not while your Mac sleeps or Velo is closed/)).toBe(picker.getByText(/next open/));
     fireEvent.change(picker.getByLabelText("Then set status"), { target: { value: "4" } });
@@ -323,7 +323,7 @@ describe("scheduling a reply", () => {
     expect(reply.getByRole("button", { name: "Send later" })).toBeDisabled();
     pressSendLater();
 
-    expect(screen.queryByRole("dialog", { name: "Schedule reply" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "Schedule reply" })).not.toBeInTheDocument();
     expect(await listScheduledReplies()).toEqual([]);
   });
 });

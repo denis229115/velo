@@ -51,6 +51,7 @@ export function DateTimePickerDialog({
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={title} zIndex={zIndex}>
+      <div role="group" aria-label={title}>
       {children && <div className="border-b border-border-secondary px-4 py-3">{children}</div>}
       <div className="py-1">
         {presets.map((preset) => (
@@ -100,6 +101,7 @@ export function DateTimePickerDialog({
         {note && (
           <p className="text-xs text-text-tertiary pt-1">{note}</p>
         )}
+      </div>
       </div>
     </Modal>
   );

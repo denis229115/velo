@@ -42,9 +42,6 @@ export function Modal({
       <div ref={nodeRef} className={`fixed inset-0 ${zIndex} flex items-center justify-center`} onContextMenu={(e) => e.stopPropagation()}>
         <div className="absolute inset-0 bg-black/20" onClick={onClose} />
         <div
-          role="dialog"
-          aria-modal="true"
-          aria-label={title}
           className={`relative bg-surface-overlay border border-separator rounded-lg overlay-shadow ${width}${panelClassName ? ` ${panelClassName}` : ""}`}
         >
           {renderHeader !== undefined ? (

@@ -1,8 +1,12 @@
-import { AlertCircle, CheckCircle2, Clock, Loader2, RotateCcw, X, type LucideIcon } from "lucide-react";
+import { AlertCircle, CheckCircle2, Clock, HelpCircle, Loader2, PauseCircle, Pencil, RotateCcw, Send, X, type LucideIcon } from "lucide-react";
+import type { ReactNode } from "react";
 import { Button } from "@/components/ui/Button";
 import { formatFullDate } from "@/utils/date";
 
-export type ScheduledStatus = "pending" | "sending" | "sent" | "failed";
+export type ScheduledStatus = "pending" | "sending" | "sent" | "failed" | "held" | "unconfirmed";
+
+/** What the operator can do with an item; reaching the remote service is marked by `remote` below */
+export type ScheduledAction = "cancel" | "retry" | "edit" | "send_anyway" | "check";
 
 /**
  * One item on a scheduled-sends list. Kept free of email specifics so
@@ -18,6 +22,14 @@ export interface ScheduledListItem {
   /** Unix seconds */
   sendAt: number;
   error: string | null;
+  /** Why it waits for the operator (a Held item), one line each */
+  reasons?: string[];
+  /** A secondary line, e.g. what happens after sending or a partial success */
+  detail?: string | null;
+  /** Defaults: Cancel while pending, Retry once failed */
+  actions?: ScheduledAction[];
+  /** Why actions that reach the remote service are off right now (offline, sample data) */
+  remoteBlocked?: string | null;
 }
 
 const STATUS_DISPLAY: Record<ScheduledStatus, { label: string; icon: LucideIcon; className: string }> = {
@@ -25,23 +37,43 @@ const STATUS_DISPLAY: Record<ScheduledStatus, { label: string; icon: LucideIcon;
   sending: { label: "Sending", icon: Loader2, className: "text-accent" },
   sent: { label: "Sent", icon: CheckCircle2, className: "text-success" },
   failed: { label: "Failed", icon: AlertCircle, className: "text-danger" },
+  held: { label: "On hold – ticket changed", icon: PauseCircle, className: "text-status-warning" },
+  unconfirmed: { label: "Unconfirmed", icon: HelpCircle, className: "text-status-warning" },
 };
+
+const DEFAULT_ACTIONS: Partial<Record<ScheduledStatus, ScheduledAction[]>> = {
+  pending: ["cancel"],
+  failed: ["retry"],
+};
+
+const REMOTE: ReadonlySet<ScheduledAction> = new Set(["retry", "send_anyway", "check"]);
 
 interface ScheduledListProps {
   items: ScheduledListItem[];
-  /** Items with a cancel or retry in flight; their buttons are disabled */
+  /** Items with an action in flight; their buttons are disabled */
   busyIds: ReadonlySet<string>;
   onCancel: (id: string) => void;
   onRetry: (id: string) => void;
+  onEdit?: (id: string) => void;
+  onSendAnyway?: (id: string) => void;
+  onCheck?: (id: string) => void;
 }
 
-export function ScheduledList({ items, busyIds, onCancel, onRetry }: ScheduledListProps) {
+export function ScheduledList({ items, busyIds, onCancel, onRetry, onEdit, onSendAnyway, onCheck }: ScheduledListProps) {
+  const buttons: Record<ScheduledAction, { label: string; icon: ReactNode; primary?: boolean; run?: (id: string) => void }> = {
+    send_anyway: { label: "Send anyway", icon: <Send size={12} />, primary: true, run: onSendAnyway },
+    retry: { label: "Retry", icon: <RotateCcw size={12} />, primary: true, run: onRetry },
+    check: { label: "Check Freshdesk", icon: <HelpCircle size={12} />, run: onCheck },
+    edit: { label: "Edit", icon: <Pencil size={12} />, run: onEdit },
+    cancel: { label: "Cancel", icon: <X size={12} />, run: onCancel },
+  };
   return (
     <ul className="divide-y divide-border-secondary">
       {items.map((item) => {
         const status = STATUS_DISPLAY[item.status];
         const StatusIcon = status.icon;
         const busy = busyIds.has(item.id);
+        const actions = item.actions ?? DEFAULT_ACTIONS[item.status] ?? [];
         return (
           <li key={item.id} className="flex items-start gap-3 px-4 py-2.5">
             <div className="flex-1 min-w-0">
@@ -61,19 +93,40 @@ export function ScheduledList({ items, busyIds, onCancel, onRetry }: ScheduledLi
                 <span aria-hidden>·</span>
                 <span className="truncate">To: {item.recipients}</span>
               </div>
+              {item.detail && <p className="mt-0.5 text-xs text-text-secondary break-words">{item.detail}</p>}
+              {item.reasons && item.reasons.length > 0 && (
+                <ul className="mt-1 list-disc pl-4 text-xs text-text-secondary">
+                  {item.reasons.map((reason) => (
+                    <li key={reason}>{reason}</li>
+                  ))}
+                </ul>
+              )}
               {item.error && (
                 <p className="mt-1 text-xs text-danger break-words">{item.error}</p>
               )}
             </div>
-            {item.status === "pending" && (
-              <Button size="xs" variant="ghost" icon={<X size={12} />} disabled={busy} onClick={() => onCancel(item.id)}>
-                Cancel
-              </Button>
-            )}
-            {item.status === "failed" && (
-              <Button size="xs" icon={<RotateCcw size={12} />} disabled={busy} onClick={() => onRetry(item.id)}>
-                Retry
-              </Button>
+            {actions.length > 0 && (
+              <div className="flex shrink-0 items-center gap-1">
+                {actions.map((action) => {
+                  const button = buttons[action];
+                  if (!button.run) return null;
+                  const run = button.run;
+                  const blocked = REMOTE.has(action) ? (item.remoteBlocked ?? null) : null;
+                  return (
+                    <Button
+                      key={action}
+                      size="xs"
+                      variant={button.primary ? undefined : "ghost"}
+                      icon={button.icon}
+                      disabled={busy || blocked !== null}
+                      title={blocked ?? undefined}
+                      onClick={() => run(item.id)}
+                    >
+                      {button.label}
+                    </Button>
+                  );
+                })}
+              </div>
             )}
           </li>
         );

@@ -47,6 +47,7 @@ import { getOperationJournal } from "./ticketEdits";
 import { loadTicketDraft, saveTicketDraft } from "./ticketDrafts";
 import {
   cancelScheduledReply,
+  checkScheduledReply,
   editScheduledReply,
   listScheduledReplies,
   MAX_ATTEMPTS,
@@ -380,6 +381,20 @@ describe("a scheduled reply interrupted by a crash or quit while sending", () =>
     await processDueScheduledReplies();
 
     expect(posts()).toEqual([]);
+    expect((await listScheduledReplies()).find((r) => r.id === id)).toMatchObject({ state: "sent" });
+  });
+});
+
+describe("the operator checking an Unconfirmed scheduled reply", () => {
+  it("reads Freshdesk now and settles it, never posting again", async () => {
+    const id = await scheduleReply();
+    later(HOUR_S * 1000);
+    stub.respondOnce(ALPHA_HOST, "/api/v2/tickets/1001/reply", { method: "POST", networkError: true, apply: true });
+    await processDueScheduledReplies();
+
+    expect(await checkScheduledReply(id)).toBeNull();
+
+    expect(posts()).toHaveLength(1);
     expect((await listScheduledReplies()).find((r) => r.id === id)).toMatchObject({ state: "sent" });
   });
 });
