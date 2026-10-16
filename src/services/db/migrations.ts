@@ -325,6 +325,7 @@ const MIGRATIONS = [
       INSERT OR IGNORE INTO settings (key, value) VALUES
         ('ai_enabled', 'true'),
         ('ai_auto_categorize', 'true'),
+        ('ai_auto_summarize', 'true'),
         ('contact_sidebar_visible', 'true'),
         ('attachment_cache_max_mb', '500'),
         ('calendar_enabled', 'false');
@@ -1191,6 +1192,13 @@ const MIGRATIONS = [
       );
       CREATE INDEX IF NOT EXISTS idx_freshdesk_reply_attachments_owner ON freshdesk_reply_attachments(owner, position);
     `,
+  },
+  {
+    version: 38,
+    description: "Remove obsolete email auto-summary preference",
+    // Historical migrations keep their original defaults; active AI behavior
+    // no longer reads this key (#37).
+    sql: `DELETE FROM settings WHERE key = 'ai_auto_summarize';`,
   },
 ];
 
