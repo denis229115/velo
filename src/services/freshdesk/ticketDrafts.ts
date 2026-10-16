@@ -1,11 +1,20 @@
 /**
- * Ticket drafts: the unsent text for one ticket in one composer mode, kept
+ * Ticket drafts: the unsent text and files for one ticket in one composer mode, kept
  * across restarts, offline and after a failed send. Sending goes through
  * here so a draft is discarded only once Freshdesk has it.
  */
 import { withReadSnapshot } from "@/services/db/connection";
 import { getIntegrationAccount } from "@/services/db/freshdesk";
 import { deleteStoredDraft, getStoredDraft, putStoredDraft, type DraftKey } from "@/services/db/freshdeskDrafts";
+import {
+  deleteStoredAttachment,
+  deleteStoredAttachments,
+  getStoredAttachments,
+  getStoredAttachmentsWithData,
+  insertStoredAttachment,
+  type StoredAttachment,
+} from "@/services/db/freshdeskReplyAttachments";
+import { attachRefusal, cleanAttachmentName, cleanContentType } from "./replyAttachments";
 import { currentTenantId } from "./connection";
 import {
   captureStalenessBaseline,
@@ -24,7 +33,14 @@ export interface TicketDraft {
   baseline: StalenessBaseline;
   /** Set while a send of this draft is Unconfirmed: the next send reconciles instead of posting */
   unconfirmedEntryId: number | null;
+  /** Files going out with it, in the order attached */
+  attachments: StoredAttachment[];
 }
+
+export type DraftAttachment = StoredAttachment;
+
+/** Where a draft's files are kept */
+export const draftAttachmentOwner = (k: DraftKey): string => `draft:${k.tenantId}|${k.agentId}|${k.ticketId}|${k.mode}`;
 
 async function keyFor(ticketId: string, mode: ComposerMode): Promise<DraftKey> {
   const [tenantId, account] = await Promise.all([currentTenantId(), getIntegrationAccount("freshdesk")]);
@@ -33,7 +49,8 @@ async function keyFor(ticketId: string, mode: ComposerMode): Promise<DraftKey> {
 
 export async function loadTicketDraft(ticketId: string, mode: ComposerMode): Promise<TicketDraft | null> {
   return withReadSnapshot(async () => {
-    const stored = await getStoredDraft(await keyFor(ticketId, mode));
+    const key = await keyFor(ticketId, mode);
+    const stored = await getStoredDraft(key);
     if (!stored) return null;
     return {
       ticketId,
@@ -42,6 +59,7 @@ export async function loadTicketDraft(ticketId: string, mode: ComposerMode): Pro
       ccEmails: stored.ccEmails,
       baseline: { startedAt: stored.startedAt, assigneeId: stored.assigneeAtStart },
       unconfirmedEntryId: stored.unconfirmedEntryId,
+      attachments: await getStoredAttachments(draftAttachmentOwner(key)),
     };
   });
 }
@@ -66,7 +84,43 @@ export async function saveTicketDraft(
 }
 
 export async function discardTicketDraft(ticketId: string, mode: ComposerMode): Promise<void> {
-  await deleteStoredDraft(await withReadSnapshot(() => keyFor(ticketId, mode)));
+  const key = await withReadSnapshot(() => keyFor(ticketId, mode));
+  await deleteStoredAttachments(draftAttachmentOwner(key));
+  await deleteStoredDraft(key);
+}
+
+/** Bytes in a base64 string, without decoding it */
+const decodedSize = (b64: string): number => Math.floor((b64.length * 3) / 4) - (b64.endsWith("==") ? 2 : b64.endsWith("=") ? 1 : 0);
+
+export type AttachResult = { ok: true; attachment: DraftAttachment } | { ok: false; message: string };
+
+/**
+ * Keeps a file with the draft (works offline). Its name and type are cleaned
+ * here; a file that would take the draft over Freshdesk's limit is refused.
+ */
+export async function attachToTicketDraft(
+  ticketId: string,
+  mode: ComposerMode,
+  file: { name: string; contentType: string; dataBase64: string },
+): Promise<AttachResult> {
+  const draft = await loadTicketDraft(ticketId, mode);
+  if (!draft) await saveTicketDraft(ticketId, mode, { bodyHtml: "" });
+  const name = cleanAttachmentName(file.name);
+  const size = decodedSize(file.dataBase64);
+  const refusal = attachRefusal(name, draft?.attachments ?? [], size);
+  if (refusal) return { ok: false, message: refusal };
+  const key = await withReadSnapshot(() => keyFor(ticketId, mode));
+  const attachment = await insertStoredAttachment(draftAttachmentOwner(key), {
+    name,
+    contentType: cleanContentType(file.contentType),
+    size,
+    dataBase64: file.dataBase64,
+  });
+  return { ok: true, attachment };
+}
+
+export async function removeTicketDraftAttachment(ticketId: string, mode: ComposerMode, attachmentId: string): Promise<void> {
+  await deleteStoredAttachment(draftAttachmentOwner(await withReadSnapshot(() => keyFor(ticketId, mode))), attachmentId);
 }
 
 async function setUnconfirmed(draft: TicketDraft, entryId: number | null): Promise<void> {
@@ -107,11 +161,13 @@ export async function sendTicketDraft(
   }
 
   if (options.acknowledged) await saveTicketDraft(ticketId, mode, draft, options.acknowledged);
+  const files = await getStoredAttachmentsWithData(draftAttachmentOwner(await withReadSnapshot(() => keyFor(ticketId, mode))));
   const result = await sendTicketResponse({
     ticketId,
     mode,
     bodyHtml: draft.bodyHtml,
     ccEmails: draft.ccEmails,
+    ...(files.length > 0 && { attachments: files }),
     baseline: options.acknowledged ?? draft.baseline,
     ...(options.thenStatusId !== undefined && { thenStatusId: options.thenStatusId }),
   });

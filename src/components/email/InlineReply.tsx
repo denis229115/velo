@@ -18,6 +18,7 @@ import {
   regenerateAutoDraft,
   type AutoDraftMode,
 } from "@/services/ai/writingStyleService";
+import { TaskReplyDraft } from "@/components/clickup/TaskReplyDraft";
 import { AiSendNote } from "@/components/ai/AiSendPreview";
 import type { DbMessage } from "@/services/db/messages";
 import type { Thread } from "@/stores/threadStore";
@@ -381,6 +382,12 @@ export function InlineReply({ thread, messages, accountId, noReply, onSent }: In
         </button>
       </div>
 
+      {(mode === "reply" || mode === "replyAll") && <TaskReplyDraft
+        key={`${accountId}:${thread.id}:${mode}`}
+        item={{ kind: "email", accountId, threadId: thread.id }}
+        editor={editor}
+        disabled={sending || autoDraftLoading}
+      />}
       {/* Editor */}
       <div className="relative">
         <EditorContent editor={editor} />

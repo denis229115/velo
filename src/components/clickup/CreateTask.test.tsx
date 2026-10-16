@@ -8,6 +8,11 @@ import { ALPHA_HOST } from "@/services/freshdesk/__fixtures__/freshdeskFixtures"
 import { FIXTURE_NOW, alphaTenantWithTickets } from "@/services/freshdesk/__fixtures__/freshdeskTicketFixtures";
 import { ALPHA_TOKEN, ALPHA_BACKLOG_LIST_ID, clickupTokens } from "@/services/clickup/__fixtures__/clickupFixtures";
 
+const ai = vi.hoisted(() => ({ requests: [] as { userContent: string }[], response: "" }));
+vi.mock("@/services/ai/providers/claudeProvider", () => ({
+  createClaudeProvider: () => ({ complete: async (request: { userContent: string }) => { ai.requests.push(request); return ai.response; }, testConnection: async () => true }),
+  clearClaudeProvider: vi.fn(),
+}));
 const testRouter = vi.hoisted(() => ({ current: null as unknown }));
 vi.mock("@/router", () => ({ get router() { return testRouter.current; } }));
 
@@ -36,6 +41,10 @@ vi.mock("@tauri-apps/plugin-opener", () => ({
   openUrl: vi.fn(async () => {}),
 }));
 
+import { setSetting } from "@/services/db/settings";
+import { clearProviderClients } from "@/services/ai/providerManager";
+import { setSendPreviewHandler } from "@/services/ai/gateway";
+import { alphaTenantWithHistory } from "@/services/freshdesk/__fixtures__/freshdeskConversationFixtures";
 import { runMigrations } from "@/services/db/migrations";
 import { connectHelpdesk } from "@/services/freshdesk/connection";
 import { syncTickets } from "@/services/freshdesk/ticketSync";
@@ -95,6 +104,7 @@ beforeEach(async () => {
 });
 
 afterEach(() => {
+  setSendPreviewHandler(null);
   vi.useRealTimers();
   db.close();
 });
@@ -366,6 +376,63 @@ describe("offline", () => {
     }
     expect(writes()).toEqual([]);
   });
+});
+
+
+it("offers an editable AI proposal for a ticket without replacing ongoing edits or creating anything", async () => {
+  freshdesk = createFreshdeskFetchStub({ [ALPHA_HOST]: { apiKey: HELPDESK_KEY, tenant: alphaTenantWithHistory } });
+  await setSetting("ai_provider", "claude");
+  await setSetting("claude_api_key", "fixture-key");
+  await setSetting("ai_approved_provider", "claude");
+  clearProviderClients();
+  setSendPreviewHandler(async () => true);
+  ai.requests.length = 0;
+  ai.response = JSON.stringify({ title: "Investigate export", summary: "Export times out.", acceptance_criteria: ["Export finishes"] });
+  const dialog = await openCreate(TICKET);
+  const title = within(dialog).getByLabelText("Title");
+  fireEvent.change(title, { target: { value: "My title" } });
+  fireEvent.change(within(dialog).getByLabelText("Description"), { target: { value: "My description" } });
+  fireEvent.click(await within(dialog).findByRole("button", { name: "Propose task text" }));
+  const proposal = within(await within(dialog).findByRole("region", { name: "AI task proposal" }));
+  expect(title).toHaveValue("My title");
+  expect(within(dialog).getByLabelText("Description")).toHaveValue("My description");
+  expect(writes()).toEqual([]);
+  fireEvent.change(proposal.getByLabelText("Proposed title"), { target: { value: "Edited proposal" } });
+  fireEvent.click(proposal.getByRole("button", { name: "Insert" }));
+  expect(title).toHaveValue("My title — Edited proposal");
+  expect(within(dialog).getByLabelText("Description")).toHaveValue("My description\n\nExport times out.\n\nAcceptance criteria:\n- Export finishes");
+  expect(ai.requests).toHaveLength(1);
+  expect(writes()).toEqual([]);
+});
+
+
+it("lets an email's AI proposal be edited and explicitly replace the chosen task text", async () => {
+  await db.execute("INSERT INTO accounts (id, email) VALUES ('acct-1', 'operator@example.test')");
+  await db.execute("INSERT INTO threads (id, account_id, subject) VALUES ('thread-secret-77', 'acct-1', 'Export fails')");
+  await db.execute("INSERT INTO messages (id, account_id, thread_id, subject, body_text, from_address, date) VALUES ('m1', 'acct-1', 'thread-secret-77', 'Export fails', 'Export times out. Contact email.fake@example.test', 'header-only@example.test', 1760000000000)");
+  await setSetting("ai_provider", "claude");
+  await setSetting("claude_api_key", "fixture-key");
+  await setSetting("ai_approved_provider", "claude");
+  clearProviderClients();
+  setSendPreviewHandler(async () => true);
+  ai.requests.length = 0;
+  ai.response = JSON.stringify({ title: "Investigate export", summary: "Export times out.", acceptance_criteria: ["Export finishes"] });
+  const dialog = await openCreate(EMAIL);
+  fireEvent.click(await within(dialog).findByRole("button", { name: "Propose task text" }));
+  const proposal = within(await within(dialog).findByRole("region", { name: "AI task proposal" }));
+  fireEvent.change(proposal.getByLabelText("Proposed description"), { target: { value: "My edited proposal" } });
+  expect(within(dialog).getByLabelText("Title")).toHaveValue("");
+  expect(writes()).toEqual([]);
+  fireEvent.click(proposal.getByRole("button", { name: "Replace" }));
+  expect(within(dialog).getByLabelText("Title")).toHaveValue("Investigate export");
+  expect(within(dialog).getByLabelText("Description")).toHaveValue("My edited proposal");
+  expect(ai.requests[0]!.userContent).toContain("Export times out");
+  expect(ai.requests[0]!.userContent).not.toContain("email.fake@example.test");
+  expect(ai.requests[0]!.userContent).not.toContain("header-only");
+  expect(writes()).toEqual([]);
+  fireEvent.click(within(dialog).getByRole("button", { name: "Create task" }));
+  await waitFor(() => expect(writes()).toEqual(["POST /list/li_a_bugs/task"]));
+  expect(clickup.requests.find((r) => r.method === "POST")!.body).toMatchObject({ name: "Investigate export", markdown_content: expect.stringContaining("My edited proposal") });
 });
 
 

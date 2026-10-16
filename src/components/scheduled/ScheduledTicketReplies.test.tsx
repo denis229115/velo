@@ -37,7 +37,7 @@ import { runMigrations } from "@/services/db/migrations";
 import { insertScheduledEmail } from "@/services/db/scheduledEmails";
 import { classifyStatus, connectHelpdesk } from "@/services/freshdesk/connection";
 import { syncTickets } from "@/services/freshdesk/ticketSync";
-import { loadTicketDraft, saveTicketDraft } from "@/services/freshdesk/ticketDrafts";
+import { attachToTicketDraft, loadTicketDraft, saveTicketDraft } from "@/services/freshdesk/ticketDrafts";
 import { listScheduledReplies, processDueScheduledReplies, scheduleTicketReply } from "@/services/freshdesk/scheduledReplies";
 import { useUIStore } from "@/stores/uiStore";
 import { ScheduledEmailsPage } from "./ScheduledEmailsPage";
@@ -125,6 +125,16 @@ describe("scheduled ticket replies on the Scheduled screen", () => {
     expect(reply.getByText(/Then set Resolved/)).toBeInTheDocument();
     expect(reply.getByRole("button", { name: "Edit" })).toBeEnabled();
     expect(reply.getByRole("button", { name: "Cancel" })).toBeEnabled();
+  });
+
+  it("names the files kept with a scheduled reply (#34)", async () => {
+    await saveTicketDraft("1001", "reply", { bodyHtml: "<p>Report attached.</p>" });
+    await attachToTicketDraft("1001", "reply", { name: "report.csv", contentType: "text/csv", dataBase64: btoa("a,b\n1,2") });
+    await scheduleReply();
+
+    render(<ScheduledEmailsPage />);
+
+    expect(within(await entryFor("Fixture: cannot sign in")).getByText(/With report\.csv \(7 B\)/)).toBeInTheDocument();
   });
 
   it("shows a held reply with its reason and lets the operator send it anyway", async () => {

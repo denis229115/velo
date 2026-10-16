@@ -56,7 +56,7 @@ import { classifyStatus, connectHelpdesk } from "@/services/freshdesk/connection
 import { syncTickets } from "@/services/freshdesk/ticketSync";
 import { hydrateTicketHistories, resetHydrationState } from "@/services/freshdesk/ticketHistory";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
-import { saveTicketDraft, loadTicketDraft } from "@/services/freshdesk/ticketDrafts";
+import { attachToTicketDraft, saveTicketDraft, loadTicketDraft } from "@/services/freshdesk/ticketDrafts";
 import { useTicketStore } from "@/stores/ticketStore";
 import { useUIStore } from "@/stores/uiStore";
 import { useShortcutStore } from "@/stores/shortcutStore";
@@ -266,11 +266,11 @@ describe("the ticket composer", () => {
     await draft("reply", "<p>Keep me</p>");
     const reply = await openComposer("Reply");
     await reply.findByText("Keep me");
-    stub.respondOnce(ALPHA_HOST, "/api/v2/tickets/1001/reply", { method: "POST", status: 500, body: {} });
+    stub.respondOnce(ALPHA_HOST, "/api/v2/tickets/1001/reply", { method: "POST", status: 429, body: {}, headers: { "Retry-After": "120" } });
 
     fireEvent.click(reply.getByRole("button", { name: "Send reply" }));
 
-    await reply.findByRole("alert", { name: "Not sent" });
+    expect(await reply.findByRole("alert", { name: "Not sent" })).toHaveTextContent("Try again in 2 minutes");
     expect(reply.getByText("Keep me")).toBeInTheDocument();
     expect((await loadTicketDraft("1001", "reply"))?.bodyHtml).toBe("<p>Keep me</p>");
   });
@@ -293,6 +293,124 @@ describe("the ticket composer", () => {
   });
 });
 
+describe("attachments in the ticket composer (#34)", () => {
+  const pick = (input: HTMLElement, ...files: File[]) => fireEvent.change(input, { target: { files } });
+  const sentFiles = () => posts().map((r) => (r.body as { attachments?: { name: string }[] }).attachments?.map((a) => a.name));
+
+  it.each(["reply", "note"] as const)("locks an Unconfirmed %s and its files after HTTP 503, then checks Freshdesk without resending", async (mode) => {
+    await openTicket();
+    await draft(mode, "<p>Logs attached</p>");
+    await attachToTicketDraft("1001", mode, { name: "server.log", contentType: "text/plain", dataBase64: btoa("hello") });
+    const composer = await openComposer(mode === "reply" ? "Reply" : "Internal note");
+    await composer.findByText("Logs attached");
+    stub.respondOnce(ALPHA_HOST, `/api/v2/tickets/1001/${mode === "reply" ? "reply" : "notes"}`, {
+      method: "POST", status: 503, body: {}, apply: true,
+    });
+
+    const sendName = mode === "reply" ? "Send reply" : "Add internal note";
+    fireEvent.click(composer.getByRole("button", { name: sendName }));
+
+    expect(await composer.findByRole("status", { name: "Unconfirmed" })).toHaveTextContent("HTTP 503");
+    expect(composer.queryByRole("button", { name: sendName })).toBeNull();
+    expect(composer.getByLabelText("Attach files")).toBeDisabled();
+    expect(composer.queryByRole("button", { name: "Remove server.log" })).toBeNull();
+    expect(composer.getByRole("textbox", { name: mode === "reply" ? "Reply text" : "Note text" })).toHaveAttribute("contenteditable", "false");
+    expect((await loadTicketDraft("1001", mode))?.attachments).toMatchObject([{ name: "server.log" }]);
+
+    fireEvent.click(composer.getByRole("button", { name: "Check Freshdesk" }));
+    await screen.findByText(mode === "reply" ? "Reply sent." : "Internal note added.");
+    expect(posts()).toHaveLength(1);
+    expect(await loadTicketDraft("1001", mode)).toBeNull();
+  });
+
+  it("attaches, lists and removes files in the Reply composer, shows them before sending, and sends the rest", async () => {
+    await openTicket();
+    await draft("reply", "<p>Logs attached</p>");
+    const reply = await openComposer("Reply");
+    await reply.findByText("Logs attached");
+
+    pick(reply.getByLabelText("Attach files"), new File(["hello"], "server.log", { type: "text/plain" }), new File(["boom"], "trace.txt", { type: "text/plain" }));
+
+    const files = within(await reply.findByRole("list", { name: "Attached files" }));
+    expect(await files.findByText("trace.txt")).toBeInTheDocument();
+    const summary = within(reply.getByRole("group", { name: "Before sending" }));
+    expect(summary.getByText("server.log")).toBeInTheDocument();
+    expect(summary.getByText("trace.txt")).toBeInTheDocument();
+    expect(summary.queryByText("No attachments")).toBeNull();
+
+    fireEvent.click(files.getByRole("button", { name: "Remove trace.txt" }));
+    await waitFor(() => expect(summary.queryByText("trace.txt")).toBeNull());
+
+    fireEvent.click(reply.getByRole("button", { name: "Send reply" }));
+    await waitFor(() => expect(posts()).toHaveLength(1));
+    expect(sentFiles()).toEqual([["server.log"]]);
+  });
+
+  it("attaches files to an internal note too", async () => {
+    await openTicket();
+    await draft("note", "<p>Dump</p>");
+    const note = await openComposer("Internal note");
+    await note.findByText("Dump");
+
+    pick(note.getByLabelText("Attach files"), new File(["x"], "dump.bin", { type: "application/octet-stream" }));
+    expect(await within(await note.findByRole("list", { name: "Attached files" })).findByText("dump.bin")).toBeInTheDocument();
+
+    fireEvent.click(note.getByRole("button", { name: "Add internal note" }));
+    await waitFor(() => expect(posts()).toHaveLength(1));
+    expect(sentFiles()).toEqual([["dump.bin"]]);
+  });
+
+  it("shows Freshdesk's 20 MB limit and a clear error for a file over it, and keeps what was attached", async () => {
+    await openTicket();
+    await draft("reply", "<p>Video</p>");
+    const reply = await openComposer("Reply");
+    await reply.findByText("Video");
+    expect(reply.getByText(/up to 20\.0 MB in total/)).toBeInTheDocument();
+    expect(reply.getByText(/Sprout and trial plans allow 15 MB/)).toBeInTheDocument();
+
+    pick(reply.getByLabelText("Attach files"), new File([new Uint8Array(21 * 1024 * 1024)], "huge.mp4", { type: "video/mp4" }));
+
+    expect(await reply.findByRole("alert")).toHaveTextContent(/huge\.mp4 was not attached.*21\.0 MB.*20\.0 MB.*Sprout and trial plans allow 15 MB/);
+    expect(reply.queryByRole("list", { name: "Attached files" })).toBeNull();
+  });
+
+  it("keeps a draft's files across a restart and shows them with an untrusted name as plain text", async () => {
+    await openTicket();
+    await draft("reply", "<p>Steps</p>");
+    await attachToTicketDraft("1001", "reply", { name: '<img src=x onerror="window.__pwned=true">steps.pdf', contentType: "application/pdf", dataBase64: btoa("pdf") });
+    const reply = await openComposer("Reply");
+
+    const files = within(await reply.findByRole("list", { name: "Attached files" }));
+    expect(await files.findByText('<img src=x onerror="window.__pwned=true">steps.pdf')).toBeInTheDocument();
+    expect(document.querySelector("img[src=x]")).toBeNull();
+  });
+
+  it("lets files be added and removed offline while sending stays disabled", async () => {
+    await openTicket();
+    await draft("reply", "<p>On the train</p>");
+    const reply = await openComposer("Reply");
+    await reply.findByText("On the train");
+    act(() => useUIStore.setState({ isOnline: false }));
+
+    const attach = reply.getByLabelText("Attach files");
+    expect(attach).toBeEnabled();
+    pick(attach, new File(["p"], "photo.txt", { type: "text/plain" }));
+
+    expect(await within(await reply.findByRole("list", { name: "Attached files" })).findByText("photo.txt")).toBeInTheDocument();
+    expect(reply.getByRole("button", { name: "Send reply" })).toBeDisabled();
+    expect(writes()).toEqual([]);
+  });
+
+  it("has no Image button in the editor toolbar until images go through this path", async () => {
+    await openTicket();
+    const reply = await openComposer("Reply");
+    await reply.findByRole("textbox", { name: "Reply text" });
+
+    expect(reply.queryByRole("button", { name: "Image" })).toBeNull();
+    expect(reply.queryByTitle("Insert image")).toBeNull();
+  });
+});
+
 describe("CC prefill from the ticket", () => {
   const ccField = (reply: ReturnType<typeof within>) => reply.getByRole("textbox", { name: "CC" }) as HTMLInputElement;
   /** What the operator typed into the editor (ProseMirror reads the DOM change) */
@@ -304,6 +422,28 @@ describe("CC prefill from the ticket", () => {
     });
     await pane.findByText(text);
   }
+
+  it("keeps the prefilled CC when attaching a file before typing, including after reopening the draft", async () => {
+    await openTicket("1101");
+    let reply = await openComposer("Reply");
+    await waitFor(() => expect(ccField(reply).value).not.toBe(""));
+
+    fireEvent.change(reply.getByLabelText("Attach files"), { target: { files: [new File(["hello"], "server.log", { type: "text/plain" })] } });
+    await within(await reply.findByRole("list", { name: "Attached files" })).findByText("server.log");
+
+    expect((await loadTicketDraft("1101", "reply"))?.ccEmails).toEqual(["cc.one@example.test", "Cc.Two@example.test", "reply.only@example.test"]);
+    fireEvent.click(reply.getByRole("button", { name: "Close composer" }));
+    reply = await openComposer("Reply");
+    await within(await reply.findByRole("list", { name: "Attached files" })).findByText("server.log");
+    expect(ccField(reply).value).toBe("cc.one@example.test, Cc.Two@example.test, reply.only@example.test");
+    await typeBody(reply, "Logs attached");
+    fireEvent.click(reply.getByRole("button", { name: "Send reply" }));
+    await screen.findByText("Reply sent.");
+    expect(posts()[0]!.body).toMatchObject({
+      cc_emails: ["cc.one@example.test", "Cc.Two@example.test", "reply.only@example.test"],
+      attachments: [{ name: "server.log", size: 5 }],
+    });
+  });
 
   it("starts the Reply with the ticket's CC and reply-CC addresses, once each, without the customer", async () => {
     await openTicket("1101");

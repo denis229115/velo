@@ -9,6 +9,7 @@ import { Clock, Maximize2, Minimize2, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { AddressInput } from "./AddressInput";
 import { EditorToolbar } from "./EditorToolbar";
+import { TaskReplyDraft } from "@/components/clickup/TaskReplyDraft";
 import { AiAssistPanel } from "./AiAssistPanel";
 import { AttachmentPicker } from "./AttachmentPicker";
 import { ScheduleSendDialog } from "./ScheduleSendDialog";
@@ -40,6 +41,7 @@ export function Composer() {
   // Individual selectors — only re-render when each specific value changes
   const isOpen = useComposerStore((s) => s.isOpen);
   const mode = useComposerStore((s) => s.mode);
+  const threadId = useComposerStore((s) => s.threadId);
   const to = useComposerStore((s) => s.to);
   const cc = useComposerStore((s) => s.cc);
   const bcc = useComposerStore((s) => s.bcc);
@@ -527,6 +529,11 @@ export function Composer() {
           />
         )}
 
+        {(mode === "reply" || mode === "replyAll") && activeAccountId && threadId && <TaskReplyDraft
+          key={`${activeAccountId}:${threadId}:${mode}`}
+          item={{ kind: "email", accountId: activeAccountId, threadId }}
+          editor={editor}
+        />}
         {/* Editor */}
         <div className="flex-1 overflow-y-auto">
           <EditorContent editor={editor} />

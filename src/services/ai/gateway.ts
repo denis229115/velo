@@ -66,7 +66,9 @@ export type AiFeature =
   | "writing_style"
   | "auto_draft"
   | "ticket_summary"
-  | "ticket_reply";
+  | "ticket_reply"
+  | "task_proposal"
+  | "task_reply";
 
 /**
  * The only shape in which source content can reach the gateway. Anything else
@@ -80,6 +82,17 @@ export interface AiSourceItem {
   priority?: string | null;
   /** The sender's domain only (for example `example.com`), never the address or name */
   senderDomain?: string | null;
+  /** A linked ClickUp task: never its assignees, people or dates */
+  task?: AiTaskContent | null;
+}
+
+/** The allowlisted fields of a ClickUp task */
+export interface AiTaskContent {
+  name?: string | null;
+  status?: string | null;
+  description?: string | null;
+  /** Comment texts only, oldest first */
+  comments?: string[] | null;
 }
 
 export interface AiGatewayRequest {
@@ -161,6 +174,10 @@ function dataKinds(req: AiGatewayRequest, redaction: Redaction): AiDataKind[] {
     if (item.status) kinds.add("status");
     if (item.priority) kinds.add("priority");
     if (senderDomain(item.senderDomain)) kinds.add("sender_domain");
+    if (item.task?.name) kinds.add("task_name");
+    if (item.task?.status) kinds.add("task_status");
+    if (item.task?.description) kinds.add("task_description");
+    if (item.task?.comments?.some((c) => c.trim())) kinds.add("task_comments");
   }
   if (req.operatorText?.trim()) kinds.add("operator_request");
   for (const kind of redaction.kinds()) kinds.add(kind);
@@ -239,6 +256,12 @@ function renderItem(index: number, item: AiSourceItem, body: string): string {
   if (item.senderDomain) lines.push(`Sender domain: ${item.senderDomain}`);
   if (item.status) lines.push(`Status: ${clean(item.status)}`);
   if (item.priority) lines.push(`Priority: ${clean(item.priority)}`);
+  const task = item.task;
+  if (task?.name) lines.push(`ClickUp task: ${clean(task.name)}`);
+  if (task?.status) lines.push(`Task status: ${clean(task.status)}`);
+  if (task?.description) lines.push(`Task description:\n${clean(task.description)}`);
+  const comments = (task?.comments ?? []).map(clean).filter(Boolean);
+  if (comments.length > 0) lines.push(`Task comments, oldest first:\n${comments.map((c) => `- ${c}`).join("\n")}`);
   if (body) lines.push(lines.length > 0 ? `\n${body}` : body);
   return `<source_item id="${index}">\n${lines.join("\n")}\n</source_item>`;
 }
@@ -274,6 +297,12 @@ function buildUserContent(req: AiGatewayRequest, r: Redaction): string {
       status: item.status && redact(item.status, r),
       priority: item.priority && redact(item.priority, r),
       senderDomain: senderDomain(item.senderDomain),
+      task: item.task && {
+        name: item.task.name && redact(item.task.name, r),
+        status: item.task.status && redact(item.task.status, r),
+        description: item.task.description && redact(item.task.description, r),
+        comments: item.task.comments?.map((c) => redact(c, r)),
+      },
     }));
     parts.push(renderItems(allowlisted, req.maxChars ?? DEFAULT_MAX_CHARS));
   }

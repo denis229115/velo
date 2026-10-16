@@ -172,3 +172,53 @@ describe("migration v27 (scheduled email send-as alias)", () => {
     expect(await db.select("SELECT version FROM _migrations WHERE version = 27")).toHaveLength(1);
   });
 });
+
+describe("migration v37 (ticket reply attachments)", () => {
+  it("keeps files from the earlier attachment-v36 branch and still adds the CC schema", async () => {
+    await runMigrations();
+    for (const column of ["cc_emails_json", "reply_cc_emails_json", "fwd_emails_json"]) {
+      await db.execute(`ALTER TABLE freshdesk_tickets DROP COLUMN ${column}`);
+    }
+    await db.execute("DELETE FROM _migrations WHERE version >= 36");
+    await db.execute(`INSERT INTO _migrations (version, description)
+      VALUES (36, 'Files attached to Freshdesk ticket drafts and scheduled replies')`);
+    for (const [id, owner] of [["draft-file", "draft:freshdesk:fixture.test|me|1001|reply"], ["scheduled-file", "scheduled:later"]]) {
+      await db.execute(`INSERT INTO freshdesk_reply_attachments
+        (attachment_id, owner, position, name, content_type, size, data_base64, created_at)
+        VALUES ($1, $2, 1, 'server.log', 'text/plain', 5, 'aGVsbG8=', 1)`, [id, owner]);
+    }
+
+    await runMigrations();
+    await runMigrations(); // Restarting must keep both migrations and the same bytes.
+
+    const columns = await db.select<{ name: string }[]>("PRAGMA table_info(freshdesk_tickets)");
+    expect(columns.map((c) => c.name)).toEqual(expect.arrayContaining(["cc_emails_json", "reply_cc_emails_json", "fwd_emails_json"]));
+    expect(await db.select("SELECT attachment_id, owner, data_base64 FROM freshdesk_reply_attachments ORDER BY attachment_id")).toEqual([
+      { attachment_id: "draft-file", owner: "draft:freshdesk:fixture.test|me|1001|reply", data_base64: "aGVsbG8=" },
+      { attachment_id: "scheduled-file", owner: "scheduled:later", data_base64: "aGVsbG8=" },
+    ]);
+    expect(await db.select("SELECT version, description FROM _migrations WHERE version >= 36 ORDER BY version")).toEqual([
+      { version: 36, description: "Freshdesk ticket CC, reply-CC and forward lists (NULL when Freshdesk gave none)" },
+      { version: 37, description: "Files attached to Freshdesk ticket drafts and scheduled replies" },
+    ]);
+  });
+
+  it("upgrades the CC v36 database without losing saved CC or drafts", async () => {
+    await runMigrations();
+    await db.execute("DROP TABLE freshdesk_reply_attachments");
+    await db.execute("DELETE FROM _migrations WHERE version >= 37");
+    await db.execute(`INSERT INTO freshdesk_tickets
+      (tenant_id, ticket_id, subject, status_id, created_at, updated_at, cc_emails_json)
+      VALUES ('freshdesk:fixture.test', '1001', 'Help', '2', 1, 1, '["copied@example.test"]')`);
+    await db.execute(`INSERT INTO freshdesk_ticket_drafts
+      (tenant_id, agent_id, ticket_id, mode, body_html, started_at, updated_at)
+      VALUES ('freshdesk:fixture.test', 'me', '1001', 'reply', '<p>Keep me</p>', 1, 1)`);
+
+    await runMigrations();
+
+    expect(await db.select("SELECT * FROM freshdesk_reply_attachments")).toEqual([]);
+    expect(await db.select("SELECT cc_emails_json FROM freshdesk_tickets")).toEqual([{ cc_emails_json: '["copied@example.test"]' }]);
+    expect(await db.select("SELECT body_html FROM freshdesk_ticket_drafts")).toEqual([{ body_html: "<p>Keep me</p>" }]);
+    expect(await db.select("SELECT version FROM _migrations WHERE version >= 36 ORDER BY version")).toEqual([{ version: 36 }, { version: 37 }]);
+  });
+});

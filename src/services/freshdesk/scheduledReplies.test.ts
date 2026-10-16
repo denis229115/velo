@@ -45,7 +45,7 @@ import { startJournalEntry } from "@/services/db/freshdeskJournal";
 import { classifyStatus, connectHelpdesk, currentTenantId } from "./connection";
 import { syncTickets } from "./ticketSync";
 import { getOperationJournal } from "./ticketEdits";
-import { loadTicketDraft, saveTicketDraft } from "./ticketDrafts";
+import { attachToTicketDraft, loadTicketDraft, saveTicketDraft } from "./ticketDrafts";
 import {
   cancelScheduledReply,
   checkScheduledReply,
@@ -372,11 +372,11 @@ describe("changing a pending scheduled reply", () => {
   });
 });
 
-describe("a scheduled reply Freshdesk keeps refusing", () => {
+describe("a scheduled reply Freshdesk keeps rate limiting", () => {
   it("is tried a bounded number of times with backoff, then fails visibly and is not tried again", async () => {
     const id = await scheduleReply();
     for (let i = 0; i < MAX_ATTEMPTS + 2; i++) {
-      stub.respondOnce(ALPHA_HOST, "/api/v2/tickets/1001/reply", { method: "POST", status: 500, body: {} });
+      stub.respondOnce(ALPHA_HOST, "/api/v2/tickets/1001/reply", { method: "POST", status: 429, body: {} });
     }
     later(HOUR_S * 1000);
 
@@ -391,6 +391,95 @@ describe("a scheduled reply Freshdesk keeps refusing", () => {
     expect(posts()).toHaveLength(MAX_ATTEMPTS);
     expect((await listScheduledReplies()).find((r) => r.id === id)).toMatchObject({ state: "failed" });
     expect(notified.map((n) => n.title)).toEqual(["failed"]);
+  });
+});
+
+describe.each([false, true])("scheduled send errors (with files: %s)", (withFiles) => {
+  async function dueReply() {
+    await saveTicketDraft("1001", "reply", { bodyHtml: "<p>We fixed your sign-in.</p>" });
+    if (withFiles) {
+      await attachToTicketDraft("1001", "reply", { name: "report.csv", contentType: "text/csv", dataBase64: btoa("a,b") });
+    }
+    const scheduled = await scheduleTicketReply("1001", { sendAt: nowS() + HOUR_S });
+    if (!scheduled.ok) throw new Error(scheduled.message);
+    stub.requests.length = 0;
+    later(HOUR_S * 1000);
+    return scheduled.id;
+  }
+
+  it.each([500, 502, 503, "dropped"] as const)("reconciles an accepted send after %s without a second POST", async (status) => {
+    const id = await dueReply();
+    stub.respondOnce(ALPHA_HOST, "/api/v2/tickets/1001/reply", {
+      method: "POST", apply: true,
+      ...(status === "dropped" ? { networkError: true } : { status, body: {} }),
+    });
+
+    await processDueScheduledReplies();
+
+    expect((await listScheduledReplies()).find((r) => r.id === id)).toMatchObject({
+      state: "unconfirmed", attachments: withFiles ? [{ name: "report.csv", size: 3 }] : [],
+    });
+    later(60_000);
+    await processDueScheduledReplies();
+    expect((await listScheduledReplies()).find((r) => r.id === id)).toMatchObject({ state: "sent", attachments: [] });
+    expect(posts()).toHaveLength(1);
+  });
+
+  it.each([500, 502, 503])("requires operator action after HTTP %i when reconciliation finds no stored reply", async (status) => {
+    const id = await dueReply();
+    stub.respondOnce(ALPHA_HOST, "/api/v2/tickets/1001/reply", { method: "POST", status, body: {} });
+
+    await processDueScheduledReplies();
+    expect((await listScheduledReplies()).find((r) => r.id === id)?.state).toBe("unconfirmed");
+    later(60_000);
+    await processDueScheduledReplies();
+    expect((await listScheduledReplies()).find((r) => r.id === id)).toMatchObject({
+      state: "failed", error: expect.stringContaining("no record of this reply"),
+      attachments: withFiles ? [{ name: "report.csv", size: 3 }] : [],
+    });
+    later(2 * HOUR_S * 1000);
+    await processDueScheduledReplies();
+    expect(posts()).toHaveLength(1);
+  });
+
+  it("keeps a rate-limited reply and waits at least Retry-After before trying again", async () => {
+    const id = await dueReply();
+    stub.respondOnce(ALPHA_HOST, "/api/v2/tickets/1001/reply", {
+      method: "POST", status: 429, body: { message: "Too many requests" }, headers: { "Retry-After": "7200" },
+    });
+
+    await processDueScheduledReplies();
+
+    expect((await listScheduledReplies()).find((r) => r.id === id)).toMatchObject({
+      state: "pending", error: expect.stringMatching(/Too many requests.*120 minutes/),
+      attachments: withFiles ? [{ name: "report.csv", size: 3 }] : [],
+    });
+    later(7_199_000);
+    await processDueScheduledReplies();
+    expect(posts()).toHaveLength(1);
+    later(1_000);
+    await processDueScheduledReplies();
+    expect(posts()).toHaveLength(2);
+    expect((await listScheduledReplies()).find((r) => r.id === id)?.state).toBe("sent");
+  });
+
+  it("keeps a rejected 400 reply for correction, with field errors, without automatically trying it again", async () => {
+    const id = await dueReply();
+    stub.respondOnce(ALPHA_HOST, "/api/v2/tickets/1001/reply", {
+      method: "POST", status: 400,
+      body: { description: "Validation failed", errors: [{ field: "cc_emails", message: "It should be a valid email", code: "invalid_value" }] },
+    });
+
+    await processDueScheduledReplies();
+
+    expect((await listScheduledReplies()).find((r) => r.id === id)).toMatchObject({
+      state: "failed", error: expect.stringContaining("cc_emails: It should be a valid email"),
+      bodyHtml: "<p>We fixed your sign-in.</p>",
+      attachments: withFiles ? [{ name: "report.csv", size: 3 }] : [],
+    });
+    later(2 * HOUR_S * 1000);
+    await processDueScheduledReplies();
+    expect(posts()).toHaveLength(1);
   });
 });
 
@@ -444,6 +533,52 @@ describe("the operator checking an Unconfirmed scheduled reply", () => {
   });
 });
 
+describe("a scheduled reply with attachments (#34)", () => {
+  const sentFiles = () => posts().map((r) => (r.body as { attachments?: { name: string }[] }).attachments?.map((a) => a.name));
+
+  async function scheduleWithFile() {
+    await saveTicketDraft("1001", "reply", { bodyHtml: "<p>The report is attached.</p>" });
+    await attachToTicketDraft("1001", "reply", { name: "report.csv", contentType: "text/csv", dataBase64: btoa("a,b\n1,2") });
+    const scheduled = await scheduleTicketReply("1001", { sendAt: nowS() + HOUR_S });
+    if (!scheduled.ok) throw new Error(scheduled.message);
+    stub.requests.length = 0;
+    return scheduled.id;
+  }
+
+  it("keeps its files with the schedule and sends them with it when due", async () => {
+    const id = await scheduleWithFile();
+    expect(await loadTicketDraft("1001", "reply")).toBeNull();
+    expect((await listScheduledReplies()).find((r) => r.id === id)?.attachments).toEqual([{ name: "report.csv", size: 7 }]);
+
+    later(HOUR_S * 1000);
+    await processDueScheduledReplies();
+
+    expect(sentFiles()).toEqual([["report.csv"]]);
+    expect((await listScheduledReplies()).find((r) => r.id === id)).toMatchObject({ state: "sent" });
+  });
+
+  it("takes its files back into the draft when moved back to edit", async () => {
+    const id = await scheduleWithFile();
+
+    expect(await editScheduledReply(id)).toEqual({ ok: true, ticketId: "1001" });
+
+    expect((await loadTicketDraft("1001", "reply"))?.attachments.map((a) => a.name)).toEqual(["report.csv"]);
+  });
+
+  it("sends its files when the operator sends a held reply anyway", async () => {
+    const id = await scheduleWithFile();
+    later(60_000);
+    stub.addConversation(ALPHA_HOST, 1001, { user_id: COLLEAGUE_ID, body: "<p>I had a look too.</p>" });
+    later(HOUR_S * 1000);
+    await processDueScheduledReplies();
+    expect((await listScheduledReplies()).find((r) => r.id === id)).toMatchObject({ state: "held" });
+    stub.requests.length = 0;
+
+    expect(await sendScheduledReplyNow(id)).toBeNull();
+    expect(sentFiles()).toEqual([["report.csv"]]);
+  });
+});
+
 describe("switching helpdesks", () => {
   it("leaves no CC address of a scheduled reply behind after connecting a different helpdesk", async () => {
     await saveTicketDraft("1001", "reply", { bodyHtml: "<p>We fixed your sign-in.</p>", ccEmails: ["copied.person@example.test"] });
@@ -454,5 +589,23 @@ describe("switching helpdesks", () => {
 
     const rows = await db.select("SELECT * FROM freshdesk_scheduled_replies");
     expect(JSON.stringify(rows)).not.toContain("copied.person@example.test");
+  });
+
+  it("removes the old helpdesk's draft and scheduled files while keeping files when reconnecting the same helpdesk", async () => {
+    const file = { name: "server.log", contentType: "text/plain", dataBase64: btoa("hello") };
+    await saveTicketDraft("1001", "reply", { bodyHtml: "<p>Logs attached</p>" });
+    await attachToTicketDraft("1001", "reply", file);
+    expect((await scheduleTicketReply("1001", { sendAt: nowS() + HOUR_S })).ok).toBe(true);
+    await attachToTicketDraft("1001", "note", file);
+
+    await connectHelpdesk({ host: ALPHA_HOST, apiKey: ALPHA_KEY });
+    expect((await loadTicketDraft("1001", "note"))?.attachments).toMatchObject([{ name: "server.log" }]);
+    expect((await listScheduledReplies())[0]?.attachments).toEqual([{ name: "server.log", size: 5 }]);
+
+    await connectHelpdesk({ host: BETA_HOST, apiKey: BETA_KEY });
+    expect(await db.select("SELECT * FROM freshdesk_reply_attachments")).toEqual([]);
+    await connectHelpdesk({ host: ALPHA_HOST, apiKey: ALPHA_KEY });
+    await saveTicketDraft("1001", "note", { bodyHtml: "<p>New draft</p>" });
+    expect((await loadTicketDraft("1001", "note"))?.attachments).toEqual([]);
   });
 });

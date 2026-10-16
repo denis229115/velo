@@ -1344,12 +1344,14 @@ export const HELP_CATEGORIES: HelpCategory[] = [
         title: "Create ClickUp tasks from tickets and emails",
         summary: "Turn a ticket or an email thread into a ClickUp task, with backlinks for tickets.",
         description:
-          "In the ticket's or email thread's linked work, choose Create task. The dialog always shows the list the task goes to: the last list you used, else the default list. Pick the status from that list's statuses, assignees from that list's members, a priority and a due date. A ticket fills in its subject as the title. Creating a task from a ticket writes three backlinks: the ticket link in the task description, the ticket ID in the Ticket-ID field and an internal note on the ticket. If the list has no Ticket-ID field, Velo warns you and still writes the other two. A task from an email holds only what you type: nothing from the email is sent to ClickUp.",
+          "In the ticket's or email thread's linked work, choose Create task. The dialog always shows the list the task goes to: the last list you used, else the default list. Pick the status from that list's statuses, assignees from that list's members, a priority and a due date. A ticket fills in its subject as the title. Creating a task from a ticket writes three backlinks: the ticket link in the task description, the ticket ID in the Ticket-ID field and an internal note on the ticket. If the list has no Ticket-ID field, Velo warns you and still writes the other two. A task from an email holds only the title and description you choose; the email link stays in Velo. With the Claude API approved in Settings > AI, Propose task text suggests a title, summary and acceptance criteria from the public ticket messages or email text. Edit the proposal, then choose Replace or Insert; your fields stay as they are until you choose. Creating a task works with AI off.",
         tips: [
           { text: "If a backlink fails, the task shows which one. Retry missing backlink writes only that one again." },
           { text: "If ClickUp does not answer, Velo cannot tell whether the task was made. Check ClickUp looks for it instead of creating a second one." },
           { text: "A due date is a whole day: the date you pick is the date ClickUp shows, in any time zone." },
           { text: "Offline, Create task is disabled and nothing is queued." },
+          { text: "In a ticket reply or an email reply, select a linked task and choose Draft from task. The draft uses its name, current status, description and recent comments; work is complete only when the task says so. Review it, then Replace or Insert. Sending stays manual." },
+          { text: "AI requests use only the approved Claude API through the gateway. Contact and payment details become placeholders, secrets are removed, and new data kinds require a send preview. Internal ticket notes and attachments stay out; requests are recorded in the local AI audit log." },
         ],
         relatedSettingsTab: "clickup",
       },

@@ -225,6 +225,14 @@ export function createClickUpFetchStub(tokens: Record<string, ClickUpFixtureToke
       if (!ws) return json(404, { err: "List not found", ECODE: "ITEM_015" });
       return json(200, { fields: ws.fields[m[1]!] });
     }
+    m = path.match(/^\/task\/([^/]+)\/comment$/);
+    if (m && method === "GET") {
+      const found = findTask(decodeURIComponent(m[1]!));
+      if (!found) return json(404, { err: "Task not found, deleted", ECODE: "ITEM_013" });
+      if (!own(found.team_id)) return notAuthorized();
+      const comments = [...(found.comments ?? [])].reverse().map((c) => ({ ...c, comment: [{ text: c.comment_text }] }));
+      return json(200, { comments });
+    }
     m = path.match(/^\/task\/([^/]+)$/);
     if (m) {
       const id = decodeURIComponent(m[1]!);

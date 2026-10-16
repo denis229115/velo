@@ -8,9 +8,11 @@ interface EditorToolbarProps {
   editor: Editor | null;
   onToggleAiAssist?: () => void;
   aiAssistOpen?: boolean;
+  /** Offer the Image button (an editor without image support hides it) */
+  allowImages?: boolean;
 }
 
-export function EditorToolbar({ editor, onToggleAiAssist, aiAssistOpen }: EditorToolbarProps) {
+export function EditorToolbar({ editor, onToggleAiAssist, aiAssistOpen, allowImages = true }: EditorToolbarProps) {
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const [showLinkDialog, setShowLinkDialog] = useState(false);
 
@@ -83,7 +85,7 @@ export function EditorToolbar({ editor, onToggleAiAssist, aiAssistOpen }: Editor
         className="hidden"
         onChange={handleImageSelect}
       />
-      {btn("Image", false, () => imageInputRef.current?.click(), "Insert image")}
+      {allowImages && btn("Image", false, () => imageInputRef.current?.click(), "Insert image")}
 
       <div className="flex-1" />
 

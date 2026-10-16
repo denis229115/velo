@@ -90,11 +90,12 @@ async function freshdeskRequest<T>(
   try {
     response = await fetch(`https://${credentials.host}/api/v2${path}`, {
       method,
+      // A multipart body sets its own Content-Type, with the boundary
       headers: {
         Authorization: `Basic ${btoa(`${credentials.apiKey}:X`)}`,
-        "Content-Type": "application/json",
+        ...(!(payload instanceof FormData) && { "Content-Type": "application/json" }),
       },
-      ...(payload !== undefined && { body: JSON.stringify(payload) }),
+      ...(payload !== undefined && { body: payload instanceof FormData ? payload : JSON.stringify(payload) }),
       ...(timeoutMs !== undefined && { signal: AbortSignal.timeout(timeoutMs) }),
     });
   } catch {
@@ -120,6 +121,7 @@ async function freshdeskRequest<T>(
       "Freshdesk is rate limiting requests. Velo will try again later.",
       status,
       Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : undefined,
+      detail,
     );
   }
   if (status === 400 && detail.fieldErrors.some((e) => e.code === "invalid_value")) {
