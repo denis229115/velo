@@ -324,3 +324,28 @@ describe("where links are available", () => {
     expect((await getRelatedTasks(ticket("thread-1"))).tasks).toHaveLength(0);
   });
 });
+
+
+it.each([ALPHA_HOST, BETA_HOST])("does not write ticket backlinks after a delayed ClickUp request and reconnect to %s", async (host) => {
+  const original = clickup.fetch;
+  let release!: () => void;
+  let started!: () => void;
+  const waiting = new Promise<void>((resolve) => { started = resolve; });
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  let delay = true;
+  clickup.fetch = async (...args: Parameters<typeof original>) => {
+    const response = await original(...args);
+    if (delay && String(args[0]).includes("/task/86a0exp01")) {
+      delay = false;
+      started();
+      await gate;
+    }
+    return response;
+  };
+  const linking = linkTask(ticket("101"), "86a0exp01");
+  await waiting;
+  await connectHelpdesk({ host, apiKey: host === ALPHA_HOST ? HELPDESK_KEY : "fixture-key-beta-0002" });
+  release();
+  await linking.catch(() => undefined);
+  expect(freshdesk.requests.filter((r) => r.method === "POST")).toEqual([]);
+});

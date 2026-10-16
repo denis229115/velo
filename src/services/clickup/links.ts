@@ -1,6 +1,6 @@
 import { createBackgroundChecker } from "@/services/backgroundCheckers";
 import { useUIStore } from "@/stores/uiStore";
-import { getTicketWebUrl } from "@/services/freshdesk/connection";
+import { currentCredentials } from "@/services/freshdesk/connection";
 import { getIntegrationAccount } from "@/services/db/freshdesk";
 import {
   getCachedTasks,
@@ -223,11 +223,14 @@ export async function backlinkTarget(
   key: LinkKey,
   credentials: { tenantId: string; token: string },
   task: { taskId: string; url: string; name: string },
+  expectedGeneration?: string,
 ): Promise<BacklinkTarget | null> {
   if (item.kind !== "ticket") return null;
-  const ticketUrl = await getTicketWebUrl(item.ticketId);
-  if (!ticketUrl) return null;
-  return { key, credentials, ticketId: item.ticketId, ticketUrl, taskId: task.taskId, taskUrl: task.url, taskName: task.name };
+  const helpdesk = await currentCredentials();
+  if (!helpdesk || helpdesk.tenantId !== key.scopeId ||
+      (expectedGeneration !== undefined && helpdesk.generation !== expectedGeneration)) return null;
+  const ticketUrl = `https://${helpdesk.credentials.host}/a/tickets/${encodeURIComponent(item.ticketId)}`;
+  return { key, credentials, helpdesk, ticketId: item.ticketId, ticketUrl, taskId: task.taskId, taskUrl: task.url, taskName: task.name };
 }
 
 /**
@@ -241,6 +244,7 @@ export async function linkTask(item: LinkedItem, reference: string | { taskId: s
   if (!ref) throw new ClickUpError("not_found", "That is not a ClickUp task URL or ID.");
   if (!useUIStore.getState().isOnline) throw new Error(NEEDS_CONNECTION_MESSAGE);
   const { credentials, key } = await requireLinkContext(item);
+  const generation = item.kind === "ticket" ? (await getIntegrationAccount("freshdesk"))?.generation : undefined;
   await assertNotWaiting(credentials.tenantId);
 
   let verified;
@@ -256,7 +260,7 @@ export async function linkTask(item: LinkedItem, reference: string | { taskId: s
   const inserted = await insertTaskLink(key, { taskId: cached.taskId, createdBy: me?.userId ?? null, origin: "linked" });
   if (!inserted) throw new Error(`“${cached.name}” is already linked here.`);
 
-  const target = await backlinkTarget(item, key, credentials, cached);
+  const target = await backlinkTarget(item, key, credentials, cached, generation);
   if (target) await writeBacklinks(target, [...BACKLINK_STEPS], {});
 
   const related = (await getRelatedTasks(item)).tasks.find((t) => t.taskId === cached.taskId);

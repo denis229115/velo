@@ -24,6 +24,7 @@ export const BACKLINK_LABELS: Record<BacklinkStep, string> = {
 /** What a ticket link's backlinks point at */
 export interface BacklinkTarget {
   key: LinkKey;
+  helpdesk: NonNullable<Awaited<ReturnType<typeof currentCredentials>>>;
   credentials: { tenantId: string; token: string };
   ticketId: string;
   ticketUrl: string;
@@ -111,9 +112,14 @@ async function writeTicketIdField(t: BacklinkTarget, task: RemoteTask): Promise<
 }
 
 /** Reads the ticket back to learn whether an unconfirmed note landed; null when Freshdesk can't be read */
-async function noteLanded(t: BacklinkTarget, entryId: number): Promise<boolean | null> {
+async function sameHelpdesk(t: BacklinkTarget): Promise<boolean> {
   const current = await currentCredentials();
-  if (!current) return null;
+  return current?.tenantId === t.key.scopeId && current.generation === t.helpdesk.generation;
+}
+
+async function noteLanded(t: BacklinkTarget, entryId: number): Promise<boolean | null> {
+  if (!(await sameHelpdesk(t))) return null;
+  const current = t.helpdesk;
   const entry = (await getJournalEntries(current.tenantId, t.ticketId)).find((e) => e.entryId === entryId);
   if (entry?.outcome === "confirmed") return true;
   try {
@@ -132,11 +138,16 @@ async function writeInternalNote(t: BacklinkTarget, previous: BacklinkRecord | u
     if (landed === null) return previous;
     if (landed) return { state: "done", message: null, entryId: previous.entryId };
   }
-  const current = await currentCredentials();
-  if (!current) return { state: "failed", message: "Connect the helpdesk in Settings → Freshdesk to add the internal note." };
+  if (!(await sameHelpdesk(t))) return { state: "failed", message: "The helpdesk connection changed. Reopen the ticket before adding its internal note." };
+  const current = t.helpdesk;
   const { tenantId, credentials } = current;
   // The task itself stays out of the helpdesk's journal: the link record knows it
   const entryId = await startJournalEntry(tenantId, t.ticketId, "add_task_backlink_note", { private: true });
+  if (!(await sameHelpdesk(t))) {
+    const message = "The helpdesk connection changed before adding the internal note.";
+    await finishJournalEntry(entryId, "failed", message);
+    return { state: "failed", message, entryId };
+  }
   try {
     await freshdeskPost<unknown>(credentials, `/tickets/${encodeURIComponent(t.ticketId)}/notes`, { body: noteBody(t), private: true });
   } catch (error) {
