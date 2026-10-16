@@ -164,6 +164,7 @@ async function openWithSummary() {
   expect(ai.captured).toHaveLength(1);
 }
 
+const systemSetTimeout = globalThis.setTimeout;
 const settle = (ms: number) => act(async () => { await vi.advanceTimersByTimeAsync(ms); });
 
 beforeEach(async () => {
@@ -346,4 +347,38 @@ describe("a summary that updates when new activity arrives", () => {
     expect(await card().findByText(/Summary B/)).toBeInTheDocument();
     expect(ai.captured).toHaveLength(2);
   });
+});
+
+
+it("cancels a hidden summary's pending automatic refresh and can reopen explicitly", async () => {
+  await openWithSummary();
+  ai.respond = () => Promise.resolve(SUMMARY_B);
+  await arrives("customer", "New public follow-up.");
+  expect(await card().findByText(/Updating/)).toBeInTheDocument();
+  fireEvent.click(card().getByRole("button", { name: "Hide summary" }));
+  await settle(AUTO_SUMMARY_DEBOUNCE_MS + AUTO_SUMMARY_MIN_INTERVAL_MS);
+  // Let native crypto promises finish after advancing the system clock.
+  await act(async () => { await new Promise((resolve) => systemSetTimeout(resolve, 20)); });
+  expect(ai.captured).toHaveLength(1);
+  expect(card().queryByText(/Summary A|Summary B/)).not.toBeInTheDocument();
+  fireEvent.click(card().getByRole("button", { name: "Summarize" }));
+  expect(await card().findByText(/Summary B/)).toBeInTheDocument();
+  expect(ai.captured).toHaveLength(2);
+});
+
+
+it("ignores an automatic summary that finishes after Hide", async () => {
+  await openWithSummary();
+  let release!: (text: string) => void;
+  ai.respond = () => new Promise<string>((resolve) => { release = resolve; });
+  await arrives("customer", "Another customer follow-up.");
+  await settle(AUTO_SUMMARY_DEBOUNCE_MS);
+  await waitFor(() => expect(ai.captured).toHaveLength(2));
+  fireEvent.click(card().getByRole("button", { name: "Hide summary" }));
+  await act(async () => { release(SUMMARY_B); });
+  await arrives("customer", "Still waiting, summary stays hidden.");
+  await settle(AUTO_SUMMARY_MIN_INTERVAL_MS * 2);
+  expect(card().getByRole("button", { name: "Summarize" })).toBeVisible();
+  expect(card().queryByText(/Summary A|Summary B/)).not.toBeInTheDocument();
+  expect(ai.captured).toHaveLength(2);
 });
