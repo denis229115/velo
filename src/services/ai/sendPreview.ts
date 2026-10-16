@@ -56,6 +56,11 @@ export function takePreviewRequest(feature: AiFeature): boolean {
   return previewRequested.delete(feature);
 }
 
+/** Whether the operator asked to preview this feature's next request, without using the ask up. */
+export function hasPreviewRequest(feature: AiFeature): boolean {
+  return previewRequested.has(feature);
+}
+
 export function getSendPreviewHandler(): SendPreviewHandler | null {
   return previewHandler;
 }

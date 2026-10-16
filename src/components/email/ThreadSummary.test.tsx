@@ -60,12 +60,35 @@ describe("ThreadSummary", () => {
     expect(container.innerHTML).toBe("");
   });
 
+  it("makes no AI request when a thread opens, even with AI ready", async () => {
+    vi.mocked(getAiReadiness).mockResolvedValue({ status: "ready", provider: "claude", model: "m" });
+
+    renderSummary();
+
+    expect(await screen.findByRole("button", { name: "Summarize" })).toBeInTheDocument();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(summarizeThread).not.toHaveBeenCalled();
+  });
+
+  it("summarizes only when the operator clicks Summarize", async () => {
+    vi.mocked(getAiReadiness).mockResolvedValue({ status: "ready", provider: "claude", model: "m" });
+    vi.mocked(summarizeThread).mockResolvedValue("They want the invoice resent.");
+
+    renderSummary();
+    fireEvent.click(await screen.findByRole("button", { name: "Summarize" }));
+
+    expect(await screen.findByText("They want the invoice resent.")).toBeInTheDocument();
+    expect(summarizeThread).toHaveBeenCalledTimes(1);
+    expect(summarizeThread).toHaveBeenCalledWith("thread-1", "acc-1", messages, { refresh: false });
+  });
+
   it("keeps the thread readable when the AI request fails", async () => {
     vi.mocked(getAiReadiness).mockResolvedValue({ status: "ready", provider: "claude", model: "m" });
     vi.mocked(summarizeThread).mockRejectedValue(new AiError("NETWORK_ERROR", "offline"));
 
     renderSummary();
 
+    fireEvent.click(await screen.findByRole("button", { name: "Summarize" }));
     expect(await screen.findByText("Summary unavailable right now.")).toBeInTheDocument();
   });
 
@@ -74,6 +97,7 @@ describe("ThreadSummary", () => {
     vi.mocked(summarizeThread).mockResolvedValueOnce("They want the invoice resent.");
 
     renderSummary();
+    fireEvent.click(await screen.findByRole("button", { name: "Summarize" }));
     expect(await screen.findByText("They want the invoice resent.")).toBeInTheDocument();
 
     vi.mocked(summarizeThread).mockResolvedValueOnce("Updated summary.");
@@ -88,6 +112,7 @@ describe("ThreadSummary", () => {
     vi.mocked(summarizeThread).mockResolvedValue("They want the invoice resent.");
 
     renderSummary();
+    fireEvent.click(await screen.findByRole("button", { name: "Summarize" }));
     expect(await screen.findByText("They want the invoice resent.")).toBeInTheDocument();
     expect(screen.getByText("Sends to Claude API (Anthropic)")).toBeInTheDocument();
 
@@ -107,6 +132,7 @@ describe("ThreadSummary", () => {
 
     renderSummary();
 
+    fireEvent.click(await screen.findByRole("button", { name: "Summarize" }));
     expect(await screen.findByText("Not sent: you cancelled the send preview.")).toBeInTheDocument();
     expect(screen.queryByText("Summary unavailable right now.")).not.toBeInTheDocument();
     expect(screen.getByText("Sends to Claude API (Anthropic)")).toBeInTheDocument();

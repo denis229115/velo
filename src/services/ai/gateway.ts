@@ -38,6 +38,7 @@ import {
 import {
   APPROVED_PROVIDER_LABEL,
   getSendPreviewHandler,
+  hasPreviewRequest,
   takePreviewRequest,
   type AiDataKind,
   type SendPreview,
@@ -105,6 +106,13 @@ export interface AiGatewayRequest {
   maxChars?: number;
   maxTokens?: number;
   cache?: { scope: string; sourceId: string; refresh?: boolean };
+  /**
+   * The operator did not just ask for this request (an automatic refresh). It
+   * goes through every rule of a manual one, but a request that would need a
+   * send preview is not sent and opens no dialog: it fails with PREVIEW_REQUIRED
+   * until the operator makes the request themselves.
+   */
+  unattended?: boolean;
 }
 
 /** The provider allowed to receive email, ticket and task content. */
@@ -199,14 +207,19 @@ async function readPreviewedKinds(): Promise<AiDataKind[] | null> {
 async function confirmSend(
   preview: Omit<SendPreview, "reason" | "newKinds">,
   kinds: AiDataKind[],
+  unattended = false,
 ): Promise<void> {
   const run = previewQueue.then(async () => {
     const previewed = await readPreviewedKinds();
     const newKinds = previewed === null ? [] : kinds.filter((k) => !previewed.includes(k));
-    const requested = takePreviewRequest(preview.feature);
+    // An unattended request leaves a preview the operator asked for to their own next request
+    const requested = unattended ? hasPreviewRequest(preview.feature) : takePreviewRequest(preview.feature);
     const reason: SendPreview["reason"] | null =
       previewed === null ? "first_use" : newKinds.length > 0 ? "new_data_kind" : requested ? "requested" : null;
     if (!reason) return;
+    if (unattended) {
+      throw new AiError("PREVIEW_REQUIRED", "Not sent: this update needs your send preview first. Summarize it yourself to see what would be sent.");
+    }
 
     const previewHandler = getSendPreviewHandler();
     if (!previewHandler) {
@@ -373,6 +386,7 @@ export async function requestAi(req: AiGatewayRequest): Promise<string> {
   await confirmSend(
     { feature: req.feature, providerLabel: PROVIDER_LABELS[provider], model, systemPrompt, userContent, flagCounts },
     dataKinds(req, redaction),
+    req.unattended,
   );
 
   const auditId = await insertAiAuditLog({

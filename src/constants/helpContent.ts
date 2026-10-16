@@ -789,10 +789,10 @@ export const HELP_CATEGORIES: HelpCategory[] = [
         title: "Thread summaries",
         summary: "AI-generated summary of long conversations.",
         description:
-          "For threads with many messages, click the summary button to get a concise AI-generated overview. The summary captures the key points, decisions, and action items from the entire conversation, saving you from reading through dozens of messages. Summaries are cached locally so you only pay for the API call once. Especially useful for threads you were CC'd on or need to catch up on after being away.",
+          "For email threads with two or more messages, choose Summarize to get a concise AI-generated overview. Opening an email never requests a summary or quick replies by itself. The summary captures the key points, decisions, and action items from the entire email thread. Requests go through the AI gateway to the approved Claude API, with a send preview on first use and whenever a new kind of data is included. Summaries are cached locally; Refresh summary requests a new one.",
         tips: [
-          { text: "Click the summary icon in the thread view header." },
-          { text: "Summaries are cached — subsequent views are instant and free." },
+          { text: "Choose Summarize in the AI Summary panel." },
+          { text: "Choose Preview to see exactly what will be sent." },
           { text: "Best for long threads with 5+ messages." },
           { text: "Captures key decisions, action items, and takeaways." },
         ],
@@ -803,7 +803,7 @@ export const HELP_CATEGORIES: HelpCategory[] = [
         title: "Smart replies",
         summary: "AI-suggested quick reply options.",
         description:
-          "When viewing a thread, AI analyzes the latest message and suggests 2-3 short reply options — like \"Sounds good, thanks!\", \"Let me check and get back to you.\", or \"I'm available next Tuesday.\" Click a suggestion to insert it into the reply editor, then edit it before sending. Smart replies save time for quick, routine responses.",
+          "When viewing an email thread, choose Generate replies in Quick Replies to ask AI for 2-3 short reply options — like \"Sounds good, thanks!\", \"Let me check and get back to you.\", or \"I'm available next Tuesday.\" Opening an email never generates suggestions by itself. Requests use the AI gateway and send preview rules. Click a suggestion to insert it into the reply editor, then edit it before sending.",
         tips: [
           { text: "Smart reply suggestions appear below the last message in a thread." },
           { text: "Click a suggestion to insert it into the reply editor." },
@@ -1307,10 +1307,11 @@ export const HELP_CATEGORIES: HelpCategory[] = [
         title: "Ticket summary and AI reply drafts",
         summary: "Summarise a ticket and draft a reply with AI, always under your control.",
         description:
-          "With the Claude API approved in Settings > AI, the reader offers an AI summary: choose Summarize to see the issue, relevant facts, work done, the current blocker, unanswered questions and the next action. Each point cites the numbered messages it rests on; click a number to jump to that message. The summary stays in Velo and is never written to Freshdesk; it is kept until the ticket's public messages, status or priority change. In Reply to customer, choose a tone (friendly-professional, neutral or formal) and Draft reply, or Rewrite or Shorten what you wrote. The draft is in the customer's language and asks a clarifying question rather than inventing fixes, dates or commitments. It appears as a proposal: Use draft fills an empty reply; when you have written something, Replace or Insert decide what happens to your text, and Discard drops the proposal. Velo adds your Freshdesk signature when it sends, and nothing is sent until you choose Send reply. Only the subject, status, priority and the text of public messages are sent, with contact and payment details replaced by placeholders and secrets removed; internal notes, attachments, names and addresses never leave Velo. With AI off, failing or cancelled, reading and replying work as usual.",
+          "With the Claude API approved in Settings > AI, the reader offers an AI summary: choose Summarize to see the issue, relevant facts, work done, the current blocker, unanswered questions and the next action. Each point cites the numbered messages it rests on; click a number to jump to that message. The summary stays in Velo and is never written to Freshdesk; it is kept until the ticket's public messages, status or priority change. While a summary is on screen, a new public message updates it by itself after a short wait, at most once every few minutes: the old summary stays, marked Updating, until the new one replaces it, and marked Out of date when no update is coming (offline, AI off, cancelled, failed, or an update that needs your send preview, which waits until you choose Update summary). Internal notes never trigger an update, and only the open ticket is ever updated. In Reply to customer, choose a tone (friendly-professional, neutral or formal) and Draft reply, or Rewrite or Shorten what you wrote. The draft is in the customer's language and asks a clarifying question rather than inventing fixes, dates or commitments. It appears as a proposal: Use draft fills an empty reply; when you have written something, Replace or Insert decide what happens to your text, and Discard drops the proposal. Velo adds your Freshdesk signature when it sends, and nothing is sent until you choose Send reply. Only the subject, status, priority and the text of public messages are sent, with contact and payment details replaced by placeholders and secrets removed; internal notes, attachments, names and addresses never leave Velo. With AI off, failing or cancelled, reading and replying work as usual.",
         tips: [
           { text: "The send preview shows exactly what goes to the Claude API before the first request and whenever a new kind of data is included." },
           { text: "Cancel stops waiting for a summary or draft; your reply stays as it was." },
+          { text: "Settings > AI > Update summaries automatically turns automatic updates off; Summarize still works." },
           { text: "AI drafts are offered on replies only, never on internal notes." },
         ],
         relatedSettingsTab: "ai",

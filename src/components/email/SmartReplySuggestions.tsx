@@ -43,14 +43,6 @@ export function SmartReplySuggestions({ threadId, accountId, messages, noReply }
     }
   }, [threadId, accountId, messages]);
 
-  // Auto-load when available
-  useEffect(() => {
-    if (!available || messages.length === 0 || replies !== null || loadingRef.current) return;
-    loadReplies();
-  }, [available, messages.length, replies, loadReplies]);
-
-  // Through the guarded loader, so clearing the replies doesn't also trigger
-  // the auto-load and send the thread twice.
   const handleRefresh = useCallback(() => loadReplies(true), [loadReplies]);
 
   const handleReplyClick = useCallback((replyText: string) => {
@@ -75,14 +67,25 @@ export function SmartReplySuggestions({ threadId, accountId, messages, noReply }
       <div className="flex items-center gap-2 mb-2">
         <Sparkles size={14} className="text-accent shrink-0" />
         <span className="text-xs font-medium text-accent flex-1">Quick Replies</span>
-        <button
-          onClick={handleRefresh}
-          className="p-0.5 text-text-tertiary hover:text-accent transition-colors"
-          title="Refresh suggestions"
-        >
-          <RefreshCw size={12} className={loading ? "animate-spin" : ""} />
-        </button>
+        {replies && (
+          <button
+            onClick={handleRefresh}
+            className="p-0.5 text-text-tertiary hover:text-accent transition-colors"
+            title="Refresh suggestions"
+          >
+            <RefreshCw size={12} className={loading ? "animate-spin" : ""} />
+          </button>
+        )}
       </div>
+      {!replies && !loading && (
+        <button
+          type="button"
+          onClick={() => loadReplies()}
+          className="text-xs text-accent hover:underline"
+        >
+          Generate replies
+        </button>
+      )}
       {loading && !replies && (
         <div className="flex items-center gap-2 text-text-tertiary">
           <div className="w-3 h-3 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />

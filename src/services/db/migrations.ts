@@ -325,7 +325,6 @@ const MIGRATIONS = [
       INSERT OR IGNORE INTO settings (key, value) VALUES
         ('ai_enabled', 'true'),
         ('ai_auto_categorize', 'true'),
-        ('ai_auto_summarize', 'true'),
         ('contact_sidebar_visible', 'true'),
         ('attachment_cache_max_mb', '500'),
         ('calendar_enabled', 'false');
@@ -1165,6 +1164,15 @@ const MIGRATIONS = [
       );
       CREATE INDEX IF NOT EXISTS idx_clickup_task_operations_item
         ON clickup_task_operations(workspace_id, item_kind, scope_id, item_id);
+    `,
+  },
+  {
+    version: 36,
+    description: "Freshdesk ticket CC, reply-CC and forward lists (NULL when Freshdesk gave none)",
+    sql: `
+      ALTER TABLE freshdesk_tickets ADD COLUMN cc_emails_json TEXT;
+      ALTER TABLE freshdesk_tickets ADD COLUMN reply_cc_emails_json TEXT;
+      ALTER TABLE freshdesk_tickets ADD COLUMN fwd_emails_json TEXT;
     `,
   },
 ];

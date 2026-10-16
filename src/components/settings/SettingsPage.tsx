@@ -6,6 +6,7 @@ import { useAccountStore } from "@/stores/accountStore";
 import { getSetting, setSetting, getSecureSetting, setSecureSetting } from "@/services/db/settings";
 import { TimeZoneSettings } from "./TimeZoneSettings";
 import { AiProviderSettings } from "./AiProviderSettings";
+import { TicketSummaryAutoUpdate } from "./TicketSummaryAutoUpdate";
 import { FreshdeskSettings } from "./FreshdeskSettings";
 import { ClickUpSettings } from "./ClickUpSettings";
 import { deleteAccount } from "@/services/db/accounts";
@@ -124,7 +125,6 @@ export function SettingsPage() {
   const [autostartEnabled, setAutostartEnabled] = useState(false);
   const [aiEnabled, setAiEnabled] = useState(true);
   const [aiAutoCategorize, setAiAutoCategorize] = useState(true);
-  const [aiAutoSummarize, setAiAutoSummarize] = useState(true);
   const [aiAutoDraftEnabled, setAiAutoDraftEnabled] = useState(true);
   const [aiWritingStyleEnabled, setAiWritingStyleEnabled] = useState(true);
   const [styleAnalyzing, setStyleAnalyzing] = useState(false);
@@ -173,8 +173,6 @@ export function SettingsPage() {
       setAiEnabled(aiEn !== "false");
       const aiCat = await getSetting("ai_auto_categorize");
       setAiAutoCategorize(aiCat !== "false");
-      const aiSum = await getSetting("ai_auto_summarize");
-      setAiAutoSummarize(aiSum !== "false");
       const aiDraft = await getSetting("ai_auto_draft_enabled");
       setAiAutoDraftEnabled(aiDraft !== "false");
       const aiStyle = await getSetting("ai_writing_style_enabled");
@@ -1042,16 +1040,7 @@ export function SettingsPage() {
                         await setSetting("ai_auto_categorize", newVal ? "true" : "false");
                       }}
                     />
-                    <ToggleRow
-                      label="Auto-summarize threads"
-                      description="Show AI summaries on multi-message threads"
-                      checked={aiAutoSummarize}
-                      onToggle={async () => {
-                        const newVal = !aiAutoSummarize;
-                        setAiAutoSummarize(newVal);
-                        await setSetting("ai_auto_summarize", newVal ? "true" : "false");
-                      }}
-                    />
+                    <TicketSummaryAutoUpdate />
                   </Section>
 
                   <Section title="Auto-Draft Replies">
