@@ -275,10 +275,11 @@ function ComposerPane({
   const canSchedule =
     mode === "reply" && writable.writable && !busy && !attaching && !empty && !unconfirmed && badCc.length === 0 && !tooLarge && outcome?.kind !== "stale";
   const canSend = writable.writable && !busy && !attaching && !empty && !unconfirmed && badCc.length === 0 && !tooLarge && outcome?.kind !== "stale";
+  const composerRoot = useRef<HTMLElement>(null);
   useComposerShortcuts({
     onSend: () => { if (canSend) void send(); },
     onSendLater: mode === "reply" ? () => { if (canSchedule) setShowSchedule(true); } : undefined,
-  }, !showSchedule && !emailComposerOpen);
+  }, !showSchedule && !emailComposerOpen, composerRoot);
 
   async function schedule(sendAt: number) {
     setShowSchedule(false);
@@ -322,6 +323,7 @@ function ComposerPane({
 
   return (
     <section
+      ref={composerRoot}
       aria-label={MODE_NAME[mode]}
       className={`max-w-4xl mb-6 rounded-lg border bg-surface-composer ${isNote ? "border-status-warning/50" : "border-accent/50"}`}
     >

@@ -1,3 +1,4 @@
+import { TaskDrawer } from "@/components/clickup/TaskDrawer";
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import {
@@ -546,7 +547,7 @@ describe("CC prefill from the ticket", () => {
 });
 
 describe("scheduling a reply", () => {
-  const pressSendLater = () => fireEvent.keyDown(window, { key: "L", metaKey: true, shiftKey: true });
+  const pressSendLater = () => fireEvent.keyDown(screen.getByRole("textbox", { name: "Reply text" }), { key: "L", metaKey: true, shiftKey: true });
 
   it("opens the schedule picker on Cmd+Shift+L, says it sends only while Velo runs, and schedules with the chosen status (A26)", async () => {
     await openTicket();
@@ -638,4 +639,21 @@ it("gives the full email composer precedence over a ticket reply for send keys",
   expect(screen.queryByRole("group", { name: "Schedule reply" })).not.toBeInTheDocument();
   expect(reply.getByText("Ticket reply stays here")).toBeVisible();
   act(() => useComposerStore.getState().closeComposer());
+});
+
+
+it("keeps the ticket reply untouched when send keys are pressed in a ClickUp drawer", async () => {
+  await openTicket();
+  await draft("reply", "<p>Keep this reply</p>");
+  const reply = await openComposer("Reply");
+  await reply.findByText("Keep this reply");
+  render(<TaskDrawer title="Create task" onClose={() => {}}><input aria-label="Task name" /></TaskDrawer>);
+  const input = screen.getByRole("textbox", { name: "Task name" });
+  input.focus();
+  fireEvent.keyDown(input, { key: "Enter", metaKey: true });
+  fireEvent.keyDown(input, { key: "L", metaKey: true, shiftKey: true });
+  await act(async () => {});
+  expect(writes()).toEqual([]);
+  expect(screen.queryByRole("group", { name: "Schedule reply" })).not.toBeInTheDocument();
+  expect(reply.getByText("Keep this reply")).toBeVisible();
 });
