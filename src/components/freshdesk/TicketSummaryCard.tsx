@@ -1,3 +1,4 @@
+import { useShortcutAction } from "@/hooks/useShortcutAction";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { RefreshCw, Sparkles, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
@@ -147,6 +148,11 @@ export function TicketSummaryCard({ ticket, view }: { ticket: TicketListItem; vi
   useEffect(() => {
     if (stale && currentKey !== null && complete && ready && online && autoOn) refresher.current?.request(currentKey);
   }, [stale, currentKey, complete, ready, online, autoOn]);
+
+  useShortcutAction("ticket.summarize", ({ ticketId }) => {
+    if (ticketId !== ticket.id || !ready || !view || state.kind === "loading" || (state.kind === "done" && state.refreshing)) return;
+    void summarize(state.kind === "failed" || state.kind === "done");
+  });
 
   if (!readiness) return null;
 

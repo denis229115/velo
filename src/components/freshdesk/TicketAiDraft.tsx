@@ -31,18 +31,28 @@ export function TicketAiDraft({
   view,
   editor,
   empty,
+  request = 0,
 }: {
   ticket: TicketListItem;
   view: TicketHistoryView | null;
   editor: Editor | null;
   empty: boolean;
+  /** An explicit registry action can open the reply before its editor is ready. */
+  request?: number;
 }) {
   const readiness = useAiReadiness();
   const [tone, setTone] = useState<ReplyTone>("friendly_professional");
   const [state, setState] = useState<State>({ kind: "idle" });
   const run = useRef(0);
+  const consumedRequest = useRef(0);
 
   useEffect(() => () => void run.current++, []);
+
+  useEffect(() => {
+    if (!request || consumedRequest.current === request || readiness?.status !== "ready" || !editor || !view) return;
+    consumedRequest.current = request;
+    if (editor.isEditable && state.kind !== "loading") void generate("draft");
+  }, [request, readiness, editor, view]);
 
   if (readiness?.status !== "ready" || !editor) return null;
 

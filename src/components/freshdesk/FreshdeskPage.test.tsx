@@ -48,7 +48,10 @@ import { hydrateTicketHistories, resetHydrationState } from "@/services/freshdes
 import { getSelectedThreadId } from "@/router/navigate";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useTicketStore } from "@/stores/ticketStore";
+import { useShortcutStore } from "@/stores/shortcutStore";
+import { getDefaultKeyMap } from "@/constants/shortcuts";
 import { FreshdeskPage } from "./FreshdeskPage";
+import { ShortcutsTab } from "@/components/settings/SettingsPage";
 import { FreshdeskViewNav } from "./FreshdeskViewNav";
 
 vi.spyOn(console, "log").mockImplementation(() => {});
@@ -108,6 +111,7 @@ beforeEach(async () => {
   stub = createFreshdeskFetchStub({ [ALPHA_HOST]: { apiKey: ALPHA_KEY, tenant: alphaTenantWithTickets } });
   await runMigrations();
   useTicketStore.setState(useTicketStore.getInitialState(), true);
+  useShortcutStore.setState({ keyMap: getDefaultKeyMap() });
 });
 
 afterEach(async () => {
@@ -407,4 +411,98 @@ describe("Freshdesk ticket views", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "Company / group" }));
     await waitFor(() => expect(within(screen.getByRole("button", { name: /^Ticket #1002/ })).getByText(/Fixture/, { selector: "[data-column=company_group]" })).toBeInTheDocument());
   });
+});
+
+
+describe("ticket shortcuts", () => {
+  it("reuses r to open Reply to customer on the selected ticket", async () => {
+    await connectAndSync();
+    renderFreshdesk("/freshdesk/ticket/1001");
+    await within(await screen.findByRole("region", { name: "Ticket reader" })).findByRole("button", { name: "Reply" });
+
+    press("r");
+
+    expect(await screen.findByRole("region", { name: "Reply to customer" })).toBeVisible();
+    expect(screen.queryByRole("region", { name: "Internal note" })).not.toBeInTheDocument();
+  });
+});
+
+
+it("rebinds Internal note from settings and uses the new key immediately", async () => {
+  await connectAndSync();
+  renderFreshdesk("/freshdesk/ticket/1001");
+  await within(await screen.findByRole("region", { name: "Ticket reader" })).findByRole("button", { name: "Reply" });
+  const settings = render(<ShortcutsTab />);
+  const row = screen.getByText("Ticket: Internal note").closest("[data-shortcut-row]")!;
+  const binding = within(row as HTMLElement).getByRole("button", { name: "n" });
+  fireEvent.click(binding);
+  fireEvent.keyDown(binding, { key: "y" });
+  settings.unmount();
+
+  press("n");
+  expect(screen.queryByRole("region", { name: "Internal note" })).not.toBeInTheDocument();
+  press("y");
+  expect(await screen.findByRole("region", { name: "Internal note" })).toBeVisible();
+  expect(screen.queryByRole("region", { name: "Reply to customer" })).not.toBeInTheDocument();
+});
+
+
+it.each([
+  ["S", "Status"], ["P", "Priority"], ["A", "Assignee"],
+])("Shift+%s focuses the existing %s control", async (key, label) => {
+  await connectAndSync();
+  renderFreshdesk("/freshdesk/ticket/1001");
+  const region = within(await screen.findByRole("region", { name: "Ticket reader" }));
+  const control = await region.findByRole("combobox", { name: label });
+  fireEvent.keyDown(window, { key, shiftKey: true });
+  expect(control).toHaveFocus();
+});
+
+
+it("ignores ticket actions in inputs, selects and nested editable text, including rebound modified keys", async () => {
+  await connectAndSync();
+  renderFreshdesk("/freshdesk/ticket/1001");
+  await within(await screen.findByRole("region", { name: "Ticket reader" })).findByRole("button", { name: "Reply" });
+  act(() => useShortcutStore.getState().setKey("ticket.note", "Alt+N"));
+  const targets = [document.createElement("input"), document.createElement("textarea"), document.createElement("select")];
+  const editable = document.createElement("div");
+  editable.setAttribute("contenteditable", "true");
+  const child = document.createElement("span");
+  editable.append(child);
+  document.body.append(editable, ...targets);
+  for (const target of [...targets, child]) {
+    fireEvent.keyDown(target, { key: "n", altKey: true });
+    fireEvent.keyDown(target, { key: "r" });
+  }
+  expect(screen.queryByRole("region", { name: "Internal note" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("region", { name: "Reply to customer" })).not.toBeInTheDocument();
+  editable.remove();
+  targets.forEach((target) => target.remove());
+  fireEvent.keyDown(window, { key: "n", altKey: true });
+  expect(await screen.findByRole("region", { name: "Internal note" })).toBeVisible();
+});
+
+
+it("switches the current ticket view between list and board with b", async () => {
+  await connectAndSync();
+  renderFreshdesk();
+  const list = await screen.findByRole("button", { name: "List", exact: true });
+  const board = screen.getByRole("button", { name: "Board", exact: true });
+  expect(list).toHaveAttribute("aria-pressed", "true");
+  press("b");
+  await waitFor(() => expect(board).toHaveAttribute("aria-pressed", "true"));
+  press("b");
+  await waitFor(() => expect(list).toHaveAttribute("aria-pressed", "true"));
+});
+
+
+it("opens tickets with the registry's Enter default and stops using Enter after rebinding", async () => {
+  await connectAndSync();
+  renderFreshdesk();
+  await screen.findByText("Fixture: export stuck");
+  act(() => useShortcutStore.getState().setKey("nav.open", "y"));
+  press("Enter");
+  expect(within(reader()).getByText("Select a ticket to read")).toBeInTheDocument();
+  press("y");
+  await within(reader()).findByRole("heading", { level: 2 });
 });

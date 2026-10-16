@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { EditorToolbar } from "@/components/composer/EditorToolbar";
 import { ScheduleSendDialog } from "@/components/composer/ScheduleSendDialog";
 import { useComposerShortcuts } from "@/hooks/useComposerShortcuts";
+import { useComposerStore } from "@/stores/composerStore";
 import { useShortcutStore } from "@/stores/shortcutStore";
 import { formatShortcut } from "@/utils/shortcutLabel";
 import { formatFullDate } from "@/utils/date";
@@ -79,6 +80,7 @@ const parseCc = splitAddressText;
 export function TicketComposer({
   ticket,
   history = null,
+  aiDraftRequest = 0,
   mode,
   onModeChange,
   onClose,
@@ -86,27 +88,31 @@ export function TicketComposer({
   ticket: TicketListItem;
   /** The ticket's history, which AI drafts read; null while loading */
   history?: TicketHistoryView | null;
+  aiDraftRequest?: number;
   mode: ComposerMode;
   onModeChange: (mode: ComposerMode) => void;
   onClose: () => void;
 }) {
   // One pane per ticket and mode, so each loads and saves its own draft
-  return <ComposerPane key={`${ticket.id}:${mode}`} ticket={ticket} history={history} mode={mode} onModeChange={onModeChange} onClose={onClose} />;
+  return <ComposerPane key={`${ticket.id}:${mode}`} ticket={ticket} history={history} aiDraftRequest={aiDraftRequest} mode={mode} onModeChange={onModeChange} onClose={onClose} />;
 }
 
 function ComposerPane({
   ticket,
   history,
+  aiDraftRequest,
   mode,
   onModeChange,
   onClose,
 }: {
   ticket: TicketListItem;
   history: TicketHistoryView | null;
+  aiDraftRequest: number;
   mode: ComposerMode;
   onModeChange: (mode: ComposerMode) => void;
   onClose: () => void;
 }) {
+  const emailComposerOpen = useComposerStore((s) => s.isOpen);
   const writable = useFreshdeskWritable({ isSample: ticket.isSample });
   const [me, setMe] = useState<HelpdeskAgent | null>(null);
   const [doneStatuses, setDoneStatuses] = useState<ClassifiableStatus[]>([]);
@@ -116,6 +122,7 @@ function ComposerPane({
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const [showSchedule, setShowSchedule] = useState(false);
+  const sendKeys = useShortcutStore((s) => s.keyMap["app.send"]);
   const [attachments, setAttachments] = useState<DraftAttachment[]>([]);
   const [attachError, setAttachError] = useState<string | null>(null);
   const [attaching, setAttaching] = useState(false);
@@ -267,7 +274,11 @@ function ComposerPane({
   const tooLarge = attachmentLimitProblem(attachments);
   const canSchedule =
     mode === "reply" && writable.writable && !busy && !attaching && !empty && !unconfirmed && badCc.length === 0 && !tooLarge && outcome?.kind !== "stale";
-  useComposerShortcuts({ onSendLater: () => canSchedule && setShowSchedule(true) }, mode === "reply");
+  const canSend = writable.writable && !busy && !attaching && !empty && !unconfirmed && badCc.length === 0 && !tooLarge && outcome?.kind !== "stale";
+  useComposerShortcuts({
+    onSend: () => { if (canSend) void send(); },
+    onSendLater: mode === "reply" ? () => { if (canSchedule) setShowSchedule(true); } : undefined,
+  }, !showSchedule && !emailComposerOpen);
 
   async function schedule(sendAt: number) {
     setShowSchedule(false);
@@ -356,7 +367,7 @@ function ComposerPane({
         scheduleSave();
       }} />
 
-      {mode === "reply" && <><TicketAiDraft ticket={ticket} view={history} editor={editor} empty={empty} /><TaskReplyDraft key={ticket.id} item={{ kind: "ticket", ticketId: ticket.id }} editor={editor} disabled={busy || unconfirmed} /></>}
+      {mode === "reply" && <><TicketAiDraft request={aiDraftRequest} ticket={ticket} view={history} editor={editor} empty={empty} /><TaskReplyDraft key={ticket.id} item={{ kind: "ticket", ticketId: ticket.id }} editor={editor} disabled={busy || unconfirmed} /></>}
 
       <div className="mx-3 mt-2 rounded-md border border-border-primary bg-bg-primary">
         <EditorToolbar editor={editor} allowImages={false} />
@@ -380,6 +391,7 @@ function ComposerPane({
               size="sm"
               {...writable.controlProps}
               disabled={writable.controlProps.disabled || busy || attaching || empty || badCc.length > 0 || tooLarge !== null}
+              title={writable.controlProps.title ?? (sendKeys ? `${sendLabel} (${formatShortcut(sendKeys)})` : sendLabel)}
               onClick={() => void send()}
             >
               {busy ? "Sending…" : sendLabel}

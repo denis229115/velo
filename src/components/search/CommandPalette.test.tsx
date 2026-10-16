@@ -1,4 +1,6 @@
 import { render, screen, fireEvent, within } from "@testing-library/react";
+import { useShortcutStore } from "@/stores/shortcutStore";
+import { getDefaultKeyMap } from "@/constants/shortcuts";
 import { CommandPalette } from "./CommandPalette";
 import { pretendPlatform, restoreUserAgent } from "@/test/platform";
 import { searchMessages, type SearchResult } from "@/services/db/search";
@@ -216,4 +218,13 @@ describe("Command palette spam action", () => {
       expect.objectContaining({ threadId: "t1", isSpam: true }),
     );
   });
+});
+
+
+it("shows current ClickUp and Velo to-do shortcut hints after rebinding", () => {
+  pretendPlatform("windows");
+  useShortcutStore.setState({ keyMap: { ...getDefaultKeyMap(), "action.clickupTask": "Alt+T", "action.createTaskFromEmail": "Shift+Y" } });
+  render(<CommandPalette isOpen onClose={() => {}} />);
+  expect(screen.getByText("Create / link ClickUp task").closest('[role="option"]')).toHaveTextContent("Alt+T");
+  expect(screen.getByText("Create Velo to-do from email (AI)").closest('[role="option"]')).toHaveTextContent("Shift+Y");
 });

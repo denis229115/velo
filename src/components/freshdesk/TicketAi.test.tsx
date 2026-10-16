@@ -81,6 +81,8 @@ import { clearProviderClients } from "@/services/ai/providerManager";
 import { AiSendPreviewHost } from "@/components/ai/AiSendPreview";
 import { useTicketStore } from "@/stores/ticketStore";
 import { useUIStore } from "@/stores/uiStore";
+import { useShortcutStore } from "@/stores/shortcutStore";
+import { getDefaultKeyMap } from "@/constants/shortcuts";
 import { FreshdeskPage } from "./FreshdeskPage";
 import { FreshdeskViewNav } from "./FreshdeskViewNav";
 
@@ -140,6 +142,7 @@ export async function draft(mode: "reply" | "note", bodyHtml: string, ticketId =
 }
 
 beforeEach(async () => {
+  useShortcutStore.setState({ keyMap: getDefaultKeyMap() });
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(FIXTURE_NOW);
   db = createSqliteTestDb();
@@ -404,4 +407,32 @@ it("drafts a ticket reply from a linked non-done task and keeps sending manual",
   expect(replyText(reply)).toContain("not deployed yet");
   await waitFor(async () => expect((await loadTicketDraft("1001", "reply"))?.bodyHtml).toContain("not deployed yet"));
   expect(posts()).toHaveLength(0);
+});
+
+
+it("summarizes the selected ticket with z through the existing send preview", async () => {
+  await approveClaude();
+  await openTicket();
+  const card = within(await reader().findByRole("region", { name: "AI summary" }));
+  await card.findByRole("button", { name: "Summarize" });
+  fireEvent.keyDown(window, { key: "z" });
+  await confirmPreview();
+  expect(await card.findByText("The customer cannot sign in.")).toBeVisible();
+  expect(writes()).toEqual([]);
+});
+
+
+it("opens a reply and proposes an AI draft with d without changing the operator's text", async () => {
+  await approveClaude();
+  ai.respond = () => Promise.resolve(AI_DRAFT);
+  await openTicket();
+  await draft("reply", "<p>My own words</p>");
+  fireEvent.keyDown(window, { key: "d" });
+  const reply = within(await screen.findByRole("region", { name: "Reply to customer" }));
+  await confirmPreview();
+  const proposal = within(await reply.findByRole("region", { name: "AI draft" }));
+  expect(proposal.getByText("Thanks for trying again. Which error message do you see?")).toBeVisible();
+  expect(replyText(reply)).toBe("My own words");
+  expect(proposal.getByRole("button", { name: "Replace" })).toBeVisible();
+  expect(writes()).toEqual([]);
 });

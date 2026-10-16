@@ -39,7 +39,22 @@ describe("Shortcuts help", () => {
     pretendPlatform("mac");
     render(<ShortcutsHelp isOpen onClose={() => {}} />);
 
-    const row = screen.getByText("Search mail, tickets and commands").parentElement!;
+    const row = screen.getByText("Search mail, tickets and commands").closest("[data-shortcut-row]")!;
     expect(row).toHaveTextContent("Cmd+K");
   });
+});
+
+
+it("shows ticket defaults and warns when a rebound ticket action conflicts", () => {
+  useShortcutStore.setState({ keyMap: { ...getDefaultKeyMap(), "ticket.note": "r" } });
+  render(<ShortcutsHelp isOpen onClose={() => {}} />);
+  for (const [desc, key] of [
+    ["Open thread / ticket", "Enter"], ["Ticket: Summarize", "z"], ["Ticket: AI draft reply", "d"],
+    ["Create / link ClickUp task", "t"], ["Create Velo to-do from email (AI)", "Shift+T"],
+    ["Ticket: Change status", "Shift+S"], ["Ticket: Change priority", "Shift+P"],
+    ["Ticket: Change assignee", "Shift+A"], ["Ticket: Switch list / board", "b"],
+  ]) {
+    expect(screen.getByText(desc!).closest("[data-shortcut-row]")).toHaveTextContent(key!);
+  }
+  expect(screen.getByText("Ticket: Internal note").closest("[data-shortcut-row]")).toHaveTextContent("Also used by Reply");
 });
