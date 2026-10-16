@@ -8,7 +8,13 @@
  * shown to the operator only; nothing here writes to Freshdesk or sends.
  */
 import { requestAi, type AiSourceItem } from "@/services/ai/gateway";
-import { TICKET_REPLY_PROMPT, TICKET_SUMMARY_PROMPT } from "@/services/ai/prompts";
+import {
+  TASK_PROPOSAL_PROMPT,
+  TASK_REPLY_PROMPT,
+  TICKET_REPLY_PROMPT,
+  TICKET_SUMMARY_PROMPT,
+} from "@/services/ai/prompts";
+import type { TaskForAi } from "@/services/clickup/taskContent";
 import type { EntryKind, HistoryEntry } from "./ticketHistory";
 import { currentTenantId } from "./connection";
 import { sanitizeHtml } from "@/utils/sanitize";
@@ -223,6 +229,124 @@ export async function draftTicketReply(
     maxChars: MAX_CHARS,
     maxTokens: 1000,
   });
+  return draftHtml(raw);
+}
+
+/** The model's draft as safe HTML for the composer */
+function draftHtml(raw: string): string {
   const html = raw.replace(/^\s*```(?:html)?\s*/i, "").replace(/\s*```\s*$/, "").trim();
   return sanitizeHtml(/^\s*</.test(html) ? html : html.split(/\n{2,}/).map((p) => `<p>${p}</p>`).join(""));
+}
+
+/** Only email subject and message text qualify; headers and attachments stay local. */
+export type TaskAiSource = TicketAiSource | {
+  messages: { subject: string | null; body_text: string | null; body_html: string | null }[];
+};
+
+function taskSourceItems(source: TaskAiSource): AiSourceItem[] {
+  if (!("messages" in source)) return toItems(source, publicEntries(source));
+  const messages = source.messages.map((m) => ({
+    subject: m.subject,
+    body: m.body_text?.trim() || (new DOMParser().parseFromString(m.body_html ?? "", "text/html").body.textContent ?? "").trim(),
+  })).filter((m) => m.body);
+  const [first, ...rest] = messages;
+  if (!first) throw new Error("Load the email's message text before asking AI.");
+  let used = first.body.length;
+  const kept: AiSourceItem[] = [];
+  for (const message of [...rest].reverse()) {
+    if (used + message.body.length > MAX_CHARS * 0.85) break;
+    used += message.body.length;
+    kept.unshift(message);
+  }
+  return [first, ...kept];
+}
+
+/** Room for a linked task's description and comments, on top of the ticket's messages */
+const TASK_CHARS = 10000;
+
+/**
+ * An AI draft for a reply to the customer built from a linked ClickUp task's
+ * name, status, description and comments, plus the ticket's public messages.
+ * The task comes first so it is never cut for room. Like every AI draft it is
+ * shown for the operator to use, edit or discard, and never sent or cached.
+ */
+export async function draftReplyFromTask(
+  source: TaskAiSource,
+  task: TaskForAi,
+  options: { tone?: ReplyTone } = {},
+): Promise<string> {
+  const raw = await requestAi({
+    feature: "task_reply",
+    systemPrompt: TASK_REPLY_PROMPT,
+    items: [
+      {
+        task: {
+          name: task.name,
+          status: `${task.status} (${task.done ? "done" : "not done"})`,
+          description: task.description,
+          comments: task.comments,
+        },
+      },
+      ...taskSourceItems(source),
+    ],
+    operatorText: [
+      `Tone: ${TONE_TEXT[options.tone ?? "friendly_professional"]}.`,
+      "Draft the agent's next reply to the customer, updating them on the progress of the linked task.",
+    ].join("\n"),
+    maxChars: MAX_CHARS + TASK_CHARS,
+    maxTokens: 1000,
+  });
+  return draftHtml(raw);
+}
+
+// ---------- Task proposal ----------
+
+/** AI-proposed text for a new ClickUp task; the operator inserts, edits or ignores it */
+export interface TaskProposal {
+  title: string;
+  summary: string;
+  acceptanceCriteria: string[];
+}
+
+/** The proposal came back in a shape Velo cannot show */
+export class TaskProposalFormatError extends Error {
+  constructor() {
+    super("The proposal came back in a form Velo could not read. Try again.");
+    this.name = "TaskProposalFormatError";
+  }
+}
+
+function parseProposal(raw: string): TaskProposal {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw.slice(raw.indexOf("{"), raw.lastIndexOf("}") + 1));
+  } catch {
+    throw new TaskProposalFormatError();
+  }
+  if (!parsed || typeof parsed !== "object") throw new TaskProposalFormatError();
+  const { title, summary, acceptance_criteria } = parsed as Record<string, unknown>;
+  const text = (v: unknown) => (typeof v === "string" ? v.replace(/\s+/g, " ").trim() : "");
+  const proposal = {
+    title: text(title).slice(0, 200),
+    summary: typeof summary === "string" ? summary.trim() : "",
+    acceptanceCriteria: Array.isArray(acceptance_criteria) ? acceptance_criteria.map(text).filter(Boolean) : [],
+  };
+  if (!proposal.title || !proposal.summary) throw new TaskProposalFormatError();
+  return proposal;
+}
+
+/**
+ * A proposed task title, summary and acceptance criteria drawn from the
+ * ticket's public messages (never internal notes). Nothing is created: the
+ * operator decides what goes into the create-task dialog.
+ */
+export async function proposeTaskText(source: TaskAiSource): Promise<TaskProposal> {
+  const raw = await requestAi({
+    feature: "task_proposal",
+    systemPrompt: TASK_PROPOSAL_PROMPT,
+    items: taskSourceItems(source),
+    maxChars: MAX_CHARS,
+    maxTokens: 800,
+  });
+  return parseProposal(raw);
 }

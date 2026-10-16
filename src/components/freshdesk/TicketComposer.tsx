@@ -19,6 +19,7 @@ import { UNCONFIRMED_MESSAGE, type ComposerMode, type StalenessBaseline, type Ti
 import { discardTicketDraft, loadTicketDraft, saveTicketDraft, sendTicketDraft } from "@/services/freshdesk/ticketDrafts";
 import { FreshdeskWriteReason, useFreshdeskWritable } from "./useFreshdeskWritable";
 import type { TicketHistoryView } from "@/services/freshdesk/ticketHistory";
+import { TaskReplyDraft } from "@/components/clickup/TaskReplyDraft";
 import { TicketAiDraft } from "./TicketAiDraft";
 
 const MODE_NAME: Record<ComposerMode, string> = { reply: "Reply to customer", note: "Internal note" };
@@ -286,7 +287,7 @@ function ComposerPane({
         scheduleSave();
       }} />
 
-      {mode === "reply" && <TicketAiDraft ticket={ticket} view={history} editor={editor} empty={empty} />}
+      {mode === "reply" && <><TicketAiDraft ticket={ticket} view={history} editor={editor} empty={empty} /><TaskReplyDraft key={ticket.id} item={{ kind: "ticket", ticketId: ticket.id }} editor={editor} disabled={busy || unconfirmed} /></>}
 
       <div className="mx-3 mt-2 rounded-md border border-border-primary bg-bg-primary">
         <EditorToolbar editor={editor} />

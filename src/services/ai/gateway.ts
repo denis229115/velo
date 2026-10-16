@@ -65,7 +65,9 @@ export type AiFeature =
   | "writing_style"
   | "auto_draft"
   | "ticket_summary"
-  | "ticket_reply";
+  | "ticket_reply"
+  | "task_proposal"
+  | "task_reply";
 
 /**
  * The only shape in which source content can reach the gateway. Anything else
