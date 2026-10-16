@@ -42,7 +42,7 @@ function ResizableEmailLayout() {
       <EmailList width={emailListWidth} listRef={listRef} />
       <div
         onMouseDown={handleMouseDown}
-        className="w-1 cursor-col-resize bg-border-primary hover:bg-accent/50 active:bg-accent transition-colors shrink-0"
+        className="relative w-px cursor-col-resize bg-border-primary hover:bg-accent/50 active:bg-accent transition-colors shrink-0 after:absolute after:inset-y-0 after:-inset-x-1 after:content-['']"
       />
       <ReadingPane />
     </div>

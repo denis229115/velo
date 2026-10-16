@@ -2,7 +2,8 @@ import { useState, useEffect } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Minus, Square, X, Copy } from "lucide-react";
 
-const isMac = navigator.userAgent.includes("Macintosh");
+export const IS_MAC = navigator.userAgent.includes("Macintosh");
+const isMac = IS_MAC;
 
 export function TitleBar() {
   const [maximized, setMaximized] = useState(false);
@@ -27,7 +28,7 @@ export function TitleBar() {
   return (
     <div
       data-tauri-drag-region
-      className="flex items-center justify-between h-9 bg-sidebar-bg border-b border-border-primary select-none shrink-0"
+      className="flex items-center justify-between h-[var(--titlebar-height)] select-none shrink-0"
     >
       {/* App title — left side (extra padding on macOS for traffic light buttons) */}
       <div data-tauri-drag-region className={`flex items-center gap-2 ${isMac ? "pl-20" : "pl-4"}`}>

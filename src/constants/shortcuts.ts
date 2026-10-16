@@ -11,9 +11,9 @@ export interface ShortcutCategory {
 
 export const SHORTCUTS: ShortcutCategory[] = [
   { category: "Navigation", items: [
-    { id: "nav.next", keys: "j", desc: "Next thread" },
-    { id: "nav.prev", keys: "k", desc: "Previous thread" },
-    { id: "nav.open", keys: "o", desc: "Open thread" },
+    { id: "nav.next", keys: "j", desc: "Next thread / ticket" },
+    { id: "nav.prev", keys: "k", desc: "Previous thread / ticket" },
+    { id: "nav.open", keys: "Enter", desc: "Open thread / ticket" },
     { id: "nav.msgNext", keys: "ArrowDown", desc: "Next message in thread" },
     { id: "nav.msgPrev", keys: "ArrowUp", desc: "Previous message in thread" },
     { id: "nav.goInbox", keys: "g then i", desc: "Go to Inbox" },
@@ -27,6 +27,7 @@ export const SHORTCUTS: ShortcutCategory[] = [
     { id: "nav.goNewsletters", keys: "g then n", desc: "Go to Newsletters" },
     { id: "nav.goTasks", keys: "g then k", desc: "Go to Tasks" },
     { id: "nav.goAttachments", keys: "g then a", desc: "Go to Attachments" },
+    { id: "nav.goScheduled", keys: "g then l", desc: "Go to Scheduled emails" },
     { id: "nav.escape", keys: "Escape", desc: "Close / Go back" },
   ]},
   { category: "Actions", items: [
@@ -41,20 +42,40 @@ export const SHORTCUTS: ShortcutCategory[] = [
     { id: "action.pin", keys: "p", desc: "Pin / Unpin" },
     { id: "action.unsubscribe", keys: "u", desc: "Unsubscribe" },
     { id: "action.mute", keys: "m", desc: "Mute / Unmute" },
-    { id: "action.createTaskFromEmail", keys: "t", desc: "Create task from email (AI)" },
+    { id: "action.createTaskFromEmail", keys: "Shift+T", desc: "Create Velo to-do from email (AI)" },
+    { id: "action.clickupTask", keys: "t", desc: "Create / link ClickUp task" },
     { id: "action.moveToFolder", keys: "v", desc: "Move to folder/label" },
     { id: "action.selectAll", keys: "Ctrl+A", desc: "Select all" },
     { id: "action.selectFromHere", keys: "Ctrl+Shift+A", desc: "Select all from here" },
   ]},
+  { category: "Tickets", items: [
+    { id: "ticket.aiDraft", keys: "d", desc: "Ticket: AI draft reply" },
+    { id: "ticket.summarize", keys: "z", desc: "Ticket: Summarize" },
+    { id: "ticket.note", keys: "n", desc: "Ticket: Internal note" },
+    { id: "ticket.status", keys: "Shift+S", desc: "Ticket: Change status" },
+    { id: "ticket.priority", keys: "Shift+P", desc: "Ticket: Change priority" },
+    { id: "ticket.assignee", keys: "Shift+A", desc: "Ticket: Change assignee" },
+    { id: "ticket.presentation", keys: "b", desc: "Ticket: Switch list / board" },
+  ]},
+  { category: "Composer", items: [
+    { id: "app.send", keys: "Ctrl+Enter", desc: "Send now" },
+    { id: "app.sendLater", keys: "Ctrl+Shift+L", desc: "Send later" },
+  ]},
   { category: "App", items: [
+    { id: "app.search", keys: "Ctrl+K", desc: "Search mail, tickets and commands" },
     { id: "app.commandPalette", keys: "/", desc: "Command palette" },
     { id: "app.toggleSidebar", keys: "Ctrl+Shift+E", desc: "Toggle sidebar" },
-    { id: "app.send", keys: "Ctrl+Enter", desc: "Send email" },
     { id: "app.askInbox", keys: "i", desc: "Ask AI about your inbox" },
     { id: "app.help", keys: "?", desc: "Show keyboard shortcuts" },
     { id: "app.syncFolder", keys: "F5", desc: "Sync current folder" },
   ]},
 ];
+
+/**
+ * Actions handled by the open composer (or inline reply) rather than the
+ * global shortcut handler. They also fire while typing in the editor.
+ */
+export const COMPOSER_SHORTCUT_IDS = ["app.send", "app.sendLater"] as const;
 
 /**
  * Build a flat map of shortcut ID -> default key binding.

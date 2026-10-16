@@ -775,6 +775,441 @@ const MIGRATIONS = [
     description: "Accept self-signed certificates for IMAP/SMTP",
     sql: `ALTER TABLE accounts ADD COLUMN accept_invalid_certs INTEGER DEFAULT 0;`,
   },
+  {
+    version: 24,
+    description: "AI gateway audit log and revision-keyed AI result cache",
+    sql: `
+      CREATE TABLE IF NOT EXISTS ai_audit_log (
+        id TEXT PRIMARY KEY,
+        created_at INTEGER NOT NULL,
+        feature TEXT NOT NULL,
+        provider TEXT NOT NULL,
+        model TEXT NOT NULL,
+        payload_hash TEXT NOT NULL,
+        flag_counts TEXT NOT NULL DEFAULT '{}',
+        outcome TEXT NOT NULL DEFAULT 'pending'
+      );
+      CREATE INDEX IF NOT EXISTS idx_ai_audit_log_created ON ai_audit_log(created_at DESC);
+
+      CREATE TABLE IF NOT EXISTS ai_result_cache (
+        id TEXT PRIMARY KEY,
+        scope TEXT NOT NULL,
+        source_id TEXT NOT NULL,
+        feature TEXT NOT NULL,
+        content_revision TEXT NOT NULL,
+        model TEXT NOT NULL,
+        prompt_version TEXT NOT NULL,
+        content TEXT NOT NULL,
+        created_at INTEGER DEFAULT (unixepoch()),
+        UNIQUE(scope, source_id, feature, content_revision, model, prompt_version)
+      );
+    `,
+  },
+  {
+    version: 25,
+    description: "Bounded retries with backoff for scheduled emails",
+    sql: `
+      ALTER TABLE scheduled_emails ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE scheduled_emails ADD COLUMN next_attempt_at INTEGER;
+      ALTER TABLE scheduled_emails ADD COLUMN last_error TEXT;
+    `,
+  },
+  {
+    version: 26,
+    description: "Tenant-scoped integration accounts and Freshdesk metadata",
+    sql: `
+      CREATE TABLE IF NOT EXISTS integration_accounts (
+        kind TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        tenant_host TEXT NOT NULL,
+        me_agent_id TEXT,
+        me_name TEXT,
+        me_email TEXT,
+        connected_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        metadata_refreshed_at INTEGER
+      );
+      CREATE TABLE IF NOT EXISTS freshdesk_field_choices (
+        tenant_id TEXT NOT NULL,
+        field_name TEXT NOT NULL,
+        choice_id TEXT NOT NULL,
+        label TEXT NOT NULL,
+        customer_label TEXT,
+        position INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (tenant_id, field_name, choice_id)
+      );
+      CREATE TABLE IF NOT EXISTS freshdesk_ticket_fields (
+        tenant_id TEXT NOT NULL,
+        field_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        label TEXT NOT NULL,
+        type TEXT NOT NULL,
+        is_default INTEGER NOT NULL DEFAULT 0,
+        required_for_agents INTEGER NOT NULL DEFAULT 0,
+        required_for_closure INTEGER NOT NULL DEFAULT 0,
+        position INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (tenant_id, field_id)
+      );
+      CREATE TABLE IF NOT EXISTS freshdesk_agents (
+        tenant_id TEXT NOT NULL,
+        agent_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        email TEXT,
+        PRIMARY KEY (tenant_id, agent_id)
+      );
+      CREATE TABLE IF NOT EXISTS freshdesk_groups (
+        tenant_id TEXT NOT NULL,
+        group_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        PRIMARY KEY (tenant_id, group_id)
+      );
+      CREATE TABLE IF NOT EXISTS freshdesk_status_classes (
+        tenant_id TEXT NOT NULL,
+        status_id TEXT NOT NULL,
+        status_class TEXT NOT NULL CHECK (status_class IN ('open', 'waiting', 'done')),
+        PRIMARY KEY (tenant_id, status_id)
+      );
+    `,
+  },
+  {
+    version: 27,
+    description: "Send-as alias for scheduled emails",
+    sql: `
+      ALTER TABLE scheduled_emails ADD COLUMN from_email TEXT;
+    `,
+  },
+  {
+    version: 28,
+    description: "Freshdesk ticket cache and sync state",
+    sql: `
+      CREATE TABLE IF NOT EXISTS freshdesk_tickets (
+        tenant_id TEXT NOT NULL,
+        ticket_id TEXT NOT NULL,
+        subject TEXT NOT NULL,
+        status_id TEXT NOT NULL,
+        priority_id TEXT,
+        requester_id TEXT,
+        customer_name TEXT,
+        customer_email TEXT,
+        responder_id TEXT,
+        group_id TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        fetched_on_demand INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (tenant_id, ticket_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_freshdesk_tickets_updated ON freshdesk_tickets(tenant_id, updated_at DESC);
+      CREATE TABLE IF NOT EXISTS freshdesk_sync_state (
+        tenant_id TEXT PRIMARY KEY,
+        state TEXT NOT NULL DEFAULT 'idle',
+        last_success_at INTEGER,
+        last_full_sync_at INTEGER,
+        last_attempt_at INTEGER,
+        retry_after_until INTEGER,
+        consecutive_failures INTEGER NOT NULL DEFAULT 0,
+        error_message TEXT,
+        outstanding_total INTEGER,
+        outstanding_downloaded INTEGER,
+        coverage_complete INTEGER NOT NULL DEFAULT 0
+      );
+    `,
+  },
+  {
+    version: 29,
+    description: "Freshdesk conversation history and ticket activity metrics",
+    sql: `
+      CREATE TABLE IF NOT EXISTS freshdesk_ticket_history (
+        tenant_id TEXT NOT NULL,
+        ticket_id TEXT NOT NULL,
+        ticket_source INTEGER,
+        description_html TEXT,
+        description_text TEXT,
+        attachments_json TEXT NOT NULL DEFAULT '[]',
+        history_complete INTEGER NOT NULL DEFAULT 0,
+        hydrated_for_updated_at INTEGER,
+        hydrated_at INTEGER,
+        last_answered_at INTEGER,
+        last_answered_unknown INTEGER NOT NULL DEFAULT 0,
+        unverified_reply_at INTEGER,
+        last_customer_message_at INTEGER,
+        last_internal_note_at INTEGER,
+        last_activity_at INTEGER,
+        PRIMARY KEY (tenant_id, ticket_id)
+      );
+      CREATE TABLE IF NOT EXISTS freshdesk_conversations (
+        tenant_id TEXT NOT NULL,
+        ticket_id TEXT NOT NULL,
+        conversation_id TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        user_id TEXT,
+        from_email TEXT,
+        body_html TEXT,
+        body_text TEXT,
+        attachments_json TEXT NOT NULL DEFAULT '[]',
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (tenant_id, ticket_id, conversation_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_freshdesk_conversations_ticket ON freshdesk_conversations(tenant_id, ticket_id, created_at);
+    `,
+  },
+  {
+    version: 30,
+    description: "ClickUp workspace, metadata, task cache and ticket/email-to-task links",
+    sql: `
+      CREATE TABLE IF NOT EXISTS clickup_workspace (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        tenant_id TEXT NOT NULL,
+        workspace_id TEXT NOT NULL,
+        workspace_name TEXT NOT NULL,
+        me_user_id TEXT,
+        me_name TEXT,
+        me_email TEXT,
+        connected_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        metadata_refreshed_at INTEGER,
+        default_list_id TEXT,
+        ticket_id_field_id TEXT
+      );
+      CREATE TABLE IF NOT EXISTS clickup_lists (
+        tenant_id TEXT NOT NULL,
+        list_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        space_name TEXT NOT NULL,
+        folder_name TEXT,
+        position INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (tenant_id, list_id)
+      );
+      CREATE TABLE IF NOT EXISTS clickup_statuses (
+        tenant_id TEXT NOT NULL,
+        list_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        type TEXT NOT NULL,
+        color TEXT,
+        position INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (tenant_id, list_id, name)
+      );
+      CREATE TABLE IF NOT EXISTS clickup_members (
+        tenant_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        email TEXT,
+        PRIMARY KEY (tenant_id, user_id)
+      );
+      CREATE TABLE IF NOT EXISTS clickup_custom_fields (
+        tenant_id TEXT NOT NULL,
+        list_id TEXT NOT NULL,
+        field_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        type TEXT NOT NULL,
+        PRIMARY KEY (tenant_id, list_id, field_id)
+      );
+      CREATE TABLE IF NOT EXISTS clickup_tasks (
+        tenant_id TEXT NOT NULL,
+        task_id TEXT NOT NULL,
+        custom_id TEXT,
+        name TEXT NOT NULL,
+        status_name TEXT NOT NULL,
+        status_type TEXT NOT NULL,
+        status_color TEXT,
+        assignees_json TEXT NOT NULL DEFAULT '[]',
+        due_at INTEGER,
+        list_id TEXT,
+        list_name TEXT,
+        url TEXT NOT NULL,
+        updated_at INTEGER,
+        refreshed_at INTEGER NOT NULL,
+        missing INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (tenant_id, task_id)
+      );
+      CREATE TABLE IF NOT EXISTS clickup_sync_state (
+        tenant_id TEXT PRIMARY KEY,
+        state TEXT NOT NULL DEFAULT 'idle',
+        last_success_at INTEGER,
+        last_attempt_at INTEGER,
+        retry_after_until INTEGER,
+        consecutive_failures INTEGER NOT NULL DEFAULT 0,
+        error_message TEXT
+      );
+      CREATE TABLE IF NOT EXISTS task_links (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        item_kind TEXT NOT NULL CHECK (item_kind IN ('ticket', 'email')),
+        scope_id TEXT NOT NULL,
+        item_id TEXT NOT NULL,
+        workspace_id TEXT NOT NULL,
+        task_id TEXT NOT NULL,
+        created_by TEXT,
+        created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        origin TEXT NOT NULL,
+        state TEXT NOT NULL DEFAULT 'active',
+        backlinks_json TEXT NOT NULL DEFAULT '{}',
+        UNIQUE (item_kind, scope_id, item_id, workspace_id, task_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_task_links_task ON task_links(workspace_id, task_id);
+    `,
+  },
+  {
+    version: 31,
+    description: "Freshdesk saved ticket views, the selected view, and ticket company, tags and SLA due",
+    sql: `
+      CREATE TABLE IF NOT EXISTS freshdesk_ticket_views (
+        tenant_id TEXT NOT NULL,
+        view_id TEXT NOT NULL,
+        kind TEXT NOT NULL CHECK (kind IN ('preset', 'custom')),
+        name TEXT NOT NULL,
+        filter_json TEXT NOT NULL DEFAULT '{}',
+        sort TEXT NOT NULL,
+        columns_json TEXT NOT NULL DEFAULT '[]',
+        density TEXT NOT NULL,
+        presentation TEXT NOT NULL DEFAULT 'list',
+        board_json TEXT NOT NULL DEFAULT '{}',
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (tenant_id, view_id)
+      );
+      CREATE TABLE IF NOT EXISTS freshdesk_view_selection (
+        tenant_id TEXT PRIMARY KEY,
+        view_id TEXT NOT NULL
+      );
+      ALTER TABLE freshdesk_tickets ADD COLUMN company_id TEXT;
+      ALTER TABLE freshdesk_tickets ADD COLUMN tags_json TEXT NOT NULL DEFAULT '[]';
+      ALTER TABLE freshdesk_tickets ADD COLUMN due_by INTEGER;
+    `,
+  },
+  {
+    version: 32,
+    description: "Freshdesk operation journal for remote writes",
+    sql: `
+      CREATE TABLE IF NOT EXISTS freshdesk_operation_journal (
+        entry_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        tenant_id TEXT NOT NULL,
+        ticket_id TEXT NOT NULL,
+        operation TEXT NOT NULL,
+        changes_json TEXT NOT NULL,
+        outcome TEXT NOT NULL CHECK (outcome IN ('pending', 'confirmed', 'failed', 'unconfirmed')),
+        error_message TEXT,
+        created_at INTEGER NOT NULL,
+        completed_at INTEGER
+      );
+      CREATE INDEX IF NOT EXISTS idx_freshdesk_journal_ticket ON freshdesk_operation_journal(tenant_id, ticket_id);
+    `,
+  },
+  {
+    version: 33,
+    description: "Freshdesk ticket drafts and the agent signature",
+    sql: `
+      CREATE TABLE IF NOT EXISTS freshdesk_ticket_drafts (
+        tenant_id TEXT NOT NULL,
+        agent_id TEXT NOT NULL,
+        ticket_id TEXT NOT NULL,
+        mode TEXT NOT NULL CHECK (mode IN ('reply', 'note')),
+        body_html TEXT NOT NULL DEFAULT '',
+        cc_json TEXT NOT NULL DEFAULT '[]',
+        started_at INTEGER NOT NULL,
+        assignee_at_start TEXT,
+        unconfirmed_entry_id INTEGER,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (tenant_id, agent_id, ticket_id, mode)
+      );
+      ALTER TABLE integration_accounts ADD COLUMN me_signature TEXT;
+    `,
+  },
+  {
+    version: 34,
+    description: "Scheduled Freshdesk ticket replies, kept apart from scheduled emails",
+    sql: `
+      CREATE TABLE IF NOT EXISTS freshdesk_scheduled_replies (
+        reply_id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        agent_id TEXT NOT NULL,
+        ticket_id TEXT NOT NULL,
+        subject TEXT NOT NULL DEFAULT '',
+        recipient TEXT NOT NULL DEFAULT '',
+        body_html TEXT NOT NULL,
+        cc_json TEXT NOT NULL DEFAULT '[]',
+        send_at INTEGER NOT NULL,
+        then_status_id TEXT,
+        baseline_started_at INTEGER NOT NULL,
+        baseline_assignee TEXT,
+        baseline_status TEXT,
+        state TEXT NOT NULL DEFAULT 'pending'
+          CHECK (state IN ('pending', 'sending', 'held', 'unconfirmed', 'sent', 'failed')),
+        hold_reasons_json TEXT NOT NULL DEFAULT '[]',
+        journal_entry_id INTEGER,
+        claimed_at INTEGER,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        next_attempt_at INTEGER,
+        last_error TEXT,
+        status_problem TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_freshdesk_scheduled_replies_due ON freshdesk_scheduled_replies(state, send_at);
+    `,
+  },
+  {
+    version: 35,
+    description: "Operation journal for ClickUp task creation, keyed by its operation marker",
+    sql: `
+      CREATE TABLE IF NOT EXISTS clickup_task_operations (
+        operation_id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        item_kind TEXT NOT NULL CHECK (item_kind IN ('ticket', 'email')),
+        scope_id TEXT NOT NULL,
+        item_id TEXT NOT NULL,
+        list_id TEXT NOT NULL,
+        task_name TEXT NOT NULL,
+        request_json TEXT NOT NULL,
+        outcome TEXT NOT NULL CHECK (outcome IN ('pending', 'confirmed', 'failed', 'unconfirmed')),
+        task_id TEXT,
+        error_message TEXT,
+        created_at INTEGER NOT NULL,
+        completed_at INTEGER
+      );
+      CREATE INDEX IF NOT EXISTS idx_clickup_task_operations_item
+        ON clickup_task_operations(workspace_id, item_kind, scope_id, item_id);
+    `,
+  },
+  {
+    version: 36,
+    description: "Freshdesk ticket CC, reply-CC and forward lists (NULL when Freshdesk gave none)",
+    sql: `
+      ALTER TABLE freshdesk_tickets ADD COLUMN cc_emails_json TEXT;
+      ALTER TABLE freshdesk_tickets ADD COLUMN reply_cc_emails_json TEXT;
+      ALTER TABLE freshdesk_tickets ADD COLUMN fwd_emails_json TEXT;
+    `,
+  },
+  {
+    version: 37,
+    description: "Files attached to Freshdesk ticket drafts and scheduled replies",
+    sql: `
+      CREATE TABLE IF NOT EXISTS freshdesk_reply_attachments (
+        attachment_id TEXT PRIMARY KEY,
+        owner TEXT NOT NULL,
+        position INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        content_type TEXT NOT NULL,
+        size INTEGER NOT NULL,
+        data_base64 TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_freshdesk_reply_attachments_owner ON freshdesk_reply_attachments(owner, position);
+    `,
+  },
+  {
+    version: 38,
+    description: "Remove obsolete email auto-summary preference",
+    // Historical migrations keep their original defaults; active AI behavior
+    // no longer reads this key (#37).
+    sql: `DELETE FROM settings WHERE key = 'ai_auto_summarize';`,
+  },
+  {
+    version: 39,
+    description: "Freshdesk connection generations",
+    sql: `ALTER TABLE integration_accounts ADD COLUMN connection_generation TEXT NOT NULL DEFAULT '';`,
+  },
+  {
+    version: 40,
+    description: "Helpdesk generation on scheduled Freshdesk replies",
+    sql: `ALTER TABLE freshdesk_scheduled_replies ADD COLUMN connection_generation TEXT NOT NULL DEFAULT '';`,
+  },
 ];
 
 /**
@@ -835,10 +1270,17 @@ export async function runMigrations(): Promise<void> {
   `);
 
   // Get already-applied versions
-  const applied = await db.select<{ version: number }[]>(
-    "SELECT version FROM _migrations ORDER BY version",
+  const applied = await db.select<{ version: number; description: string | null }[]>(
+    "SELECT version, description FROM _migrations ORDER BY version",
   );
   const appliedVersions = new Set(applied.map((r) => r.version));
+
+  // The unreleased attachment branch used v36 before the CC migration landed.
+  // Re-run the canonical v36; v37 keeps the existing attachment table and bytes.
+  if (applied.some((r) => r.version === 36 && r.description === "Files attached to Freshdesk ticket drafts and scheduled replies")) {
+    await db.execute("DELETE FROM _migrations WHERE version = 36");
+    appliedVersions.delete(36);
+  }
 
   // Repair: if migration 18 is marked applied but tasks table is missing,
   // remove the stale record so it re-runs

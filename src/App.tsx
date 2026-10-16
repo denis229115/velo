@@ -1,4 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from "react";
+import { isValidTimeZone } from "@/utils/timeZone";
+import { AiSendPreviewHost } from "@/components/ai/AiSendPreview";
 import { Outlet } from "@tanstack/react-router";
 import { Sidebar } from "./components/layout/Sidebar";
 import { AddAccount } from "./components/accounts/AddAccount";
@@ -30,6 +32,10 @@ import {
   stopScheduledSendChecker,
 } from "./services/snooze/scheduledSendManager";
 import {
+  startScheduledReplyChecker,
+  stopScheduledReplyChecker,
+} from "./services/freshdesk/scheduledReplies";
+import {
   startFollowUpChecker,
   stopFollowUpChecker,
 } from "./services/followup/followupManager";
@@ -54,6 +60,12 @@ import {
   stopPreCacheManager,
 } from "./services/attachments/preCacheManager";
 import {
+  startFreshdeskMetadataRefresher,
+  stopFreshdeskMetadataRefresher,
+} from "./services/freshdesk/connection";
+import { startTicketSync, stopTicketSync } from "./services/freshdesk/ticketSync";
+import { startLinkedTaskRefresh, stopLinkedTaskRefresh } from "./services/clickup/links";
+import {
   startUpdateChecker,
   stopUpdateChecker,
 } from "./services/updateManager";
@@ -61,7 +73,8 @@ import { fetchSendAsAliases } from "./services/gmail/sendAs";
 import { getGmailClient } from "./services/gmail/tokenManager";
 import { invoke } from "@tauri-apps/api/core";
 import { DndProvider } from "./components/dnd/DndProvider";
-import { TitleBar } from "./components/layout/TitleBar";
+import { AppFrame } from "./components/layout/AppFrame";
+import { StatusBar } from "./components/list/StatusBar";
 import { useShortcutStore } from "./stores/shortcutStore";
 import { getIncompleteTaskCount } from "./services/db/tasks";
 import { useTaskStore } from "./stores/taskStore";
@@ -71,7 +84,8 @@ import { OfflineBanner } from "./components/ui/OfflineBanner";
 import { UpdateToast } from "./components/ui/UpdateToast";
 import { ErrorBoundary } from "./components/ui/ErrorBoundary";
 import { formatSyncError } from "./utils/networkErrors";
-import { getThemeById, COLOR_THEMES } from "./constants/themes";
+import { COLOR_THEMES } from "./constants/themes";
+import { useAppearance } from "./hooks/useAppearance";
 import type { ColorThemeId } from "./constants/themes";
 import { router } from "./router";
 import { getSelectedThreadId } from "./router/navigate";
@@ -95,10 +109,7 @@ function useRouterSyncBridge() {
 import { useThreadStore } from "./stores/threadStore";
 
 export default function App() {
-  const theme = useUIStore((s) => s.theme);
   const fontScale = useUIStore((s) => s.fontScale);
-  const colorTheme = useUIStore((s) => s.colorTheme);
-  const reduceMotion = useUIStore((s) => s.reduceMotion);
   const sidebarCollapsed = useUIStore((s) => s.sidebarCollapsed);
   const [showAddAccount, setShowAddAccount] = useState(false);
   const [initialized, setInitialized] = useState(false);
@@ -218,7 +229,8 @@ export default function App() {
 
         // Restore read filter
         const savedReadFilter = await getSetting("read_filter");
-        if (savedReadFilter === "all" || savedReadFilter === "read" || savedReadFilter === "unread") {
+        // The list offers All / Unread tabs; an older saved "read" falls back to All
+        if (savedReadFilter === "all" || savedReadFilter === "unread") {
           ui.setReadFilter(savedReadFilter);
         }
 
@@ -233,6 +245,21 @@ export default function App() {
         const savedDensity = await getSetting("email_density");
         if (savedDensity === "compact" || savedDensity === "default" || savedDensity === "spacious") {
           ui.setEmailDensity(savedDensity);
+        }
+
+        // Restore time display: zone override and the extra zones shown on hover
+        const savedZone = await getSetting("time_zone_override");
+        if (savedZone && isValidTimeZone(savedZone)) ui.setTimeZoneOverride(savedZone);
+        const savedExtraZones = await getSetting("extra_time_zones");
+        if (savedExtraZones) {
+          try {
+            const zones: unknown = JSON.parse(savedExtraZones);
+            if (Array.isArray(zones)) {
+              ui.setExtraTimeZones(zones.filter((z): z is string => typeof z === "string" && isValidTimeZone(z)));
+            }
+          } catch {
+            // Keep the default list
+          }
         }
 
         // Restore default reply mode
@@ -330,10 +357,14 @@ export default function App() {
         // Start snooze, scheduled send, follow-up, bundle, and queue checkers
         startSnoozeChecker();
         startScheduledSendChecker();
+        startScheduledReplyChecker();
         startFollowUpChecker();
         startBundleChecker();
         startQueueProcessor();
         startPreCacheManager();
+        startFreshdeskMetadataRefresher();
+        startTicketSync();
+        startLinkedTaskRefresh();
 
         // Initialize notifications
         await initNotifications();
@@ -369,10 +400,14 @@ export default function App() {
       stopBackgroundSync();
       stopSnoozeChecker();
       stopScheduledSendChecker();
+      stopScheduledReplyChecker();
       stopFollowUpChecker();
       stopBundleChecker();
       stopQueueProcessor();
       stopPreCacheManager();
+      stopFreshdeskMetadataRefresher();
+      stopLinkedTaskRefresh();
+      stopTicketSync();
       stopUpdateChecker();
       unregisterComposeShortcut();
       deepLinkCleanupRef.current?.();
@@ -422,27 +457,7 @@ export default function App() {
     return unsub;
   }, []);
 
-  // Sync theme class to <html> element
-  useEffect(() => {
-    const root = document.documentElement;
-    if (theme === "dark") {
-      root.classList.add("dark");
-    } else if (theme === "light") {
-      root.classList.remove("dark");
-    } else {
-      const mq = window.matchMedia("(prefers-color-scheme: dark)");
-      const apply = () => {
-        if (mq.matches) {
-          root.classList.add("dark");
-        } else {
-          root.classList.remove("dark");
-        }
-      };
-      apply();
-      mq.addEventListener("change", apply);
-      return () => mq.removeEventListener("change", apply);
-    }
-  }, [theme]);
+  useAppearance();
 
   // Sync font-scale class to <html> element
   useEffect(() => {
@@ -450,44 +465,6 @@ export default function App() {
     root.classList.remove("font-scale-small", "font-scale-default", "font-scale-large", "font-scale-xlarge");
     root.classList.add(`font-scale-${fontScale}`);
   }, [fontScale]);
-
-  // Sync reduce-motion class to <html> element
-  useEffect(() => {
-    const root = document.documentElement;
-    root.classList.toggle("reduce-motion", reduceMotion);
-  }, [reduceMotion]);
-
-  // Apply color theme CSS custom properties to <html>
-  useEffect(() => {
-    const root = document.documentElement;
-    const props = ["--color-accent", "--color-accent-hover", "--color-accent-light", "--color-bg-selected", "--color-sidebar-active"];
-
-    const apply = () => {
-      if (colorTheme === "indigo") {
-        // Default theme — remove inline overrides, let CSS handle it
-        for (const p of props) root.style.removeProperty(p);
-        return;
-      }
-      const themeData = getThemeById(colorTheme);
-      const isDark =
-        theme === "dark" ||
-        (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
-      const colors = isDark ? themeData.dark : themeData.light;
-      root.style.setProperty("--color-accent", colors.accent);
-      root.style.setProperty("--color-accent-hover", colors.accentHover);
-      root.style.setProperty("--color-accent-light", colors.accentLight);
-      root.style.setProperty("--color-bg-selected", colors.bgSelected);
-      root.style.setProperty("--color-sidebar-active", colors.sidebarActive);
-    };
-
-    apply();
-
-    if (theme === "system") {
-      const mq = window.matchMedia("(prefers-color-scheme: dark)");
-      mq.addEventListener("change", apply);
-      return () => mq.removeEventListener("change", apply);
-    }
-  }, [colorTheme, theme]);
 
   const handleAddAccountSuccess = useCallback(async () => {
     setShowAddAccount(false);
@@ -541,38 +518,23 @@ export default function App() {
 
   return (
     <div className="flex flex-col h-screen overflow-hidden text-text-primary">
-      <OfflineBanner />
-      {/* Animated gradient blobs for glassmorphism effect */}
-      <div className="animated-bg" aria-hidden="true">
-        <div className="blob" />
-        <div className="blob" />
-        <div className="blob" />
-        <div className="blob" />
-        <div className="blob" />
-      </div>
-      <TitleBar />
-      <div className="flex flex-1 min-w-0 overflow-hidden">
-        <DndProvider>
-          <ErrorBoundary name="Sidebar">
-            <Sidebar
-              collapsed={sidebarCollapsed}
-              onAddAccount={() => setShowAddAccount(true)}
-            />
-          </ErrorBoundary>
-          <Outlet />
-        </DndProvider>
-      </div>
-
-      {/* Sync status bar */}
-      {syncStatus && (
-        <div
-          className={`fixed bottom-0 left-0 right-0 glass-panel text-white text-xs px-4 py-1.5 text-center z-40 animate-[slideUp_200ms_ease-out,fadeIn_200ms_ease-out] ${
-            syncStatus.startsWith("Sync failed") ? "bg-danger/90" : "bg-accent/90"
-          }`}
+      <DndProvider>
+        <AppFrame
+          sidebarCollapsed={sidebarCollapsed}
+          sidebar={
+            <ErrorBoundary name="Sidebar">
+              <Sidebar
+                collapsed={sidebarCollapsed}
+                onAddAccount={() => setShowAddAccount(true)}
+              />
+            </ErrorBoundary>
+          }
+          footer={<StatusBar syncStatus={syncStatus} />}
+          banner={<OfflineBanner />}
         >
-          {syncStatus}
-        </div>
-      )}
+          <Outlet />
+        </AppFrame>
+      </DndProvider>
 
       {showAddAccount && (
         <AddAccount
@@ -603,6 +565,7 @@ export default function App() {
         />
       </ErrorBoundary>
       <ContextMenuPortal />
+      <AiSendPreviewHost />
       <MoveToFolderDialog
         isOpen={moveToFolderState.open}
         threadIds={moveToFolderState.threadIds}

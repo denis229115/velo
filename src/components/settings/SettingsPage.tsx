@@ -4,7 +4,11 @@ import { useUIStore } from "@/stores/uiStore";
 import { navigateToLabel, navigateToSettings } from "@/router/navigate";
 import { useAccountStore } from "@/stores/accountStore";
 import { getSetting, setSetting, getSecureSetting, setSecureSetting } from "@/services/db/settings";
-import { PROVIDER_MODELS } from "@/services/ai/types";
+import { TimeZoneSettings } from "./TimeZoneSettings";
+import { AiProviderSettings } from "./AiProviderSettings";
+import { TicketSummaryAutoUpdate } from "./TicketSummaryAutoUpdate";
+import { FreshdeskSettings } from "./FreshdeskSettings";
+import { ClickUpSettings } from "./ClickUpSettings";
 import { deleteAccount } from "@/services/db/accounts";
 import { removeClient, reauthorizeAccount } from "@/services/gmail/tokenManager";
 import { triggerSync, forceFullSync, resyncAccount } from "@/services/gmail/syncManager";
@@ -24,6 +28,8 @@ import {
   UserCircle,
   Keyboard,
   Sparkles,
+  LifeBuoy,
+  ListChecks,
   Check,
   Mail,
   Info,
@@ -35,6 +41,7 @@ import {
   ChevronUp,
   ChevronDown,
   RotateCcw,
+  AlertTriangle,
   type LucideIcon,
 } from "lucide-react";
 import { SignatureEditor } from "./SignatureEditor";
@@ -48,6 +55,8 @@ import { QuickStepEditor } from "./QuickStepEditor";
 import { SmartLabelEditor } from "./SmartLabelEditor";
 import { SHORTCUTS, getDefaultKeyMap } from "@/constants/shortcuts";
 import { useShortcutStore } from "@/stores/shortcutStore";
+import { findShortcutConflicts } from "@/utils/shortcutKeys";
+import { formatShortcut } from "@/utils/shortcutLabel";
 import { COLOR_THEMES } from "@/constants/themes";
 import {
   getAliasesForAccount,
@@ -61,7 +70,7 @@ import { Button } from "@/components/ui/Button";
 import { TextField } from "@/components/ui/TextField";
 import appIcon from "@/assets/icon.png";
 
-type SettingsTab = "general" | "notifications" | "composing" | "mail-rules" | "people" | "accounts" | "shortcuts" | "ai" | "about";
+type SettingsTab = "general" | "notifications" | "composing" | "mail-rules" | "people" | "accounts" | "shortcuts" | "freshdesk" | "clickup" | "ai" | "about";
 
 const tabs: { id: SettingsTab; label: string; icon: LucideIcon }[] = [
   { id: "general", label: "General", icon: Settings },
@@ -71,6 +80,8 @@ const tabs: { id: SettingsTab; label: string; icon: LucideIcon }[] = [
   { id: "people", label: "People", icon: Users },
   { id: "accounts", label: "Accounts", icon: UserCircle },
   { id: "shortcuts", label: "Shortcuts", icon: Keyboard },
+  { id: "freshdesk", label: "Freshdesk", icon: LifeBuoy },
+  { id: "clickup", label: "ClickUp", icon: ListChecks },
   { id: "ai", label: "AI", icon: Sparkles },
   { id: "about", label: "About", icon: Info },
 ];
@@ -112,23 +123,8 @@ export function SettingsPage() {
   const [phishingDetectionEnabled, setPhishingDetectionEnabled] = useState(true);
   const [phishingSensitivity, setPhishingSensitivity] = useState<"low" | "default" | "high">("default");
   const [autostartEnabled, setAutostartEnabled] = useState(false);
-  const [aiProvider, setAiProvider] = useState<"claude" | "openai" | "gemini" | "ollama" | "copilot">("claude");
-  const [claudeApiKey, setClaudeApiKey] = useState("");
-  const [openaiApiKey, setOpenaiApiKey] = useState("");
-  const [geminiApiKey, setGeminiApiKey] = useState("");
-  const [copilotApiKey, setCopilotApiKey] = useState("");
-  const [ollamaServerUrl, setOllamaServerUrl] = useState("http://localhost:11434");
-  const [ollamaModel, setOllamaModel] = useState("llama3.2");
-  const [claudeModel, setClaudeModel] = useState("claude-haiku-4-5-20251001");
-  const [openaiModel, setOpenaiModel] = useState("gpt-4o-mini");
-  const [geminiModel, setGeminiModel] = useState("gemini-2.5-flash-preview-05-20");
-  const [copilotModel, setCopilotModel] = useState("openai/gpt-4o-mini");
   const [aiEnabled, setAiEnabled] = useState(true);
   const [aiAutoCategorize, setAiAutoCategorize] = useState(true);
-  const [aiAutoSummarize, setAiAutoSummarize] = useState(true);
-  const [aiKeySaved, setAiKeySaved] = useState(false);
-  const [aiTesting, setAiTesting] = useState(false);
-  const [aiTestResult, setAiTestResult] = useState<"success" | "fail" | null>(null);
   const [aiAutoDraftEnabled, setAiAutoDraftEnabled] = useState(true);
   const [aiWritingStyleEnabled, setAiWritingStyleEnabled] = useState(true);
   const [styleAnalyzing, setStyleAnalyzing] = useState(false);
@@ -173,34 +169,10 @@ export function SettingsPage() {
       }
 
       // Load AI settings
-      const provider = await getSetting("ai_provider");
-      if (provider === "openai" || provider === "gemini" || provider === "ollama" || provider === "copilot") setAiProvider(provider);
-      const ollamaUrl = await getSetting("ollama_server_url");
-      if (ollamaUrl) setOllamaServerUrl(ollamaUrl);
-      const ollamaModelVal = await getSetting("ollama_model");
-      if (ollamaModelVal) setOllamaModel(ollamaModelVal);
-      const claudeModelVal = await getSetting("claude_model");
-      if (claudeModelVal) setClaudeModel(claudeModelVal);
-      const openaiModelVal = await getSetting("openai_model");
-      if (openaiModelVal) setOpenaiModel(openaiModelVal);
-      const geminiModelVal = await getSetting("gemini_model");
-      if (geminiModelVal) setGeminiModel(geminiModelVal);
-      const aiKey = await getSecureSetting("claude_api_key");
-      setClaudeApiKey(aiKey ?? "");
-      const oaiKey = await getSecureSetting("openai_api_key");
-      setOpenaiApiKey(oaiKey ?? "");
-      const gemKey = await getSecureSetting("gemini_api_key");
-      setGeminiApiKey(gemKey ?? "");
-      const copKey = await getSecureSetting("copilot_api_key");
-      setCopilotApiKey(copKey ?? "");
-      const copilotModelVal = await getSetting("copilot_model");
-      if (copilotModelVal) setCopilotModel(copilotModelVal);
       const aiEn = await getSetting("ai_enabled");
       setAiEnabled(aiEn !== "false");
       const aiCat = await getSetting("ai_auto_categorize");
       setAiAutoCategorize(aiCat !== "false");
-      const aiSum = await getSetting("ai_auto_summarize");
-      setAiAutoSummarize(aiSum !== "false");
       const aiDraft = await getSetting("ai_auto_draft_enabled");
       setAiAutoDraftEnabled(aiDraft !== "false");
       const aiStyle = await getSetting("ai_writing_style_enabled");
@@ -356,9 +328,9 @@ export function SettingsPage() {
   const activeTabDef = tabs.find((t) => t.id === activeTab);
 
   return (
-    <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-bg-primary/50">
+    <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-surface-reader">
       {/* Header */}
-      <div className="flex items-center gap-3 px-5 py-3 border-b border-border-primary shrink-0 bg-bg-primary/60 backdrop-blur-sm">
+      <div className="flex items-center gap-3 px-5 py-3 border-b border-border-primary shrink-0 bg-surface-reader">
         <button
           onClick={() => navigateToLabel("inbox")}
           className="p-1.5 -ml-1 rounded-md text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors"
@@ -372,7 +344,7 @@ export function SettingsPage() {
       {/* Body: sidebar nav + content */}
       <div className="flex flex-1 min-h-0">
         {/* Vertical tab sidebar */}
-        <nav className="w-48 border-r border-border-primary py-2 overflow-y-auto shrink-0 bg-bg-primary/30">
+        <nav className="w-48 border-r border-border-primary py-2 overflow-y-auto shrink-0 bg-surface-list">
           {tabs.map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
@@ -415,7 +387,6 @@ export function SettingsPage() {
                         onChange={(e) => {
                           const val = e.target.value as "light" | "dark" | "system";
                           setTheme(val);
-                          setSetting("theme", val);
                         }}
                         className="w-48 bg-bg-tertiary text-text-primary text-sm px-3 py-1.5 rounded-md border border-border-primary focus:border-accent outline-none"
                       >
@@ -507,13 +478,15 @@ export function SettingsPage() {
                     </SettingRow>
                     <ToggleRow
                       label="Reduce motion"
-                      description="Disable animated background effects (fixes flickering on some GPUs)"
+                      description="Turn off animations and transitions. Also on automatically when macOS Reduce motion is enabled"
                       checked={reduceMotion}
                       onToggle={() => setReduceMotion(!reduceMotion)}
                     />
                   </Section>
 
                   <SidebarNavEditor />
+
+                  <TimeZoneSettings />
 
                   <Section title="Startup">
                     <ToggleRow
@@ -1037,235 +1010,14 @@ export function SettingsPage() {
                 <ShortcutsTab />
               )}
 
+              {activeTab === "freshdesk" && <FreshdeskSettings />}
+              {activeTab === "clickup" && <ClickUpSettings />}
+
               {activeTab === "ai" && (
                 <>
                   <Section title="Provider">
-                    <p className="text-xs text-text-tertiary mb-3">
-                      Choose which AI provider to use for summarization, compose assistance, and smart categorization.
-                    </p>
-                    <SettingRow label="AI Provider">
-                      <select
-                        value={aiProvider}
-                        onChange={async (e) => {
-                          const val = e.target.value as "claude" | "openai" | "gemini" | "ollama" | "copilot";
-                          setAiProvider(val);
-                          setAiTestResult(null);
-                          await setSetting("ai_provider", val);
-                          const { clearProviderClients } = await import("@/services/ai/providerManager");
-                          clearProviderClients();
-                        }}
-                        className="w-48 bg-bg-tertiary text-text-primary text-sm px-3 py-1.5 rounded-md border border-border-primary focus:border-accent outline-none"
-                      >
-                        <option value="claude">Claude (Anthropic)</option>
-                        <option value="openai">OpenAI</option>
-                        <option value="gemini">Gemini (Google)</option>
-                        <option value="ollama">Local AI (Ollama / LMStudio)</option>
-                        <option value="copilot">GitHub Copilot</option>
-                      </select>
-                    </SettingRow>
-                    <p className="text-xs text-text-tertiary">
-                      {aiProvider === "claude" && `Uses ${PROVIDER_MODELS.claude.find((m) => m.id === claudeModel)?.label ?? claudeModel}.`}
-                      {aiProvider === "openai" && `Uses ${PROVIDER_MODELS.openai.find((m) => m.id === openaiModel)?.label ?? openaiModel}.`}
-                      {aiProvider === "gemini" && `Uses ${PROVIDER_MODELS.gemini.find((m) => m.id === geminiModel)?.label ?? geminiModel}.`}
-                      {aiProvider === "ollama" && "Connect to a local Ollama or LMStudio server. No API key required."}
-                      {aiProvider === "copilot" && `Uses ${PROVIDER_MODELS.copilot.find((m) => m.id === copilotModel)?.label ?? copilotModel}. Requires a GitHub PAT with models:read permission.`}
-                    </p>
+                    <AiProviderSettings />
                   </Section>
-
-                  {aiProvider === "ollama" ? (
-                    <Section title="Local Server">
-                      <div className="space-y-3">
-                        <TextField
-                          label="Server URL"
-                          size="md"
-                          value={ollamaServerUrl}
-                          onChange={(e) => setOllamaServerUrl(e.target.value)}
-                          placeholder="http://localhost:11434"
-                        />
-                        <TextField
-                          label="Model Name"
-                          size="md"
-                          value={ollamaModel}
-                          onChange={(e) => setOllamaModel(e.target.value)}
-                          placeholder="llama3.2"
-                        />
-                        <div className="flex items-center gap-2">
-                          <Button
-                            variant="primary"
-                            size="md"
-                            onClick={async () => {
-                              await setSetting("ollama_server_url", ollamaServerUrl.trim());
-                              await setSetting("ollama_model", ollamaModel.trim());
-                              const { clearProviderClients } = await import("@/services/ai/providerManager");
-                              clearProviderClients();
-                              setAiKeySaved(true);
-                              setTimeout(() => setAiKeySaved(false), 2000);
-                            }}
-                            disabled={!ollamaServerUrl.trim() || !ollamaModel.trim()}
-                          >
-                            {aiKeySaved ? "Saved!" : "Save"}
-                          </Button>
-                          <Button
-                            variant="secondary"
-                            size="md"
-                            onClick={async () => {
-                              setAiTesting(true);
-                              setAiTestResult(null);
-                              try {
-                                const { testConnection } = await import("@/services/ai/aiService");
-                                const ok = await testConnection();
-                                setAiTestResult(ok ? "success" : "fail");
-                              } catch {
-                                setAiTestResult("fail");
-                              } finally {
-                                setAiTesting(false);
-                              }
-                            }}
-                            disabled={!ollamaServerUrl.trim() || !ollamaModel.trim() || aiTesting}
-                            className="bg-bg-tertiary text-text-primary border border-border-primary"
-                          >
-                            {aiTesting ? "Testing..." : "Test Connection"}
-                          </Button>
-                          {aiTestResult === "success" && (
-                            <span className="text-xs text-success">Connected!</span>
-                          )}
-                          {aiTestResult === "fail" && (
-                            <span className="text-xs text-danger">Connection failed</span>
-                          )}
-                        </div>
-                      </div>
-                    </Section>
-                  ) : (
-                    <Section title="API Key">
-                      <div className="space-y-3">
-                        <TextField
-                          label={
-                            aiProvider === "claude" ? "Anthropic API Key"
-                            : aiProvider === "openai" ? "OpenAI API Key"
-                            : aiProvider === "copilot" ? "GitHub Personal Access Token"
-                            : "Google AI API Key"
-                          }
-                          size="md"
-                          type="password"
-                          value={
-                            aiProvider === "claude" ? claudeApiKey
-                            : aiProvider === "openai" ? openaiApiKey
-                            : aiProvider === "copilot" ? copilotApiKey
-                            : geminiApiKey
-                          }
-                          onChange={(e) => {
-                            if (aiProvider === "claude") setClaudeApiKey(e.target.value);
-                            else if (aiProvider === "openai") setOpenaiApiKey(e.target.value);
-                            else if (aiProvider === "copilot") setCopilotApiKey(e.target.value);
-                            else setGeminiApiKey(e.target.value);
-                          }}
-                          placeholder={
-                            aiProvider === "claude" ? "sk-ant-..."
-                            : aiProvider === "openai" ? "sk-..."
-                            : aiProvider === "copilot" ? "ghp_..."
-                            : "AI..."
-                          }
-                        />
-                        <SettingRow label="Model">
-                          <select
-                            value={
-                              aiProvider === "claude" ? claudeModel
-                              : aiProvider === "openai" ? openaiModel
-                              : aiProvider === "copilot" ? copilotModel
-                              : geminiModel
-                            }
-                            onChange={async (e) => {
-                              const val = e.target.value;
-                              const modelSettingMap = {
-                                claude: "claude_model",
-                                openai: "openai_model",
-                                gemini: "gemini_model",
-                                copilot: "copilot_model",
-                              } as const;
-                              if (aiProvider === "claude") setClaudeModel(val);
-                              else if (aiProvider === "openai") setOpenaiModel(val);
-                              else if (aiProvider === "copilot") setCopilotModel(val);
-                              else setGeminiModel(val);
-                              await setSetting(modelSettingMap[aiProvider], val);
-                              const { clearProviderClients } = await import("@/services/ai/providerManager");
-                              clearProviderClients();
-                            }}
-                            className="w-48 bg-bg-tertiary text-text-primary text-sm px-3 py-1.5 rounded-md border border-border-primary focus:border-accent outline-none"
-                          >
-                            {PROVIDER_MODELS[aiProvider].map((m) => (
-                              <option key={m.id} value={m.id}>{m.label}</option>
-                            ))}
-                          </select>
-                        </SettingRow>
-                        <div className="flex items-center gap-2">
-                          <Button
-                            variant="primary"
-                            size="md"
-                            onClick={async () => {
-                              const keySettingMap = {
-                                claude: "claude_api_key",
-                                openai: "openai_api_key",
-                                gemini: "gemini_api_key",
-                                copilot: "copilot_api_key",
-                              } as const;
-                              const keyValue =
-                                aiProvider === "claude" ? claudeApiKey.trim()
-                                : aiProvider === "openai" ? openaiApiKey.trim()
-                                : aiProvider === "copilot" ? copilotApiKey.trim()
-                                : geminiApiKey.trim();
-                              if (keyValue) {
-                                await setSecureSetting(keySettingMap[aiProvider], keyValue);
-                                const { clearProviderClients } = await import("@/services/ai/providerManager");
-                                clearProviderClients();
-                              }
-                              setAiKeySaved(true);
-                              setTimeout(() => setAiKeySaved(false), 2000);
-                            }}
-                            disabled={
-                              !(aiProvider === "claude" ? claudeApiKey.trim()
-                              : aiProvider === "openai" ? openaiApiKey.trim()
-                              : aiProvider === "copilot" ? copilotApiKey.trim()
-                              : geminiApiKey.trim())
-                            }
-                          >
-                            {aiKeySaved ? "Saved!" : "Save Key"}
-                          </Button>
-                          <Button
-                            variant="secondary"
-                            size="md"
-                            onClick={async () => {
-                              setAiTesting(true);
-                              setAiTestResult(null);
-                              try {
-                                const { testConnection } = await import("@/services/ai/aiService");
-                                const ok = await testConnection();
-                                setAiTestResult(ok ? "success" : "fail");
-                              } catch {
-                                setAiTestResult("fail");
-                              } finally {
-                                setAiTesting(false);
-                              }
-                            }}
-                            disabled={
-                              !(aiProvider === "claude" ? claudeApiKey.trim()
-                              : aiProvider === "openai" ? openaiApiKey.trim()
-                              : aiProvider === "copilot" ? copilotApiKey.trim()
-                              : geminiApiKey.trim()) || aiTesting
-                            }
-                            className="bg-bg-tertiary text-text-primary border border-border-primary"
-                          >
-                            {aiTesting ? "Testing..." : "Test Connection"}
-                          </Button>
-                          {aiTestResult === "success" && (
-                            <span className="text-xs text-success">Connected!</span>
-                          )}
-                          {aiTestResult === "fail" && (
-                            <span className="text-xs text-danger">Connection failed</span>
-                          )}
-                        </div>
-                      </div>
-                    </Section>
-                  )}
 
                   <Section title="Features">
                     <ToggleRow
@@ -1288,16 +1040,7 @@ export function SettingsPage() {
                         await setSetting("ai_auto_categorize", newVal ? "true" : "false");
                       }}
                     />
-                    <ToggleRow
-                      label="Auto-summarize threads"
-                      description="Show AI summaries on multi-message threads"
-                      checked={aiAutoSummarize}
-                      onToggle={async () => {
-                        const newVal = !aiAutoSummarize;
-                        setAiAutoSummarize(newVal);
-                        await setSetting("ai_auto_summarize", newVal ? "true" : "false");
-                      }}
-                    />
+                    <TicketSummaryAutoUpdate />
                   </Section>
 
                   <Section title="Auto-Draft Replies">
@@ -1830,7 +1573,7 @@ function InfoRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-function ShortcutsTab() {
+export function ShortcutsTab() {
   const keyMap = useShortcutStore((s) => s.keyMap);
   const setKey = useShortcutStore((s) => s.setKey);
   const resetKey = useShortcutStore((s) => s.resetKey);
@@ -1891,6 +1634,8 @@ function ShortcutsTab() {
   }, [setKey]);
 
   const hasCustom = Object.entries(keyMap).some(([id, keys]) => defaults[id] !== keys);
+  const conflicts = findShortcutConflicts(keyMap);
+  const descById = new Map(SHORTCUTS.flatMap((c) => c.items.map((i) => [i.id, i.desc] as const)));
 
   return (
     <>
@@ -1904,7 +1649,7 @@ function ShortcutsTab() {
           </div>
           <div className="flex items-center gap-2">
             <kbd className="text-xs bg-bg-tertiary px-2 py-1 rounded border border-border-primary font-mono">
-              {composeShortcut}
+              {formatShortcut(composeShortcut)}
             </kbd>
             <button
               ref={globalRecorderRef}
@@ -1943,15 +1688,25 @@ function ShortcutsTab() {
               const currentKey = keyMap[item.id] ?? item.keys;
               const isDefault = currentKey === defaults[item.id];
               const isRecording = recordingId === item.id;
+              const clashesWith = conflicts.get(item.id);
 
               return (
                 <div
                   key={item.id}
+                  data-shortcut-row
                   className="flex items-center justify-between py-2 px-1"
                 >
-                  <span className="text-sm text-text-secondary">
-                    {item.desc}
-                  </span>
+                  <div className="min-w-0">
+                    <span className="text-sm text-text-secondary">
+                      {item.desc}
+                    </span>
+                    {clashesWith && (
+                      <p role="alert" className="flex items-center gap-1 text-xs text-warning mt-0.5">
+                        <AlertTriangle size={12} className="shrink-0" />
+                        Also used by {clashesWith.map((id) => descById.get(id) ?? id).join(", ")}
+                      </p>
+                    )}
+                  </div>
                   <div className="flex items-center gap-2 ml-4 shrink-0">
                     <button
                       onClick={() => setRecordingId(isRecording ? null : item.id)}
@@ -1965,13 +1720,13 @@ function ShortcutsTab() {
                           : "bg-bg-tertiary text-text-tertiary hover:text-text-primary border border-border-primary"
                       }`}
                     >
-                      {isRecording ? "Press key..." : currentKey}
+                      {isRecording ? "Press key..." : formatShortcut(currentKey)}
                     </button>
                     {!isDefault && (
                       <button
                         onClick={() => resetKey(item.id)}
                         className="text-xs text-text-tertiary hover:text-text-primary"
-                        title={`Reset to ${defaults[item.id]}`}
+                        title={`Reset to ${formatShortcut(defaults[item.id] ?? "")}`}
                       >
                         ×
                       </button>

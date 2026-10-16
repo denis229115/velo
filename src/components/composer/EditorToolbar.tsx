@@ -2,14 +2,17 @@ import { useRef, useState } from "react";
 import type { Editor } from "@tiptap/react";
 import { InputDialog } from "@/components/ui/InputDialog";
 import { Sparkles } from "lucide-react";
+import { formatShortcut } from "@/utils/shortcutLabel";
 
 interface EditorToolbarProps {
   editor: Editor | null;
   onToggleAiAssist?: () => void;
   aiAssistOpen?: boolean;
+  /** Offer the Image button (an editor without image support hides it) */
+  allowImages?: boolean;
 }
 
-export function EditorToolbar({ editor, onToggleAiAssist, aiAssistOpen }: EditorToolbarProps) {
+export function EditorToolbar({ editor, onToggleAiAssist, aiAssistOpen, allowImages = true }: EditorToolbarProps) {
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const [showLinkDialog, setShowLinkDialog] = useState(false);
 
@@ -47,9 +50,9 @@ export function EditorToolbar({ editor, onToggleAiAssist, aiAssistOpen }: Editor
 
   return (
     <div className="flex items-center gap-0.5 px-3 py-1.5 border-b border-border-secondary bg-bg-secondary flex-wrap">
-      {btn("B", editor.isActive("bold"), () => editor.chain().focus().toggleBold().run(), "Bold (Ctrl+B)")}
-      {btn("I", editor.isActive("italic"), () => editor.chain().focus().toggleItalic().run(), "Italic (Ctrl+I)")}
-      {btn("U", editor.isActive("underline"), () => editor.chain().focus().toggleUnderline().run(), "Underline (Ctrl+U)")}
+      {btn("B", editor.isActive("bold"), () => editor.chain().focus().toggleBold().run(), `Bold (${formatShortcut("Ctrl+B")})`)}
+      {btn("I", editor.isActive("italic"), () => editor.chain().focus().toggleItalic().run(), `Italic (${formatShortcut("Ctrl+I")})`)}
+      {btn("U", editor.isActive("underline"), () => editor.chain().focus().toggleUnderline().run(), `Underline (${formatShortcut("Ctrl+U")})`)}
       {btn("S̶", editor.isActive("strike"), () => editor.chain().focus().toggleStrike().run(), "Strikethrough")}
 
       <div className="w-px h-4 bg-border-primary mx-1" />
@@ -82,7 +85,7 @@ export function EditorToolbar({ editor, onToggleAiAssist, aiAssistOpen }: Editor
         className="hidden"
         onChange={handleImageSelect}
       />
-      {btn("Image", false, () => imageInputRef.current?.click(), "Insert image")}
+      {allowImages && btn("Image", false, () => imageInputRef.current?.click(), "Insert image")}
 
       <div className="flex-1" />
 

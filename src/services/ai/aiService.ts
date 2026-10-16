@@ -1,6 +1,4 @@
-import { getActiveProvider } from "./providerManager";
-import { getAiCache, setAiCache } from "@/services/db/aiCache";
-import { AiError } from "./errors";
+import { requestAi, senderDomain, testAiConnection, type AiSourceItem } from "./gateway";
 import type { DbMessage } from "@/services/db/messages";
 import {
   SUMMARIZE_PROMPT,
@@ -16,68 +14,48 @@ import {
   EXTRACT_TASK_PROMPT,
 } from "./prompts";
 
-async function callAi(systemPrompt: string, userContent: string): Promise<string> {
-  try {
-    const provider = await getActiveProvider();
-    return await provider.complete({ systemPrompt, userContent });
-  } catch (err) {
-    if (err instanceof AiError) throw err;
-    const message = err instanceof Error ? err.message : String(err);
-    if (message.includes("401") || message.includes("authentication")) {
-      throw new AiError("AUTH_ERROR", "Invalid API key");
-    }
-    if (message.includes("429") || message.includes("rate")) {
-      throw new AiError("RATE_LIMITED", "Rate limited — please try again shortly");
-    }
-    throw new AiError("NETWORK_ERROR", message);
-  }
-}
+// Every function here builds its request through the AI gateway (gateway.ts),
+// which sends only allowlisted fields: sender addresses and names, recipients,
+// dates and message IDs never leave Velo. Categorisation and smart labels add
+// the sender's domain only.
 
-function formatMessageForSummary(msg: DbMessage): string {
-  const from = msg.from_name
-    ? `${msg.from_name} <${msg.from_address}>`
-    : (msg.from_address ?? "Unknown");
-  const date = new Date(msg.date).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-  const body = (msg.body_text ?? msg.snippet ?? "").trim();
-  return `<email_content>From: ${from}\nDate: ${date}\n\n${body}</email_content>`;
+/** A thread's messages as gateway source items: subject once, then each message's text. */
+export function threadItems(messages: DbMessage[]): AiSourceItem[] {
+  return messages.map((msg, i) => ({
+    subject: i === 0 ? (msg.subject ?? "No subject") : null,
+    body: msg.body_text ?? msg.snippet ?? "",
+  }));
 }
 
 export async function summarizeThread(
   threadId: string,
   accountId: string,
   messages: DbMessage[],
+  options: { refresh?: boolean } = {},
 ): Promise<string> {
-  // Check cache first
-  const cached = await getAiCache(accountId, threadId, "summary");
-  if (cached) return cached;
-
-  const subject = messages[0]?.subject ?? "No subject";
-  const formatted = messages.map(formatMessageForSummary).join("\n---\n");
-  const combined = `Subject: ${subject}\n\n${formatted}`.slice(0, 6000);
-  const summary = await callAi(SUMMARIZE_PROMPT, combined);
-
-  // Cache the result
-  await setAiCache(accountId, threadId, "summary", summary);
-  return summary;
+  return requestAi({
+    feature: "thread_summary",
+    systemPrompt: SUMMARIZE_PROMPT,
+    items: threadItems(messages),
+    cache: { scope: accountId, sourceId: threadId, refresh: options.refresh },
+  });
 }
 
 export async function composeFromPrompt(instructions: string): Promise<string> {
-  return callAi(COMPOSE_PROMPT, instructions);
+  return requestAi({ feature: "ai_compose", systemPrompt: COMPOSE_PROMPT, operatorText: instructions });
 }
 
 export async function generateReply(
   messagesText: string[],
   instructions?: string,
 ): Promise<string> {
-  const combined = messagesText.join("\n---\n").slice(0, 4000);
-  const userContent = instructions
-    ? `<email_content>${combined}</email_content>\n\nInstructions: ${instructions}`
-    : `<email_content>${combined}</email_content>`;
-  return callAi(REPLY_PROMPT, userContent);
+  return requestAi({
+    feature: "ai_reply",
+    systemPrompt: REPLY_PROMPT,
+    items: messagesText.map((body) => ({ body })),
+    operatorText: instructions,
+    maxChars: 4000,
+  });
 }
 
 export type TransformType = "improve" | "shorten" | "formalize";
@@ -91,27 +69,23 @@ export async function transformText(
     shorten: SHORTEN_PROMPT,
     formalize: FORMALIZE_PROMPT,
   };
-  return callAi(prompts[type], text);
+  // The operator's own draft is the public message text being transformed.
+  return requestAi({ feature: "text_transform", systemPrompt: prompts[type], items: [{ body: text }] });
 }
 
 export async function generateSmartReplies(
   threadId: string,
   accountId: string,
   messages: DbMessage[],
+  options: { refresh?: boolean } = {},
 ): Promise<string[]> {
-  // Check cache first
-  const cached = await getAiCache(accountId, threadId, "smart_replies");
-  if (cached) {
-    try {
-      return JSON.parse(cached) as string[];
-    } catch {
-      // Corrupted cache, regenerate
-    }
-  }
-
-  const formatted = messages.map(formatMessageForSummary).join("\n---\n");
-  const combined = formatted.slice(0, 4000);
-  const result = await callAi(SMART_REPLY_PROMPT, `<email_content>${combined}</email_content>`);
+  const result = await requestAi({
+    feature: "smart_replies",
+    systemPrompt: SMART_REPLY_PROMPT,
+    items: threadItems(messages),
+    maxChars: 4000,
+    cache: { scope: accountId, sourceId: threadId, refresh: options.refresh },
+  });
 
   // Parse JSON array from response
   let replies: string[];
@@ -136,91 +110,89 @@ export async function generateSmartReplies(
 
   // Ensure exactly 3 replies
   while (replies.length < 3) replies.push("Thanks for the update.");
-  replies = replies.slice(0, 3);
-
-  // Cache the result
-  await setAiCache(accountId, threadId, "smart_replies", JSON.stringify(replies));
-  return replies;
+  return replies.slice(0, 3);
 }
 
 export async function askInbox(
   question: string,
-  _accountId: string,
-  context: string,
+  messages: { subject: string | null; snippet: string | null }[],
 ): Promise<string> {
-  const userContent = `<email_content>${context}</email_content>\n\nQuestion: ${question}`;
-  return callAi(ASK_INBOX_PROMPT, userContent);
+  return requestAi({
+    feature: "ask_inbox",
+    systemPrompt: ASK_INBOX_PROMPT,
+    items: messages.map((m) => ({ subject: m.subject ?? "(no subject)", body: m.snippet ?? "" })),
+    operatorText: `Question: ${question}`,
+  });
+}
+
+type ThreadForClassification = { id: string; subject: string; snippet: string; fromAddress: string };
+
+/** Threads as source items; the AI refers to them by position, never by thread ID. */
+function classificationItems(threads: ThreadForClassification[]): AiSourceItem[] {
+  return threads.map((t) => ({
+    subject: t.subject,
+    body: t.snippet,
+    senderDomain: senderDomain(t.fromAddress),
+  }));
+}
+
+/** Parse "ITEM_ID:value" lines, mapping 1-based item ids back to thread IDs. */
+function parseItemLines(result: string, threads: ThreadForClassification[]): [string, string][] {
+  const pairs: [string, string][] = [];
+  for (const line of result.split("\n")) {
+    const trimmed = line.trim();
+    const colonIdx = trimmed.indexOf(":");
+    if (colonIdx === -1) continue;
+    const index = Number(trimmed.slice(0, colonIdx).trim());
+    const value = trimmed.slice(colonIdx + 1).trim();
+    const threadId = Number.isInteger(index) ? threads[index - 1]?.id : undefined;
+    if (threadId && value) pairs.push([threadId, value]);
+  }
+  return pairs;
 }
 
 const VALID_CATEGORIES = new Set(["Primary", "Updates", "Promotions", "Social", "Newsletters"]);
 
 export async function categorizeThreads(
-  threads: { id: string; subject: string; snippet: string; fromAddress: string }[],
+  threads: ThreadForClassification[],
 ): Promise<Map<string, string>> {
-  const input = threads
-    .map((t) => `<email_content>ID:${t.id} | From:${t.fromAddress} | Subject:${t.subject} | ${t.snippet}</email_content>`)
-    .join("\n");
-
-  const validThreadIds = new Set(threads.map((t) => t.id));
-
-  const result = await callAi(CATEGORIZE_PROMPT, input);
+  const result = await requestAi({
+    feature: "categorization",
+    systemPrompt: CATEGORIZE_PROMPT,
+    items: classificationItems(threads),
+  });
   const categories = new Map<string, string>();
-
-  for (const line of result.split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    const colonIdx = trimmed.indexOf(":");
-    if (colonIdx === -1) continue;
-    const threadId = trimmed.slice(0, colonIdx).trim();
-    const category = trimmed.slice(colonIdx + 1).trim();
-    // Validate: only accept known thread IDs and valid categories
-    if (threadId && category && validThreadIds.has(threadId) && VALID_CATEGORIES.has(category)) {
-      categories.set(threadId, category);
-    }
+  for (const [threadId, category] of parseItemLines(result, threads)) {
+    // Only accept valid categories
+    if (VALID_CATEGORIES.has(category)) categories.set(threadId, category);
   }
-
   return categories;
 }
 
 export async function classifyThreadsBySmartLabels(
-  threads: { id: string; subject: string; snippet: string; fromAddress: string }[],
+  threads: ThreadForClassification[],
   labelRules: { labelId: string; description: string }[],
 ): Promise<Map<string, string[]>> {
   const labelDefs = labelRules
     .map((r) => `LABEL_ID:${r.labelId} — ${r.description}`)
     .join("\n");
-
-  const threadData = threads
-    .map((t) => `<email_content>ID:${t.id} | From:${t.fromAddress} | Subject:${t.subject} | ${t.snippet}</email_content>`)
-    .join("\n");
-
-  const userContent = `Label definitions:\n${labelDefs}\n\nThreads:\n${threadData}`;
-
-  const validThreadIds = new Set(threads.map((t) => t.id));
   const validLabelIds = new Set(labelRules.map((r) => r.labelId));
 
-  const result = await callAi(SMART_LABEL_PROMPT, userContent);
+  const result = await requestAi({
+    feature: "smart_labels",
+    systemPrompt: SMART_LABEL_PROMPT,
+    items: classificationItems(threads),
+    operatorText: `Label definitions:\n${labelDefs}`,
+  });
+
   const assignments = new Map<string, string[]>();
-
-  for (const line of result.split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    const colonIdx = trimmed.indexOf(":");
-    if (colonIdx === -1) continue;
-    const threadId = trimmed.slice(0, colonIdx).trim();
-    const labelsPart = trimmed.slice(colonIdx + 1).trim();
-    if (!threadId || !labelsPart || !validThreadIds.has(threadId)) continue;
-
+  for (const [threadId, labelsPart] of parseItemLines(result, threads)) {
     const labelIds = labelsPart
       .split(",")
       .map((l) => l.trim())
       .filter((l) => validLabelIds.has(l));
-
-    if (labelIds.length > 0) {
-      assignments.set(threadId, labelIds);
-    }
+    if (labelIds.length > 0) assignments.set(threadId, labelIds);
   }
-
   return assignments;
 }
 
@@ -229,17 +201,13 @@ export async function extractTaskFromThread(
   _accountId: string,
   messages: DbMessage[],
 ): Promise<string> {
-  const subject = messages[0]?.subject ?? "No subject";
-  const formatted = messages.map(formatMessageForSummary).join("\n---\n");
-  const combined = `<email_content>Subject: ${subject}\n\n${formatted}</email_content>`.slice(0, 6000);
-  return callAi(EXTRACT_TASK_PROMPT, combined);
+  return requestAi({
+    feature: "task_extraction",
+    systemPrompt: EXTRACT_TASK_PROMPT,
+    items: threadItems(messages),
+  });
 }
 
 export async function testConnection(): Promise<boolean> {
-  try {
-    const provider = await getActiveProvider();
-    return await provider.testConnection();
-  } catch {
-    return false;
-  }
+  return testAiConnection();
 }

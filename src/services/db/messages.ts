@@ -116,6 +116,22 @@ export async function upsertMessage(msg: {
   );
 }
 
+/**
+ * Whether a message with the given RFC Message-ID header is stored locally
+ * for the account (e.g. the synced copy of something we sent).
+ */
+export async function hasMessageWithIdHeader(
+  accountId: string,
+  messageIdHeader: string,
+): Promise<boolean> {
+  const db = await getDb();
+  const rows = await db.select<{ id: string }[]>(
+    "SELECT id FROM messages WHERE account_id = $1 AND message_id_header = $2 LIMIT 1",
+    [accountId, messageIdHeader],
+  );
+  return rows.length > 0;
+}
+
 export async function deleteMessage(
   accountId: string,
   messageId: string,

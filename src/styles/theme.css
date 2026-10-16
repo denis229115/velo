@@ -1,0 +1,175 @@
+/*
+ * MonoCode theme token layer.
+ *
+ * Plain CSS (no Tailwind syntax) so tests can load it into jsdom. Semantic
+ * tokens are exposed to Tailwind via @theme aliases in globals.css. Kept
+ * outside any @layer: unlayered rules win over Tailwind utilities, so the
+ * focus ring and reduced-motion rules below cannot be switched off by a
+ * utility class such as `outline-none`.
+ */
+
+:root {
+  color-scheme: light;
+
+  /* Surfaces — only the sidebar is translucent */
+  --surface-window: var(--surface-base); /* window frame; transparent with native vibrancy */
+  --surface-base: #f2f2f2;
+  --surface-sidebar: rgba(236, 236, 236, 0.82);
+  --surface-list: #fafafa;
+  --surface-reader: #ffffff;
+  --surface-composer: #ffffff;
+  --surface-overlay: #ffffff;
+  --surface-subtle: #ededed;
+
+  /* Text */
+  --text-primary: #171717;
+  --text-secondary: #4d4d4d;
+  --text-muted: #5c5c5c;
+
+  /* Separators */
+  --separator: #e3e3e3;
+  --separator-subtle: #eeeeee;
+
+  /* Interaction states */
+  --state-hover: #f0f0f0;
+  --state-selected: #e5e5e5;
+  --state-focus: #2563eb;
+  --sidebar-hover: rgba(0, 0, 0, 0.06);
+
+  /* Link and status */
+  --link: #1d4ed8;
+  --status-success: #15803d;
+  --status-warning: #a15c07;
+  --status-error: #c42020;
+
+  /* Window frame and inset content panel */
+  --frame-gap: 8px;
+  --titlebar-height: 36px;
+  --panel-radius: 10px;
+  --panel-border: rgba(0, 0, 0, 0.1);
+  --panel-shadow: 0 1px 6px rgba(0, 0, 0, 0.05);
+}
+
+.dark {
+  color-scheme: dark;
+
+  --surface-base: #161616;
+  --surface-sidebar: rgba(32, 32, 32, 0.78);
+  --surface-list: #1b1b1b;
+  --surface-reader: #1f1f1f;
+  --surface-composer: #232323;
+  --surface-overlay: #262626;
+  --surface-subtle: #2e2e2e;
+
+  --text-primary: #ededed;
+  --text-secondary: #b8b8b8;
+  --text-muted: #a3a3a3;
+
+  --separator: #333333;
+  --separator-subtle: #2a2a2a;
+
+  --state-hover: #2a2a2a;
+  --state-selected: #333333;
+  --state-focus: #6ea8fe;
+  --sidebar-hover: rgba(255, 255, 255, 0.07);
+
+  --link: #7cb4ff;
+  --status-success: #4ade80;
+  --status-warning: #f5c04a;
+  --status-error: #ff8080;
+
+  --panel-border: rgba(255, 255, 255, 0.1);
+  --panel-shadow: 0 1px 8px rgba(0, 0, 0, 0.32);
+}
+
+/*
+ * App frame: the window is drawn in the (translucent) sidebar colour and the
+ * sidebar sits directly on it. Content lives in one solid, rounded panel inset
+ * by --frame-gap on the top, right and bottom.
+ */
+.app-frame {
+  background-color: var(--surface-sidebar);
+}
+
+.app-panel {
+  background-color: var(--surface-list);
+  border-width: 1px;
+  border-style: solid;
+  border-color: var(--panel-border);
+  border-radius: var(--panel-radius);
+  box-shadow: var(--panel-shadow);
+  margin-top: var(--frame-gap);
+  margin-right: var(--frame-gap);
+  margin-bottom: var(--frame-gap);
+  margin-left: 0;
+  overflow: hidden;
+}
+
+/* macOS with a collapsed sidebar: keep the traffic lights off the panel */
+.app-panel[data-top="titlebar"] {
+  margin-top: var(--titlebar-height);
+}
+
+/* Windows/Linux: the title bar row above already provides the gap */
+.app-panel[data-top="none"] {
+  margin-top: 0;
+}
+
+/*
+ * Native vibrancy (macOS main window, set by useNativeVibrancy). The window is
+ * transparent with the system sidebar material behind the webview, so the
+ * window frame and the sidebar let it through; the light tint keeps the
+ * sidebar close to its solid colour. All other surfaces keep their tokens.
+ */
+:root.native-vibrancy {
+  --surface-window: transparent;
+  --surface-sidebar: rgba(246, 246, 246, 0.35);
+}
+
+:root.native-vibrancy.dark {
+  --surface-sidebar: rgba(28, 28, 28, 0.35);
+}
+
+/*
+ * Keyboard focus ring for every interactive element, in both themes.
+ * Programmatic-only focus targets (tabindex="-1") and the rich-text editor,
+ * whose caret is its focus indicator, are left alone.
+ */
+:focus-visible {
+  outline-width: 2px;
+  outline-style: solid;
+  outline-color: var(--state-focus);
+  outline-offset: 1px;
+}
+
+[tabindex="-1"]:focus-visible,
+.ProseMirror:focus-visible {
+  outline-style: none;
+}
+
+/*
+ * Reduced motion: `.reduce-motion` is set on <html> when macOS asks for reduced
+ * motion or the in-app setting is on. The media query covers first paint.
+ */
+.reduce-motion * {
+  animation: none !important;
+  transition-duration: 0s !important;
+  scroll-behavior: auto !important;
+}
+
+/* Separate rule: some engines drop a whole selector list containing pseudo-elements */
+.reduce-motion *::before,
+.reduce-motion *::after {
+  animation: none !important;
+  transition-duration: 0s !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition-duration: 0s !important;
+    scroll-behavior: auto !important;
+  }
+}

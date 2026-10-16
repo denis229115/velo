@@ -4,8 +4,9 @@ import type { Thread } from "@/stores/threadStore";
 import { useThreadStore } from "@/stores/threadStore";
 import { useUIStore } from "@/stores/uiStore";
 import { useActiveLabel } from "@/hooks/useRouteNavigation";
-import { formatRelativeDate } from "@/utils/date";
-import { Paperclip, Star, Check, Pin, BellRing, VolumeX } from "lucide-react";
+import { Archive, BellRing, Mail, MailOpen, Pin, Trash2, VolumeX } from "lucide-react";
+import { ListRow, type ListRowAction } from "@/components/list/ListRow";
+import { archiveThread, markThreadRead, starThread, trashThread } from "@/services/emailActions";
 import type { DragData } from "@/components/dnd/DndProvider";
 
 const CATEGORY_COLORS: Record<string, string> = {
@@ -64,116 +65,75 @@ export const ThreadCard = memo(function ThreadCard({ thread, isSelected, onClick
   const handleContextMenu = onContextMenu
     ? (e: React.MouseEvent) => onContextMenu(e, thread.id)
     : undefined;
-  const initial = (
-    thread.fromName?.[0] ??
-    thread.fromAddress?.[0] ??
-    "?"
-  ).toUpperCase();
+
+  const { accountId, id } = thread;
+  const quickActions: ListRowAction[] = [
+    { label: "Archive", icon: Archive, onAction: () => void archiveThread(accountId, id, []) },
+    ...(activeLabel === "trash"
+      ? []
+      : [{ label: "Move to trash", icon: Trash2, onAction: () => void trashThread(accountId, id, []) }]),
+    {
+      label: thread.isRead ? "Mark as unread" : "Mark as read",
+      icon: thread.isRead ? Mail : MailOpen,
+      onAction: () => void markThreadRead(accountId, id, [], !thread.isRead),
+    },
+  ];
+
+  const indicators = (
+    <>
+      {showCategoryBadge && category && category !== "Primary" && CATEGORY_COLORS[category] && (
+        // Narrow list (reading pane open): hidden so the sender name keeps the space
+        <span className={`hidden @2xl:inline shrink-0 text-micro px-1.5 rounded-full leading-normal ${CATEGORY_COLORS[category]}`}>
+          {category}
+        </span>
+      )}
+      {hasFollowUp && (
+        <span className="shrink-0 text-accent" title="Follow-up reminder set">
+          <BellRing size={12} />
+        </span>
+      )}
+      {thread.isMuted && (
+        <span className="shrink-0 text-warning" title="Muted">
+          <VolumeX size={12} />
+        </span>
+      )}
+      {thread.isPinned && (
+        <span className="shrink-0 text-accent" title="Pinned">
+          <Pin size={12} className="fill-current" />
+        </span>
+      )}
+      {thread.messageCount > 1 && (
+        <span className="text-micro tabular-nums text-text-tertiary shrink-0 bg-bg-tertiary rounded-full px-1.5">
+          {thread.messageCount}
+        </span>
+      )}
+    </>
+  );
 
   return (
-    <button
-      ref={setNodeRef}
-      {...attributes}
-      {...listeners}
+    <ListRow
+      density={emailDensity}
+      unread={!thread.isRead}
+      sender={thread.fromName ?? thread.fromAddress ?? "Unknown"}
+      subject={thread.subject ?? "(No subject)"}
+      preview={thread.snippet}
+      time={thread.lastMessageAt}
+      hasAttachment={thread.hasAttachments}
+      selected={isSelected}
+      checked={isMultiSelected}
+      starred={thread.isStarred}
+      onToggleStar={() => void starThread(accountId, id, [], !thread.isStarred)}
+      actions={quickActions}
+      indicators={indicators}
       onClick={handleClick}
-      onContextMenu={handleContextMenu}
-      aria-label={`${thread.isRead ? "" : "Unread "}email from ${thread.fromName ?? thread.fromAddress ?? "Unknown"}: ${thread.subject ?? "(No subject)"}`}
-      aria-selected={isSelected}
-      className={`w-full text-left border-b border-border-secondary group hover-lift press-scale ${
-        emailDensity === "compact" ? "px-3 py-1.5" : emailDensity === "spacious" ? "px-4 py-4" : "px-4 py-3"
-      } ${
-        isDragging
-          ? "opacity-50"
-          : isMultiSelected
-            ? "bg-accent/10"
-            : isSelected
-              ? "bg-bg-selected"
-              : "hover:bg-bg-hover"
-      } ${isSpam ? "bg-red-500/8 dark:bg-red-500/10" : ""}`}
-    >
-      <div className="flex items-start gap-3">
-        {/* Avatar */}
-        <div
-          className={`rounded-full flex items-center justify-center shrink-0 font-medium text-white ${
-            emailDensity === "compact" ? "w-7 h-7 text-xs" : emailDensity === "spacious" ? "w-10 h-10 text-sm" : "w-9 h-9 text-sm"
-          } ${
-            isMultiSelected ? "bg-accent" : thread.isRead ? "bg-text-tertiary" : "bg-accent"
-          }`}
-        >
-          {isMultiSelected ? <Check size={emailDensity === "compact" ? 14 : 16} /> : initial}
-        </div>
-
-        {/* Content */}
-        <div className="flex-1 min-w-0">
-          {/* First row: sender + date */}
-          <div className="flex items-center justify-between gap-2">
-            <span
-              className={`text-sm truncate ${
-                thread.isRead
-                  ? "text-text-secondary"
-                  : "font-semibold text-text-primary"
-              }`}
-            >
-              {thread.fromName ?? thread.fromAddress ?? "Unknown"}
-            </span>
-            <span className="text-xs text-text-tertiary whitespace-nowrap shrink-0">
-              {formatRelativeDate(thread.lastMessageAt)}
-            </span>
-          </div>
-
-          {/* Subject */}
-          <div
-            className={`text-sm truncate mt-0.5 ${
-              thread.isRead ? "text-text-secondary" : "text-text-primary"
-            }`}
-          >
-            {thread.subject ?? "(No subject)"}
-          </div>
-
-          {/* Snippet + indicators */}
-          <div className={`flex items-center gap-1.5 mt-0.5 ${emailDensity === "compact" ? "hidden" : ""}`}>
-            <span className="text-xs text-text-tertiary truncate flex-1">
-              {thread.snippet}
-            </span>
-            {showCategoryBadge && category && category !== "Primary" && CATEGORY_COLORS[category] && (
-              <span className={`shrink-0 text-[0.625rem] px-1.5 rounded-full leading-normal ${CATEGORY_COLORS[category]}`}>
-                {category}
-              </span>
-            )}
-            {hasFollowUp && (
-              <span className="shrink-0 text-accent" title="Follow-up reminder set">
-                <BellRing size={12} />
-              </span>
-            )}
-            {thread.isMuted && (
-              <span className="shrink-0 text-warning" title="Muted">
-                <VolumeX size={12} />
-              </span>
-            )}
-            {thread.isPinned && (
-              <span className="shrink-0 text-accent" title="Pinned">
-                <Pin size={12} className="fill-current" />
-              </span>
-            )}
-            {thread.hasAttachments && (
-              <span className="shrink-0 text-text-tertiary" title="Has attachments">
-                <Paperclip size={12} />
-              </span>
-            )}
-            {thread.isStarred && (
-              <span className="shrink-0 text-warning star-animate" title="Starred">
-                <Star size={12} className="fill-current" />
-              </span>
-            )}
-            {thread.messageCount > 1 && (
-              <span className="text-xs text-text-tertiary shrink-0 bg-bg-tertiary rounded-full px-1.5">
-                {thread.messageCount}
-              </span>
-            )}
-          </div>
-        </div>
-      </div>
-
-    </button>
+      buttonRef={setNodeRef}
+      buttonProps={{
+        ...attributes,
+        ...listeners,
+        onContextMenu: handleContextMenu,
+        "aria-label": `${thread.isRead ? "" : "Unread "}email from ${thread.fromName ?? thread.fromAddress ?? "Unknown"}: ${thread.subject ?? "(No subject)"}`,
+      }}
+      className={`${isDragging ? "opacity-50" : ""} ${isSpam ? "bg-red-500/8 dark:bg-red-500/10" : ""}`}
+    />
   );
 });

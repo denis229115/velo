@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import type { Editor } from "@tiptap/react";
 import { Wand2, Sparkles, ArrowDown, Briefcase } from "lucide-react";
-import { isAiAvailable } from "@/services/ai/providerManager";
+import { getAiReadiness, type AiReadiness } from "@/services/ai/gateway";
 import {
   composeFromPrompt,
   generateReply,
@@ -9,6 +9,7 @@ import {
   type TransformType,
 } from "@/services/ai/aiService";
 import { useComposerStore } from "@/stores/composerStore";
+import { AiSendNote } from "@/components/ai/AiSendPreview";
 
 interface AiAssistPanelProps {
   editor: Editor | null;
@@ -20,16 +21,25 @@ export function AiAssistPanel({ editor, isReplyMode, threadMessages }: AiAssistP
   const [prompt, setPrompt] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [available, setAvailable] = useState<boolean | null>(null);
+  const [readiness, setReadiness] = useState<AiReadiness | null>(null);
   const setBodyHtml = useComposerStore((s) => s.setBodyHtml);
 
   // Check availability on mount
   useEffect(() => {
-    isAiAvailable().then(setAvailable);
+    getAiReadiness().then(setReadiness);
   }, []);
 
-  if (available === null) return null;
-  if (!available) return null;
+  if (!readiness || readiness.status === "off") return null;
+
+  // AI is configured but may not receive email content: say why, send nothing.
+  if (readiness.status === "refused" || readiness.status === "needs_approval") {
+    return (
+      <div className="px-3 py-2 border-b border-border-secondary bg-bg-secondary flex items-start gap-2">
+        <Sparkles size={12} className="text-text-tertiary shrink-0 mt-0.5" />
+        <p className="text-xs text-text-secondary">{readiness.message}</p>
+      </div>
+    );
+  }
 
   const applyToEditor = (html: string) => {
     if (!editor) return;
@@ -88,6 +98,9 @@ export function AiAssistPanel({ editor, isReplyMode, threadMessages }: AiAssistP
       <div className="flex items-center gap-2 mb-2">
         <Sparkles size={12} className="text-accent" />
         <span className="text-xs font-medium text-accent">AI Assist</span>
+        <div className="ml-auto">
+          <AiSendNote features={["ai_compose", "ai_reply", "text_transform"]} />
+        </div>
       </div>
 
       {/* Prompt input */}

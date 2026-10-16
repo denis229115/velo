@@ -67,6 +67,9 @@ _Avoid_: Thread, comment
 **Reply**:
 A conversation sent publicly to the customer by an agent.
 
+**Ticket CC**:
+The addresses Freshdesk copies on a ticket (its CC list and reply-CC list), stored per helpdesk with the ticket. A Reply starts with them, minus the customer; the operator can remove or add, and a restored draft keeps its own CC. Internal notes have none.
+
 **Automated reply**:
 A public reply produced by a Freshdesk rule or system rather than written by an agent; it never counts as an answer.
 
@@ -215,7 +218,7 @@ _Avoid_: AI service, proxy
 The AI provider the operator has approved for ticket, task and email content; only the Claude API. Other providers are refused for this content.
 
 **Allowlisted field**:
-A field the gateway may send by default: subject, public message text, status and priority.
+A field the gateway may send by default: subject, public message text, status and priority. Email categorisation and smart labels also send the sender's domain (never the address or name).
 
 **Sensitive data**:
 Secrets, payment data and contact data found by Velo's local check before an AI request; names and companies are not sensitive.
@@ -239,4 +242,4 @@ The local record of every AI request: when, which feature, which provider and mo
 Editable text the AI proposes for the operator; it never sends and never overwrites the operator's edits without a replace-or-insert choice.
 
 **Ticket summary**:
-A Velo-only AI overview of a ticket; never written into Freshdesk.
+A Velo-only AI overview of a ticket; never written into Freshdesk. While one is on screen, a new public message refreshes it by itself (never an internal note, never in the background for a ticket that is not open); the old summary stays, labelled Updating, until the new one replaces it, and Out of date when no update is coming.

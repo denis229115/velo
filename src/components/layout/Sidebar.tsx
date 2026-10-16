@@ -1,10 +1,11 @@
+import { FreshdeskViewNav } from "@/components/freshdesk/FreshdeskViewNav";
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { useDroppable } from "@dnd-kit/core";
 import { AccountSwitcher } from "../accounts/AccountSwitcher";
+import { SidebarHeaderActions } from "./SidebarHeaderActions";
 import { LabelForm } from "../labels/LabelForm";
 import { InputDialog } from "../ui/InputDialog";
 import { useUIStore } from "@/stores/uiStore";
-import { useComposerStore } from "@/stores/composerStore";
 import { useAccountStore } from "@/stores/accountStore";
 import { useLabelStore, type Label } from "@/stores/labelStore";
 import { useContextMenuStore } from "@/stores/contextMenuStore";
@@ -38,9 +39,11 @@ import {
   Search,
   MailOpen,
   Paperclip,
+  CalendarClock,
   FolderSearch,
   Loader2,
   type LucideIcon,
+  LifeBuoy,
 } from "lucide-react";
 import { useTaskStore } from "@/stores/taskStore";
 
@@ -55,6 +58,7 @@ export const ALL_NAV_ITEMS: { id: string; label: string; icon: LucideIcon }[] = 
   { id: "snoozed", label: "Snoozed", icon: Clock },
   { id: "sent", label: "Sent", icon: Send },
   { id: "drafts", label: "Drafts", icon: FileEdit },
+  { id: "scheduled", label: "Scheduled", icon: CalendarClock },
   { id: "trash", label: "Trash", icon: Trash2 },
   { id: "spam", label: "Spam", icon: Ban },
   { id: "all", label: "All Mail", icon: Mail },
@@ -98,6 +102,7 @@ function DroppableNavItem({
       onClick={onClick}
       onContextMenu={onContextMenu}
       title={title}
+      aria-current={isActive ? "page" : undefined}
       className={`flex items-center w-full py-2 text-sm transition-colors press-scale ${
         collapsed ? "justify-center px-0" : "gap-3 px-3 text-left"
       } ${
@@ -213,7 +218,6 @@ export function Sidebar({ collapsed, onAddAccount }: SidebarProps) {
   const inboxViewMode = useUIStore((s) => s.inboxViewMode);
   const setInboxViewMode = useUIStore((s) => s.setInboxViewMode);
   const activeCategory = useActiveCategory();
-  const openComposer = useComposerStore((s) => s.openComposer);
   const activeAccountId = useAccountStore((s) => s.activeAccountId);
   const labels = useLabelStore((s) => s.labels);
   const loadLabels = useLabelStore((s) => s.loadLabels);
@@ -343,23 +347,45 @@ export function Sidebar({ collapsed, onAddAccount }: SidebarProps) {
 
   return (
     <aside
-      className={`no-select flex flex-col bg-sidebar-bg text-sidebar-text border-r border-border-primary transition-all duration-200 glass-panel ${
+      className={`no-select flex flex-col text-sidebar-text transition-all duration-200 ${
         collapsed ? "w-16" : "w-60"
       }`}
     >
-      <AccountSwitcher collapsed={collapsed} onAddAccount={onAddAccount} />
-
-      {/* Compose button */}
-      <div className="px-3 py-2">
-        <button
-          onClick={() => openComposer()}
-          className="w-full flex items-center justify-center gap-2 bg-accent hover:bg-accent-hover text-white rounded-lg py-2 text-sm font-medium interactive-btn"
-        >
-          {collapsed ? <Plus size={16} /> : "Compose"}
-        </button>
-      </div>
+      <AccountSwitcher
+        collapsed={collapsed}
+        onAddAccount={onAddAccount}
+        actions={<SidebarHeaderActions collapsed={collapsed} />}
+      />
 
       <nav className="flex-1 overflow-y-auto py-2">
+        {/* Freshdesk: tickets live apart from email */}
+        <div role="group" aria-label="Freshdesk" className="pb-2">
+          {!collapsed && (
+            <div className="px-3 pb-1">
+              <span className="text-xs font-medium text-sidebar-text/60 uppercase tracking-wider">Freshdesk</span>
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={() => navigateToLabel("freshdesk")}
+            title={collapsed ? "Freshdesk tickets" : undefined}
+            aria-current={activeLabel === "freshdesk" ? "page" : undefined}
+            className={`flex items-center w-full py-2 text-sm transition-colors press-scale ${
+              collapsed ? "justify-center px-0" : "gap-3 px-3 text-left"
+            } ${activeLabel === "freshdesk" ? "bg-accent/10 text-accent font-medium" : "hover:bg-sidebar-hover text-sidebar-text"}`}
+          >
+            <LifeBuoy size={18} className="shrink-0" />
+            {!collapsed && <span className="flex-1 truncate">Tickets</span>}
+          </button>
+          <FreshdeskViewNav collapsed={collapsed} />
+        </div>
+
+        <div role="group" aria-label="Email">
+        {!collapsed && (
+          <div className="px-3 pt-2 pb-1">
+            <span className="text-xs font-medium text-sidebar-text/60 uppercase tracking-wider">Email</span>
+          </div>
+        )}
         {visibleNavItems.map((item) => {
           const Icon = item.icon;
           const isInbox = item.id === "inbox";
@@ -599,6 +625,8 @@ export function Sidebar({ collapsed, onAddAccount }: SidebarProps) {
             )}
           </>
         )}
+        </div>
+
       </nav>
 
       {/* Bottom bar: Settings + collapse toggle */}

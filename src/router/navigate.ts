@@ -23,8 +23,18 @@ export function navigateToLabel(
     return;
   }
 
+  if (label === "freshdesk") {
+    router.navigate({ to: "/freshdesk" });
+    return;
+  }
+
   if (label === "attachments") {
     router.navigate({ to: "/attachments" });
+    return;
+  }
+
+  if (label === "scheduled") {
+    router.navigate({ to: "/scheduled" });
     return;
   }
 
@@ -212,8 +222,14 @@ export function getActiveLabel(): string {
     if (match.routeId === "/attachments") {
       return "attachments";
     }
+    if (match.routeId === "/scheduled") {
+      return "scheduled";
+    }
     if (match.routeId === "/tasks") {
       return "tasks";
+    }
+    if (match.routeId === "/freshdesk" || match.routeId === "/freshdesk/ticket/$ticketId") {
+      return "freshdesk";
     }
     if (match.routeId === "/calendar") {
       return "calendar";
@@ -234,6 +250,21 @@ export function getSelectedThreadId(): string | null {
     const params = match.params as Record<string, string>;
     if (params["threadId"]) {
       return params["threadId"];
+    }
+  }
+  return null;
+}
+
+/** Opens a ticket in the Freshdesk reader. Ticket IDs use their own route parameter, never threadId. */
+export function navigateToTicket(ticketId: string): void {
+  router.navigate({ to: "/freshdesk/ticket/$ticketId", params: { ticketId } });
+}
+
+/** The ticket open in the Freshdesk reader (non-React helper). */
+export function getSelectedTicketId(): string | null {
+  for (const match of router.state.matches) {
+    if (match.routeId === "/freshdesk/ticket/$ticketId") {
+      return (match.params as { ticketId: string }).ticketId;
     }
   }
   return null;

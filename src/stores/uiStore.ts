@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { setSetting } from "@/services/db/settings";
-import type { ColorThemeId } from "@/constants/themes";
+import { DEFAULT_COLOR_THEME, type ColorThemeId } from "@/constants/themes";
+import { DEFAULT_EXTRA_TIME_ZONES } from "@/utils/timeZone";
 
 type Theme = "light" | "dark" | "system";
 type ReadingPanePosition = "right" | "bottom" | "hidden";
@@ -24,6 +25,10 @@ interface UIState {
   readFilter: ReadFilter;
   emailListWidth: number;
   emailDensity: EmailDensity;
+  /** IANA zone times are shown in; null follows the Mac's zone */
+  timeZoneOverride: string | null;
+  /** Extra zones a time's hover also shows */
+  extraTimeZones: string[];
   defaultReplyMode: DefaultReplyMode;
   markAsReadBehavior: MarkAsReadBehavior;
   fontScale: FontScale;
@@ -45,6 +50,8 @@ interface UIState {
   setReadFilter: (filter: ReadFilter) => void;
   setEmailListWidth: (width: number) => void;
   setEmailDensity: (density: EmailDensity) => void;
+  setTimeZoneOverride: (zone: string | null) => void;
+  setExtraTimeZones: (zones: string[]) => void;
   setDefaultReplyMode: (mode: DefaultReplyMode) => void;
   setMarkAsReadBehavior: (behavior: MarkAsReadBehavior) => void;
   setFontScale: (scale: FontScale) => void;
@@ -68,11 +75,13 @@ export const useUIStore = create<UIState>((set) => ({
   readingPanePosition: "right",
   readFilter: "all",
   emailListWidth: 320,
-  emailDensity: "default",
+  emailDensity: "compact",
+  timeZoneOverride: null,
+  extraTimeZones: DEFAULT_EXTRA_TIME_ZONES,
   defaultReplyMode: "reply",
   markAsReadBehavior: "instant",
   fontScale: "default",
-  colorTheme: "indigo",
+  colorTheme: DEFAULT_COLOR_THEME,
   sendAndArchive: false,
   inboxViewMode: "unified",
   taskSidebarVisible: false,
@@ -82,7 +91,10 @@ export const useUIStore = create<UIState>((set) => ({
   pendingOpsCount: 0,
   isSyncingFolder: null,
 
-  setTheme: (theme) => set({ theme }),
+  setTheme: (theme) => {
+    setSetting("theme", theme).catch(() => {});
+    set({ theme });
+  },
   toggleSidebar: () =>
     set((state) => {
       const collapsed = !state.sidebarCollapsed;
@@ -112,6 +124,15 @@ export const useUIStore = create<UIState>((set) => ({
   setEmailDensity: (emailDensity) => {
     setSetting("email_density", emailDensity).catch(() => {});
     set({ emailDensity });
+  },
+  setTimeZoneOverride: (timeZoneOverride) => {
+    setSetting("time_zone_override", timeZoneOverride ?? "").catch(() => {});
+    set({ timeZoneOverride });
+  },
+  setExtraTimeZones: (zones) => {
+    const extraTimeZones = [...new Set(zones)];
+    setSetting("extra_time_zones", JSON.stringify(extraTimeZones)).catch(() => {});
+    set({ extraTimeZones });
   },
   setDefaultReplyMode: (defaultReplyMode) => {
     setSetting("default_reply_mode", defaultReplyMode).catch(() => {});

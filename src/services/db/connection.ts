@@ -45,9 +45,8 @@ export function buildDynamicUpdate(
  */
 let txQueue: Promise<void> = Promise.resolve();
 
-export async function withTransaction(fn: (db: Database) => Promise<void>): Promise<void> {
-  // Queue this transaction behind any currently-running one.
-  // This serialises all transactions without blocking non-transactional reads.
+/** Runs `fn` alone: after every earlier transaction or snapshot read, before every later one. */
+async function runExclusive<T>(fn: () => Promise<T>): Promise<T> {
   const prev = txQueue;
   let resolve!: () => void;
   txQueue = new Promise<void>((r) => {
@@ -60,8 +59,18 @@ export async function withTransaction(fn: (db: Database) => Promise<void>): Prom
     // previous transaction errored — that's fine, we can still proceed
   }
 
-  const database = await getDb();
   try {
+    return await fn();
+  } finally {
+    resolve(); // always unblock the next queued transaction
+  }
+}
+
+export async function withTransaction(fn: (db: Database) => Promise<void>): Promise<void> {
+  // Queue this transaction behind any currently-running one.
+  // This serialises all transactions without blocking non-transactional reads.
+  await runExclusive(async () => {
+    const database = await getDb();
     await database.execute("BEGIN TRANSACTION", []);
     try {
       await fn(database);
@@ -76,9 +85,16 @@ export async function withTransaction(fn: (db: Database) => Promise<void>): Prom
       }
       throw err;
     }
-  } finally {
-    resolve(); // always unblock the next queued transaction
-  }
+  });
+}
+
+/**
+ * Runs several reads against one consistent snapshot: they queue behind any
+ * running transaction and no transaction starts until they finish, so they
+ * never see a half-applied write. Do not call this from inside `withTransaction`.
+ */
+export function withReadSnapshot<T>(fn: () => Promise<T>): Promise<T> {
+  return runExclusive(fn);
 }
 
 /**

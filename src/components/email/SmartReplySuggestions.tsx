@@ -1,8 +1,8 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { Sparkles, RefreshCw } from "lucide-react";
-import { isAiAvailable } from "@/services/ai/providerManager";
+import { isAiAvailable } from "@/services/ai/gateway";
 import { generateSmartReplies } from "@/services/ai/aiService";
-import { deleteAiCache } from "@/services/db/aiCache";
+import { AiSendNote } from "@/components/ai/AiSendPreview";
 import { useComposerStore } from "@/stores/composerStore";
 import type { DbMessage } from "@/services/db/messages";
 
@@ -27,12 +27,13 @@ export function SmartReplySuggestions({ threadId, accountId, messages, noReply }
     isAiAvailable().then(setAvailable);
   }, []);
 
-  const loadReplies = useCallback(async () => {
+  const loadReplies = useCallback(async (refresh = false) => {
     if (loadingRef.current) return;
     loadingRef.current = true;
     setLoading(true);
+    if (refresh) setReplies(null);
     try {
-      const result = await generateSmartReplies(threadId, accountId, messages);
+      const result = await generateSmartReplies(threadId, accountId, messages, refresh ? { refresh } : undefined);
       setReplies(result);
     } catch (err) {
       console.error("Failed to generate smart replies:", err);
@@ -42,25 +43,7 @@ export function SmartReplySuggestions({ threadId, accountId, messages, noReply }
     }
   }, [threadId, accountId, messages]);
 
-  // Auto-load when available
-  useEffect(() => {
-    if (!available || messages.length === 0 || replies !== null || loadingRef.current) return;
-    loadReplies();
-  }, [available, messages.length, replies, loadReplies]);
-
-  const handleRefresh = useCallback(async () => {
-    await deleteAiCache(accountId, threadId, "smart_replies");
-    setReplies(null);
-    setLoading(true);
-    try {
-      const result = await generateSmartReplies(threadId, accountId, messages);
-      setReplies(result);
-    } catch (err) {
-      console.error("Failed to refresh smart replies:", err);
-    } finally {
-      setLoading(false);
-    }
-  }, [threadId, accountId, messages]);
+  const handleRefresh = useCallback(() => loadReplies(true), [loadReplies]);
 
   const handleReplyClick = useCallback((replyText: string) => {
     const lastMessage = messages[messages.length - 1];
@@ -84,14 +67,25 @@ export function SmartReplySuggestions({ threadId, accountId, messages, noReply }
       <div className="flex items-center gap-2 mb-2">
         <Sparkles size={14} className="text-accent shrink-0" />
         <span className="text-xs font-medium text-accent flex-1">Quick Replies</span>
-        <button
-          onClick={handleRefresh}
-          className="p-0.5 text-text-tertiary hover:text-accent transition-colors"
-          title="Refresh suggestions"
-        >
-          <RefreshCw size={12} className={loading ? "animate-spin" : ""} />
-        </button>
+        {replies && (
+          <button
+            onClick={handleRefresh}
+            className="p-0.5 text-text-tertiary hover:text-accent transition-colors"
+            title="Refresh suggestions"
+          >
+            <RefreshCw size={12} className={loading ? "animate-spin" : ""} />
+          </button>
+        )}
       </div>
+      {!replies && !loading && (
+        <button
+          type="button"
+          onClick={() => loadReplies()}
+          className="text-xs text-accent hover:underline"
+        >
+          Generate replies
+        </button>
+      )}
       {loading && !replies && (
         <div className="flex items-center gap-2 text-text-tertiary">
           <div className="w-3 h-3 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />
@@ -112,6 +106,9 @@ export function SmartReplySuggestions({ threadId, accountId, messages, noReply }
           ))}
         </div>
       )}
+      <div className="mt-2">
+        <AiSendNote features={["smart_replies"]} onPreview={handleRefresh} />
+      </div>
     </div>
   );
 }

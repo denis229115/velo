@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { useClickOutside } from "@/hooks/useClickOutside";
 import { ChevronRight, Check } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { formatShortcut } from "@/utils/shortcutLabel";
 
 export interface ContextMenuItem {
   id: string;
@@ -36,6 +37,12 @@ export function ContextMenu({ items, position, onClose }: ContextMenuProps) {
     // The submenu handles its own outside clicks
     if (!submenuOpenId) onClose();
   });
+
+  // Real focus follows the highlighted item so keyboard users see the focus ring
+  useEffect(() => {
+    if (focusedIndex < 0) return;
+    menuRef.current?.querySelector<HTMLElement>(`[data-menu-index="${focusedIndex}"]`)?.focus();
+  }, [focusedIndex]);
 
   // Measure and clamp position to viewport
   useEffect(() => {
@@ -188,7 +195,7 @@ export function ContextMenu({ items, position, onClose }: ContextMenuProps) {
       <div
         ref={menuRef}
         role="menu"
-        className="fixed z-[100] bg-bg-primary border border-border-primary rounded-md shadow-lg py-1 min-w-[200px]"
+        className="fixed z-[100] bg-surface-overlay border border-separator rounded-md overlay-shadow py-1 min-w-[200px]"
         style={{ left: adjustedPosition.x, top: adjustedPosition.y }}
       >
         {items.map((item, index) => {
@@ -211,6 +218,7 @@ export function ContextMenu({ items, position, onClose }: ContextMenuProps) {
             <div key={item.id}>
               <button
                 role="menuitem"
+                data-menu-index={index}
                 ref={(el) => {
                   if (el && hasSubmenu) {
                     itemRectsRef.current.set(item.id, el.getBoundingClientRect());
@@ -244,7 +252,7 @@ export function ContextMenu({ items, position, onClose }: ContextMenuProps) {
 
                 {item.shortcut && !hasSubmenu && (
                   <span className="text-text-tertiary ml-4 shrink-0">
-                    {item.shortcut}
+                    {formatShortcut(item.shortcut)}
                   </span>
                 )}
               </button>
@@ -313,7 +321,7 @@ function Submenu({
       ref={submenuRef}
       role="menu"
       data-submenu-portal
-      className="fixed z-[101] bg-bg-primary border border-border-primary rounded-md shadow-lg py-1 min-w-[180px]"
+      className="fixed z-[101] bg-surface-overlay border border-separator rounded-md overlay-shadow py-1 min-w-[180px]"
       style={{ left: position.left, top: position.top }}
       onMouseEnter={onMouseEnter}
     >

@@ -1,8 +1,14 @@
+import type { ReactNode } from "react";
 import { DateTimePickerDialog } from "@/components/ui/DateTimePickerDialog";
 
 interface ScheduleSendDialogProps {
   onSchedule: (timestamp: number) => void;
   onClose: () => void;
+  /** Defaults to scheduling an email */
+  title?: string;
+  note?: string;
+  /** Options chosen before picking a time */
+  children?: ReactNode;
 }
 
 function getSchedulePresets(): { label: string; detail: string; timestamp: number }[] {
@@ -45,18 +51,24 @@ function getSchedulePresets(): { label: string; detail: string; timestamp: numbe
   ];
 }
 
-export function ScheduleSendDialog({ onSchedule, onClose }: ScheduleSendDialogProps) {
+const EMAIL_NOTE =
+  "Your email sends when Velo is next open at or after this time — not while your Mac sleeps or Velo is closed.";
+
+export function ScheduleSendDialog({ onSchedule, onClose, title = "Schedule send", note = EMAIL_NOTE, children }: ScheduleSendDialogProps) {
   const presets = getSchedulePresets();
 
   return (
     <DateTimePickerDialog
       isOpen={true}
       onClose={onClose}
-      title="Schedule send"
+      title={title}
       presets={presets}
       onSelect={onSchedule}
       submitLabel="Schedule"
       zIndex="z-[60]"
-    />
+      note={note}
+    >
+      {children}
+    </DateTimePickerDialog>
   );
 }

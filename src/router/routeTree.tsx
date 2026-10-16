@@ -6,6 +6,7 @@ import {
 } from "@tanstack/react-router";
 import App from "@/App";
 import { MailLayout } from "@/components/layout/MailLayout";
+import { FreshdeskPage } from "@/components/freshdesk/FreshdeskPage";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 
 // Lazy-load heavy pages — these include many sub-components and service imports
@@ -13,6 +14,7 @@ const SettingsPage = lazy(() => import("@/components/settings/SettingsPage").the
 const HelpPage = lazy(() => import("@/components/help/HelpPage").then((m) => ({ default: m.HelpPage })));
 const CalendarPage = lazy(() => import("@/components/calendar/CalendarPage").then((m) => ({ default: m.CalendarPage })));
 const TasksPage = lazy(() => import("@/components/tasks/TasksPage").then((m) => ({ default: m.TasksPage })));
+const ScheduledEmailsPage = lazy(() => import("@/components/scheduled/ScheduledEmailsPage").then((m) => ({ default: m.ScheduledEmailsPage })));
 const AttachmentLibrary = lazy(() => import("@/components/attachments/AttachmentLibrary").then((m) => ({ default: m.AttachmentLibrary })));
 
 // ---------- Search param validation ----------
@@ -163,6 +165,23 @@ export const attachmentsRoute = createRoute({
   component: AttachmentLibraryWrapper,
 });
 
+// ---------- /scheduled ----------
+function ScheduledEmailsPageWrapper() {
+  return (
+    <ErrorBoundary name="ScheduledEmailsPage">
+      <Suspense fallback={<div className="flex-1 flex items-center justify-center text-text-tertiary text-sm">Loading scheduled emails...</div>}>
+        <ScheduledEmailsPage />
+      </Suspense>
+    </ErrorBoundary>
+  );
+}
+
+export const scheduledRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "scheduled",
+  component: ScheduledEmailsPageWrapper,
+});
+
 // ---------- /tasks ----------
 function TasksPageWrapper() {
   return (
@@ -178,6 +197,27 @@ export const tasksRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "tasks",
   component: TasksPageWrapper,
+});
+
+// ---------- /freshdesk ----------
+function FreshdeskPageWrapper() {
+  return (
+    <ErrorBoundary name="FreshdeskPage">
+      <FreshdeskPage />
+    </ErrorBoundary>
+  );
+}
+
+export const freshdeskRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "freshdesk",
+  component: FreshdeskPageWrapper,
+});
+
+// ---------- /freshdesk/ticket/$ticketId ----------
+export const freshdeskTicketRoute = createRoute({
+  getParentRoute: () => freshdeskRoute,
+  path: "ticket/$ticketId",
 });
 
 // ---------- /calendar ----------
@@ -212,7 +252,9 @@ export const routeTree = rootRoute.addChildren([
   settingsIndexRoute,
   settingsTabRoute,
   attachmentsRoute,
+  scheduledRoute,
   tasksRoute,
+  freshdeskRoute.addChildren([freshdeskTicketRoute]),
   calendarRoute,
   helpIndexRoute,
   helpTopicRoute,

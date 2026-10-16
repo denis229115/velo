@@ -92,3 +92,13 @@ describe("hasBlockedImages", () => {
     expect(hasBlockedImages(html)).toBe(false);
   });
 });
+
+describe("protocol-relative remote content", () => {
+  it("blocks //host images and background urls like http(s) ones", () => {
+    const html = '<img src="//tracker.example.test/a.gif"><div style="background:url(//tracker.example.test/b.png)">x</div>';
+    const stripped = stripRemoteImages(html);
+    expect(stripped).not.toMatch(/(?<![-\w])src="\/\/|url\(\/\//);
+    expect(hasBlockedImages(stripped)).toBe(true);
+    expect(restoreRemoteImages(stripped)).toContain('src="//tracker.example.test/a.gif"');
+  });
+});

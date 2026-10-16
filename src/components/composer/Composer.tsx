@@ -9,6 +9,7 @@ import { Clock, Maximize2, Minimize2, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { AddressInput } from "./AddressInput";
 import { EditorToolbar } from "./EditorToolbar";
+import { TaskReplyDraft } from "@/components/clickup/TaskReplyDraft";
 import { AiAssistPanel } from "./AiAssistPanel";
 import { AttachmentPicker } from "./AttachmentPicker";
 import { ScheduleSendDialog } from "./ScheduleSendDialog";
@@ -18,11 +19,15 @@ import { FromSelector } from "./FromSelector";
 import { useComposerStore } from "@/stores/composerStore";
 import { useAccountStore } from "@/stores/accountStore";
 import { useUIStore } from "@/stores/uiStore";
+import { useComposerShortcuts } from "@/hooks/useComposerShortcuts";
+import { useShortcutStore } from "@/stores/shortcutStore";
+import { formatShortcut } from "@/utils/shortcutLabel";
 import { sendEmail, archiveThread, deleteDraft as deleteDraftAction } from "@/services/emailActions";
 import { buildRawEmail } from "@/utils/emailBuilder";
 import { upsertContact } from "@/services/db/contacts";
 import { getSetting } from "@/services/db/settings";
 import { insertScheduledEmail } from "@/services/db/scheduledEmails";
+import { announceScheduledEmailsChanged } from "@/services/snooze/scheduledSendManager";
 import { getDefaultSignature } from "@/services/db/signatures";
 import { getAliasesForAccount, mapDbAlias, type SendAsAlias } from "@/services/db/sendAsAliases";
 import { resolveFromAddress } from "@/utils/resolveFromAddress";
@@ -36,6 +41,7 @@ export function Composer() {
   // Individual selectors — only re-render when each specific value changes
   const isOpen = useComposerStore((s) => s.isOpen);
   const mode = useComposerStore((s) => s.mode);
+  const threadId = useComposerStore((s) => s.threadId);
   const to = useComposerStore((s) => s.to);
   const cc = useComposerStore((s) => s.cc);
   const bcc = useComposerStore((s) => s.bcc);
@@ -306,14 +312,6 @@ export function Composer() {
 
     const html = getFullHtml();
 
-    const attachmentData = state.attachments.length > 0
-      ? JSON.stringify(state.attachments.map((a) => ({
-          filename: a.filename,
-          mimeType: a.mimeType,
-          content: a.content,
-        })))
-      : null;
-
     await insertScheduledEmail({
       accountId: activeAccountId,
       toAddresses: state.to.join(", "),
@@ -325,26 +323,14 @@ export function Composer() {
       threadId: state.threadId,
       scheduledAt,
       signatureId: null,
+      fromEmail: state.fromEmail,
+      attachments: state.attachments.map((a) => ({
+        filename: a.filename,
+        mimeType: a.mimeType,
+        content: a.content,
+      })),
     });
-
-    // Store attachment data if present
-    if (attachmentData) {
-      // The insertScheduledEmail doesn't have an attachmentPaths param,
-      // so we update it separately via the existing column
-      const { getDb } = await import("@/services/db/connection");
-      const db = await getDb();
-      // Get the most recently inserted scheduled email for this account
-      const rows = await db.select<{ id: string }[]>(
-        "SELECT id FROM scheduled_emails WHERE account_id = $1 ORDER BY created_at DESC LIMIT 1",
-        [activeAccountId],
-      );
-      if (rows[0]) {
-        await db.execute(
-          "UPDATE scheduled_emails SET attachment_paths = $1 WHERE id = $2",
-          [attachmentData, rows[0].id],
-        );
-      }
-    }
+    announceScheduledEmailsChanged();
 
     stopAutoSave();
     // Delete the draft if exists
@@ -357,6 +343,14 @@ export function Composer() {
     setShowSchedule(false);
     closeComposer();
   }, [activeAccountId, activeAccount, closeComposer, getFullHtml]);
+
+  const sendKeys = useShortcutStore((s) => s.keyMap["app.send"]);
+  const sendLaterKeys = useShortcutStore((s) => s.keyMap["app.sendLater"]);
+  useComposerShortcuts(
+    { onSend: handleSend, onSendLater: () => setShowSchedule(true) },
+    isOpen && !showSchedule,
+    overlayRef,
+  );
 
   const handleDiscard = useCallback(async () => {
     stopAutoSave();
@@ -439,7 +433,7 @@ export function Composer() {
 
       {/* Composer window */}
       <div
-        className={`relative bg-bg-primary border rounded-lg glass-modal pointer-events-auto flex flex-col slide-up-panel ${
+        className={`relative bg-surface-composer border rounded-lg overlay-shadow pointer-events-auto flex flex-col slide-up-panel ${
           isFullpage ? "w-full h-full max-w-5xl" : "w-full max-w-2xl max-h-[80vh]"
         } ${isDragging ? "border-accent border-2" : "border-border-primary"}`}
         onDragEnter={handleDragEnter}
@@ -536,6 +530,11 @@ export function Composer() {
           />
         )}
 
+        {(mode === "reply" || mode === "replyAll") && activeAccountId && threadId && <TaskReplyDraft
+          key={`${activeAccountId}:${threadId}:${mode}`}
+          item={{ kind: "email", accountId: activeAccountId, threadId }}
+          editor={editor}
+        />}
         {/* Editor */}
         <div className="flex-1 overflow-y-auto">
           <EditorContent editor={editor} />
@@ -577,6 +576,7 @@ export function Composer() {
               <button
                 onClick={handleSend}
                 disabled={to.length === 0}
+                title={sendKeys ? `Send (${formatShortcut(sendKeys)})` : "Send"}
                 className="px-4 py-1.5 text-xs font-medium text-white bg-accent hover:bg-accent-hover rounded-l-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Send
@@ -585,7 +585,7 @@ export function Composer() {
                 onClick={() => setShowSchedule(true)}
                 disabled={to.length === 0}
                 className="px-2 py-1.5 text-white bg-accent hover:bg-accent-hover border-l border-white/20 rounded-r-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                title="Schedule send"
+                title={sendLaterKeys ? `Send later (${formatShortcut(sendLaterKeys)})` : "Send later"}
               >
                 <Clock size={12} />
               </button>

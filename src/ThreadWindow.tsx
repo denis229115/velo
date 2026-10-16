@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { AiSendPreviewHost } from "@/components/ai/AiSendPreview";
 import { ThreadView } from "./components/email/ThreadView";
 import { Composer } from "./components/composer/Composer";
 import { UndoSendToast } from "./components/composer/UndoSendToast";
@@ -9,7 +10,8 @@ import { getAllAccounts } from "./services/db/accounts";
 import { getSetting } from "./services/db/settings";
 import { initializeClients } from "./services/gmail/tokenManager";
 import { getThreadById, getThreadLabelIds } from "./services/db/threads";
-import { getThemeById, COLOR_THEMES } from "./constants/themes";
+import { COLOR_THEMES } from "./constants/themes";
+import { useAppearance } from "./hooks/useAppearance";
 import type { ColorThemeId } from "./constants/themes";
 import type { Thread } from "./stores/threadStore";
 
@@ -107,25 +109,7 @@ export default function ThreadWindow() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- store setters are stable references
   }, []);
 
-  // Sync theme class to <html>
-  const theme = useUIStore((s) => s.theme);
-  useEffect(() => {
-    const root = document.documentElement;
-    if (theme === "dark") {
-      root.classList.add("dark");
-    } else if (theme === "light") {
-      root.classList.remove("dark");
-    } else {
-      const mq = window.matchMedia("(prefers-color-scheme: dark)");
-      const apply = () => {
-        if (mq.matches) root.classList.add("dark");
-        else root.classList.remove("dark");
-      };
-      apply();
-      mq.addEventListener("change", apply);
-      return () => mq.removeEventListener("change", apply);
-    }
-  }, [theme]);
+  useAppearance();
 
   // Sync font-scale class to <html>
   const fontScale = useUIStore((s) => s.fontScale);
@@ -134,38 +118,6 @@ export default function ThreadWindow() {
     root.classList.remove("font-scale-small", "font-scale-default", "font-scale-large", "font-scale-xlarge");
     root.classList.add(`font-scale-${fontScale}`);
   }, [fontScale]);
-
-  // Apply color theme CSS custom properties to <html>
-  const colorTheme = useUIStore((s) => s.colorTheme);
-  useEffect(() => {
-    const root = document.documentElement;
-    const props = ["--color-accent", "--color-accent-hover", "--color-accent-light", "--color-bg-selected", "--color-sidebar-active"];
-
-    const apply = () => {
-      if (colorTheme === "indigo") {
-        for (const p of props) root.style.removeProperty(p);
-        return;
-      }
-      const themeData = getThemeById(colorTheme);
-      const isDark =
-        theme === "dark" ||
-        (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
-      const colors = isDark ? themeData.dark : themeData.light;
-      root.style.setProperty("--color-accent", colors.accent);
-      root.style.setProperty("--color-accent-hover", colors.accentHover);
-      root.style.setProperty("--color-accent-light", colors.accentLight);
-      root.style.setProperty("--color-bg-selected", colors.bgSelected);
-      root.style.setProperty("--color-sidebar-active", colors.sidebarActive);
-    };
-
-    apply();
-
-    if (theme === "system") {
-      const mq = window.matchMedia("(prefers-color-scheme: dark)");
-      mq.addEventListener("change", apply);
-      return () => mq.removeEventListener("change", apply);
-    }
-  }, [colorTheme, theme]);
 
   if (loading) {
     return (
@@ -188,6 +140,7 @@ export default function ThreadWindow() {
       <ThreadView thread={thread} />
       <Composer />
       <UndoSendToast />
+      <AiSendPreviewHost />
     </div>
   );
 }

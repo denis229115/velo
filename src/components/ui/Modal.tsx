@@ -39,10 +39,10 @@ export function Modal({
 
   return createPortal(
     <CSSTransition in={isOpen} timeout={150} classNames="modal" unmountOnExit nodeRef={nodeRef}>
-      <div ref={nodeRef} className={`fixed inset-0 ${zIndex} flex items-center justify-center`} onContextMenu={(e) => e.stopPropagation()}>
-        <div className="absolute inset-0 bg-black/20 glass-backdrop" onClick={onClose} />
+      <div data-modal-root ref={nodeRef} className={`fixed inset-0 ${zIndex} flex items-center justify-center`} onContextMenu={(e) => e.stopPropagation()}>
+        <div className="absolute inset-0 bg-black/20" onClick={onClose} />
         <div
-          className={`relative bg-bg-primary border border-border-primary rounded-lg glass-modal ${width}${panelClassName ? ` ${panelClassName}` : ""}`}
+          className={`relative bg-surface-overlay border border-separator rounded-lg overlay-shadow ${width}${panelClassName ? ` ${panelClassName}` : ""}`}
         >
           {renderHeader !== undefined ? (
             renderHeader

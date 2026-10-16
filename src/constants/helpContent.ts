@@ -62,6 +62,8 @@ import {
   Paperclip,
   Tags,
   FolderInput,
+  LifeBuoy,
+  ListChecks,
 } from "lucide-react";
 
 // ---------- Types ----------
@@ -98,7 +100,7 @@ export interface ContextualTip {
 
 const VALID_SETTINGS_TABS = [
   "general", "notifications", "composing", "mail-rules", "people",
-  "accounts", "shortcuts", "ai", "about",
+  "accounts", "shortcuts", "freshdesk", "clickup", "ai", "about",
 ] as const;
 
 export type SettingsTabId = (typeof VALID_SETTINGS_TABS)[number];
@@ -309,7 +311,8 @@ export const HELP_CATEGORIES: HelpCategory[] = [
           "The composer uses a full rich text editor powered by TipTap. You can format text (bold, italic, lists, links, code blocks), add file attachments, insert a signature, and pick a template — all from one place. The composer opens as a panel at the bottom of the screen. Add recipients with autocomplete (ranked by how often you email them), set a subject, and compose your message.",
         tips: [
           { text: "Open the composer", shortcut: "c" },
-          { text: "Send the email", shortcut: "Ctrl+Enter" },
+          { text: "Or click the pencil icon at the top of the sidebar (also there when the sidebar is collapsed)." },
+          { text: "Send now", shortcut: "Ctrl+Enter" },
           { text: "Recipient autocomplete is ranked by contact frequency." },
           { text: "Use the toolbar or markdown-style shortcuts for formatting." },
           { text: "Close the composer with Escape (draft is auto-saved)." },
@@ -351,13 +354,16 @@ export const HELP_CATEGORIES: HelpCategory[] = [
         title: "Schedule send",
         summary: "Write now, send later at a chosen time.",
         description:
-          "Compose an email and schedule it to be sent at a specific date and time. This is useful for writing emails after hours, on weekends, or in different time zones without sending them immediately. Choose from quick presets (tomorrow morning, Monday morning) or pick a custom date and time. Scheduled emails appear in your Drafts until they're sent. You can cancel or reschedule them before the send time.",
+          "Compose an email and schedule it to be sent at a specific date and time. Send later works for every email account, Gmail and IMAP/SMTP, and sends from the address you picked in From, including send-as aliases. Choose from quick presets (tomorrow morning, Monday morning) or pick a custom date and time. Scheduled emails send when Velo is next open at or after the chosen time: nothing sends while your Mac sleeps or Velo is closed, and emails that fall due while you're offline wait until you're back online. The Scheduled screen lists every scheduled email with its status (scheduled, sending, sent or failed), send time, email account and any error; cancel a scheduled one there before it goes out, or retry a failed one. A failed send is retried a few times with increasing delays; if it still fails you get a notification and it stays on the Scheduled screen. If Velo closes in the middle of sending, it never resends automatically: it checks your Sent mail and, if it can't find the email, tells you to check Sent before you retry it.",
         tips: [
-          { text: "Click the dropdown arrow next to the Send button to schedule." },
+          { text: "Open the send-later picker from the composer, even while typing", shortcut: "Ctrl+Shift+L" },
+          { text: "Or click the clock button next to Send." },
           { text: "Quick presets: Tomorrow Morning (9am), Tomorrow Afternoon (1pm), Monday Morning." },
-          { text: "View and manage scheduled emails in Settings > Composing." },
-          { text: "Cancel a scheduled email any time before it sends." },
+          { text: "See, cancel and retry scheduled emails on the Scheduled screen", shortcut: "g then l" },
+          { text: "A retry sends the same email once; if a copy already reached Sent, it is marked sent instead." },
+          { text: "Rebind send now and send later in Settings > Shortcuts." },
         ],
+        relatedSettingsTab: "shortcuts",
       },
       {
         id: "send-archive",
@@ -446,7 +452,7 @@ export const HELP_CATEGORIES: HelpCategory[] = [
         title: "Search operators",
         summary: "Gmail-style operators to refine search results.",
         description:
-          "Search uses Gmail-style operators for precise filtering. Combine multiple operators to find exactly what you need. All searches run against your local database using FTS5 full-text indexing, so results are instant. Operators can be combined freely — they use AND logic, so each additional operator narrows the results further.",
+          "Search lives in the command palette: press Cmd+K (Ctrl+K on Windows and Linux) or click the search icon in the sidebar header, then type. Search uses Gmail-style operators for precise filtering. Combine multiple operators to find exactly what you need. All searches run against your local database using FTS5 full-text indexing, so results are instant. Operators can be combined freely — they use AND logic, so each additional operator narrows the results further.",
         tips: [
           { text: "from:jane — emails from a specific sender" },
           { text: "to:team@ — emails sent to a specific address" },
@@ -461,34 +467,39 @@ export const HELP_CATEGORIES: HelpCategory[] = [
       {
         id: "command-palette",
         icon: Command,
-        title: "Command palette",
-        summary: "Keyboard-driven search, navigation, and actions.",
+        title: "Command palette and search",
+        summary: "One place to search your email and tickets and run commands.",
         description:
-          "The command palette is the fastest way to do anything in the app. Open it with a shortcut and start typing to search your email, jump to any label or folder, switch accounts, or trigger actions. Results update as you type. The palette searches across email content, sender names, subject lines, labels, and folders — all from one input.",
+          "The command palette replaces the old search bar. Open it from anywhere, even while typing in a field, with the shortcut or the search icon in the sidebar header (it is there when the sidebar is collapsed too). Type to see matching commands, email threads and Freshdesk tickets in three groups: Commands, Threads and Tickets. On the Freshdesk page Tickets comes first; elsewhere Threads comes before Tickets. Ticket search matches the ticket ID (#123 or 123), subject, customer name and email, status, priority and assignee, and searches only the tickets downloaded to this computer; the Tickets group says so and shows the coverage. For a ticket ID that is not downloaded, choose “Look up ticket #123 in Freshdesk” to fetch that one ticket. Until a helpdesk is connected, the sample tickets are searched and stay marked Sample. Email search runs on your local database and understands the same Gmail-style operators (from:, to:, subject:, has:attachment, is:unread, before:, after:, label:). Choose “Show all results” to see every match in the mail list, where you can save the search as a smart folder or clear it. Smart folders are also listed in the palette.",
         tips: [
-          { text: "Open the command palette", shortcut: "Ctrl+K" },
+          { text: "Open search and commands", shortcut: "Ctrl+K" },
           { text: "Also opens with", shortcut: "/" },
-          { text: "Type to search email, labels, folders, and actions." },
-          { text: "Results update instantly as you type." },
-          { text: "Press Enter to open the first result, or arrow keys to navigate." },
+          { text: "Use the arrow keys to move, Enter to open a thread or ticket or run a command, Escape to close." },
+          { text: "With an operator query such as from:jane, Enter opens the full results list." },
+          { text: "Searching never contacts a server or an AI service: it reads only the email and tickets stored on this computer. Only “Look up ticket in Freshdesk” asks the helpdesk, for that one ticket." },
         ],
       },
       {
         id: "keyboard-shortcuts",
         icon: Keyboard,
         title: "Keyboard shortcuts",
-        summary: "Navigate and act on email without the mouse.",
+        summary: "Navigate and act on email and tickets without the mouse.",
         description:
-          "Almost every action has a keyboard shortcut, inspired by Superhuman's keyboard-first design. Shortcuts are disabled when you're typing in an input field, text area, or rich text editor to avoid conflicts. The app supports two-key sequences (press g then another key within 1 second) for navigation commands. All shortcuts are fully customizable — rebind any key in Settings.",
+          "Almost every action has a keyboard shortcut, inspired by Superhuman's keyboard-first design. Shortcuts are disabled when you're typing in an input field, text area, or rich text editor to avoid conflicts, except send now and send later, which work from inside the composer. The app supports two-key sequences (press g then another key within 1 second) for navigation commands. All shortcuts are fully customizable — rebind any key in Settings.",
         tips: [
           { text: "View all shortcuts", shortcut: "?" },
-          { text: "Navigation: j/k (up/down), o (open), Escape (back)" },
+          { text: "Navigation: j/k (up/down), Enter (open email or ticket), Escape (back)" },
           { text: "In-thread: Arrow Up/Down to navigate between messages" },
           { text: "Actions: e (archive), s (star), # (trash), r (reply)" },
           { text: "Two-key: g then i (Inbox), g then s (Starred), g then t (Sent)" },
           { text: "Ask Inbox (AI)", shortcut: "i" },
           { text: "Sync current folder", shortcut: "F5" },
+          { text: "Tickets reuse r (reply), Ctrl+Enter (send) and Ctrl+Shift+L (send later)." },
+          { text: "Ticket actions: n (Internal note), z (Summarize), d (AI draft), Shift+S (Status), Shift+P (Priority), Shift+A (Assignee), b (list/board)." },
+          { text: "Press t on an email or ticket to open ClickUp create/link controls; Shift+T creates a Velo to-do from email." },
+          { text: "Field shortcuts focus the control; choose with arrow keys and Enter. Ticket shortcuts are skipped while typing, even when rebound to modified keys." },
           { text: "Customize all shortcuts in Settings > Shortcuts." },
+          { text: "Settings and shortcuts help warn you when two actions share the same key." },
           { text: "Shortcuts are disabled in text inputs to prevent conflicts." },
         ],
         relatedSettingsTab: "shortcuts",
@@ -561,7 +572,7 @@ export const HELP_CATEGORIES: HelpCategory[] = [
           { text: "Optional: add traditional criteria (from, subject) for instant matching without AI." },
           { text: "Click 'Apply to existing emails' to label your current inbox retroactively." },
           { text: "Smart labels run automatically on every new email during sync." },
-          { text: "Requires an active AI provider (Claude, GPT, or Gemini)." },
+          { text: "Requires the Claude API, approved in Settings > AI." },
         ],
         relatedSettingsTab: "mail-rules",
       },
@@ -762,18 +773,16 @@ export const HELP_CATEGORIES: HelpCategory[] = [
         id: "ai-overview",
         icon: Brain,
         title: "AI overview",
-        summary: "Choose your AI provider and bring your own key.",
+        summary: "Every AI request goes through one gateway, to the Claude API only.",
         description:
-          "The app supports three AI providers: Anthropic Claude, OpenAI GPT, and Google Gemini. You bring your own API key, which means your email data is sent directly to the provider's API — there's no middleman or third-party server involved. API keys are stored securely in your local database. AI features include thread summaries, smart replies, compose assistance, text transformation, and natural language inbox queries. You can enable or disable AI features globally, and choose which provider to use.",
+          "Every AI request in Velo goes through one AI gateway. It sends only allowlisted fields (subject, message text, status and priority, plus the sender's domain such as example.com for categorisation and smart labels): sender and recipient addresses and names, custom fields, internal notes and attachments never leave Velo. Only the Claude API (Anthropic) may receive email, ticket or task content, and AI stays off until you approve it in Settings > AI. Other providers are no longer offered; if one was selected before, Settings > AI explains why it is refused and offers to switch to Claude. The AI gets no tools and its output is only shown to you. Every request is recorded in a local AI audit log. AI features include thread summaries, smart replies, compose assistance, text transformation, categorisation, smart labels, task extraction, auto-drafts and natural language inbox queries. Reading, replying and composing keep working when AI is off or failing.",
         tips: [
-          { text: "Add your API key in Settings > AI." },
-          { text: "Supported providers: Claude, OpenAI, and Gemini." },
-          {
-            text: "Choose which model to use for each provider in Settings (e.g., Claude Haiku 4.5, GPT-4o Mini, Gemini 2.5 Flash).",
-          },
-          { text: "Your data goes directly to the provider API — no middleman." },
+          { text: "Add your Anthropic API key in Settings > AI, then tick the approval box." },
+          { text: "Only the Claude API may receive email, ticket or task content." },
+          { text: "Sender and recipient addresses are never sent to the AI; categorisation sees only the sender's domain." },
+          { text: "Every AI request is logged locally: when, which feature, which model." },
+          { text: "AI results are cached per message content, model and prompt version." },
           { text: "API keys are stored securely in your local database." },
-          { text: "AI results are cached locally to reduce API calls." },
           { text: "Disable AI globally with one toggle in Settings." },
         ],
         relatedSettingsTab: "ai",
@@ -784,10 +793,10 @@ export const HELP_CATEGORIES: HelpCategory[] = [
         title: "Thread summaries",
         summary: "AI-generated summary of long conversations.",
         description:
-          "For threads with many messages, click the summary button to get a concise AI-generated overview. The summary captures the key points, decisions, and action items from the entire conversation, saving you from reading through dozens of messages. Summaries are cached locally so you only pay for the API call once. Especially useful for threads you were CC'd on or need to catch up on after being away.",
+          "For email threads with two or more messages, choose Summarize to get a concise AI-generated overview. Opening an email never requests a summary or quick replies by itself. The summary captures the key points, decisions, and action items from the entire email thread. Requests go through the AI gateway to the approved Claude API, with a send preview on first use and whenever a new kind of data is included. Summaries are cached locally; Refresh summary requests a new one.",
         tips: [
-          { text: "Click the summary icon in the thread view header." },
-          { text: "Summaries are cached — subsequent views are instant and free." },
+          { text: "Choose Summarize in the AI Summary panel." },
+          { text: "Choose Preview to see exactly what will be sent." },
           { text: "Best for long threads with 5+ messages." },
           { text: "Captures key decisions, action items, and takeaways." },
         ],
@@ -798,7 +807,7 @@ export const HELP_CATEGORIES: HelpCategory[] = [
         title: "Smart replies",
         summary: "AI-suggested quick reply options.",
         description:
-          "When viewing a thread, AI analyzes the latest message and suggests 2-3 short reply options — like \"Sounds good, thanks!\", \"Let me check and get back to you.\", or \"I'm available next Tuesday.\" Click a suggestion to insert it into the reply editor, then edit it before sending. Smart replies save time for quick, routine responses.",
+          "When viewing an email thread, choose Generate replies in Quick Replies to ask AI for 2-3 short reply options — like \"Sounds good, thanks!\", \"Let me check and get back to you.\", or \"I'm available next Tuesday.\" Opening an email never generates suggestions by itself. Requests use the AI gateway and send preview rules. Click a suggestion to insert it into the reply editor, then edit it before sending.",
         tips: [
           { text: "Smart reply suggestions appear below the last message in a thread." },
           { text: "Click a suggestion to insert it into the reply editor." },
@@ -1054,10 +1063,10 @@ export const HELP_CATEGORIES: HelpCategory[] = [
           "When viewing an email thread, press t to have AI analyze the conversation and extract an actionable task. The AI identifies the task title, description, suggested due date, and priority from the email content. A dialog shows the extracted task with editable fields — adjust the title, description, priority, or due date before creating. The task is linked to the email thread so you can always jump back to the original context. Also available from the command palette as 'Create Task from Email (AI)'.",
         tips: [
           { text: "Extract task from email", shortcut: "t" },
-          { text: "Also available in the command palette (Ctrl+K → 'Create Task from Email')." },
+          { text: "Also available in the command palette ('Create Task from Email')." },
           { text: "Edit the extracted fields before creating the task." },
           { text: "The task links back to the original email thread." },
-          { text: "Requires an active AI provider (Claude, GPT, or Gemini)." },
+          { text: "Requires the Claude API, approved in Settings > AI." },
         ],
         relatedSettingsTab: "ai",
       },
@@ -1102,12 +1111,12 @@ export const HELP_CATEGORIES: HelpCategory[] = [
         title: "Light & dark mode",
         summary: "Switch between light, dark, or system theme.",
         description:
-          "Choose between light mode, dark mode, or system-matched (follows your OS setting). Dark mode uses carefully chosen colors for comfortable reading in low-light environments, with a darker background and softer text. The theme switches instantly and persists across restarts. The animated gradient background also adapts — light mode uses blues/purples/pinks, dark mode uses deeper blues and purples.",
+          "Choose between light mode, dark mode, or system-matched (follows your OS setting). Dark mode uses carefully chosen colors for comfortable reading in low-light environments, with a darker background and softer text. The theme switches instantly and persists across restarts. Surfaces are neutral and solid so text stays readable; only the sidebar is translucent. Keyboard focus is always shown with a visible ring.",
         tips: [
           { text: "Change theme in Settings > General." },
           { text: "\"System\" follows your OS light/dark preference." },
           { text: "Dark mode is optimized for low-light environments." },
-          { text: "The animated background gradient adapts to light/dark mode." },
+          { text: "Plain-text emails follow the theme; HTML emails keep a light page so senders' colours stay readable." },
         ],
         relatedSettingsTab: "general",
       },
@@ -1115,12 +1124,12 @@ export const HELP_CATEGORIES: HelpCategory[] = [
         id: "accent-colors",
         icon: Palette,
         title: "Accent colors",
-        summary: "8 color presets to personalize the app.",
+        summary: "9 color presets to personalize the app.",
         description:
-          "Choose from 8 accent color presets to personalize the look of the app: Indigo (default), Rose, Emerald, Amber, Sky, Violet, Orange, or Slate. Each preset has separate light and dark mode variants that are optimized for readability. The accent color is used for buttons, active states, links, badges, and highlights throughout the app. Accent colors are independent of the light/dark theme.",
+          "Choose from 9 accent color presets to personalize the look of the app: Blue (default), Indigo, Rose, Emerald, Amber, Sky, Violet, Orange, or Slate. Each preset has separate light and dark mode variants that are optimized for readability. The accent color is used for buttons, active states, links, badges, and highlights throughout the app. Accent colors are independent of the light/dark theme.",
         tips: [
           { text: "Change accent color in Settings > General." },
-          { text: "8 presets: Indigo, Rose, Emerald, Amber, Sky, Violet, Orange, Slate." },
+          { text: "9 presets: Blue (default), Indigo, Rose, Emerald, Amber, Sky, Violet, Orange, Slate." },
           { text: "Each color has optimized light and dark variants." },
           { text: "Accent color is independent of light/dark theme." },
         ],
@@ -1132,7 +1141,7 @@ export const HELP_CATEGORIES: HelpCategory[] = [
         title: "Font size & email density",
         summary: "Adjust text size and list spacing.",
         description:
-          "Font scale adjusts the overall text size across the app: Small, Default, Large, or Extra Large. Email density controls the spacing in the email list: Compact (more threads visible), Default (balanced), or Comfortable (more breathing room). Both settings combine — use large font with comfortable density for accessibility, or small font with compact density to see more at once.",
+          "Font scale adjusts the overall text size across the app: Small, Default, Large, or Extra Large. Email density controls the spacing in the email list: Compact (the default, more threads visible), Default (balanced), or Comfortable (more breathing room). Both settings combine — use large font with comfortable density for accessibility, or small font with compact density to see more at once.",
         tips: [
           { text: "Font sizes: Small, Default, Large, Extra Large." },
           { text: "Density options: Compact, Default, Comfortable." },
@@ -1268,6 +1277,85 @@ export const HELP_CATEGORIES: HelpCategory[] = [
         ],
         relatedSettingsTab: "accounts",
       },
+      {
+        id: "freshdesk-connection",
+        icon: LifeBuoy,
+        title: "Connect your helpdesk",
+        summary: "Connect one Freshdesk helpdesk and classify its statuses.",
+        description:
+          "In Settings > Freshdesk, enter your helpdesk address and the API key from your Freshdesk profile settings. The key is stored encrypted on this Mac. Velo reads your helpdesk's exact statuses, priorities, agents, groups and ticket fields, and recognises you from the agent Freshdesk signs you in as. Classify each status as Open (we are expected to act), Waiting (the ball is in someone else's court) or Done (no further work expected). Classes are kept by status ID, so a status renamed in Freshdesk keeps its class. Until you connect, Velo shows sample statuses and tickets, each marked Sample. Connecting a different helpdesk clears everything from the previous one.",
+        tips: [
+          { text: "Metadata is read again on connect, every few hours, and when Freshdesk rejects a value." },
+          { text: "Use Refresh metadata after renaming or adding statuses in Freshdesk." },
+          { text: "Disconnect forgets the API key and returns to sample data." },
+        ],
+        relatedSettingsTab: "freshdesk",
+      },
+      {
+        id: "freshdesk-board",
+        icon: LifeBuoy,
+        title: "Ticket board and ticket edits",
+        summary: "See a ticket view as a board and change status, priority and assignee.",
+        description:
+          "Switch a ticket view between List and Board with the buttons in its header; the view keeps its filters and sort and remembers its presentation. The board has one column per Freshdesk status, in Freshdesk's order, including empty ones; Done columns start collapsed and you can expand or collapse any column. Cards show the ticket ID, subject, customer, priority, assignee, how long since Last answered, and linked ClickUp tasks. Drag a card to another column, or use its Move button to pick a status with the keyboard, and Velo changes the status in Freshdesk. In the reader you can change status, priority and assignee. If Freshdesk needs a field before it accepts a change, Velo asks for it; if Freshdesk refuses, the ticket goes back to how it was and the reason is shown. When a moved ticket no longer matches the view, Velo says so and offers to open it. Ticket edits need a connection to Freshdesk: while you are offline, or Freshdesk cannot be reached, the board's drag and Move buttons and the reader's status, priority and assignee controls are disabled with the reason shown, and nothing is ever queued to send later.",
+        tips: [
+          { text: "Changes go to Freshdesk at once and need a connection; they are never saved up to send later." },
+          { text: "Group, tags and custom fields are still changed in Freshdesk." },
+          { text: "Tickets with a status Freshdesk no longer has appear in their own Unknown status column." },
+        ],
+        relatedSettingsTab: "freshdesk",
+      },
+      {
+        id: "freshdesk-ticket-ai",
+        icon: LifeBuoy,
+        title: "Ticket summary and AI reply drafts",
+        summary: "Summarise a ticket and draft a reply with AI, always under your control.",
+        description:
+          "With the Claude API approved in Settings > AI, the reader offers an AI summary: choose Summarize to see the issue, relevant facts, work done, the current blocker, unanswered questions and the next action. Each point cites the numbered messages it rests on; click a number to jump to that message. The summary stays in Velo and is never written to Freshdesk; it is kept until the ticket's public messages, status or priority change. While a summary is on screen, a new public message updates it by itself after a short wait, at most once every few minutes: the old summary stays, marked Updating, until the new one replaces it, and marked Out of date when no update is coming (offline, AI off, cancelled, failed, or an update that needs your send preview, which waits until you choose Update summary). Internal notes never trigger an update, and only the open ticket is ever updated. In Reply to customer, choose a tone (friendly-professional, neutral or formal) and Draft reply, or Rewrite or Shorten what you wrote. The draft is in the customer's language and asks a clarifying question rather than inventing fixes, dates or commitments. It appears as a proposal: Use draft fills an empty reply; when you have written something, Replace or Insert decide what happens to your text, and Discard drops the proposal. Velo adds your Freshdesk signature when it sends, and nothing is sent until you choose Send reply. Only the subject, status, priority and the text of public messages are sent, with contact and payment details replaced by placeholders and secrets removed; internal notes, attachments, names and addresses never leave Velo. With AI off, failing or cancelled, reading and replying work as usual.",
+        tips: [
+          { text: "The send preview shows exactly what goes to the Claude API before the first request and whenever a new kind of data is included." },
+          { text: "Cancel stops waiting for a summary or draft; your reply stays as it was." },
+          { text: "Settings > AI > Update summaries automatically turns automatic updates off; Summarize still works." },
+          { text: "AI drafts are offered on replies only, never on internal notes." },
+        ],
+        relatedSettingsTab: "ai",
+      },
+      {
+        id: "clickup-links",
+        icon: ListChecks,
+        title: "Link ClickUp tasks to tickets",
+        summary: "Connect one ClickUp workspace and see linked tasks on each ticket and email thread.",
+        description:
+          "In Settings > ClickUp, enter the personal API token from ClickUp. The token is stored encrypted on this Mac. Velo reads the workspace's lists with their statuses, its members and custom fields, using ClickUp's own names. Pick a default list, and select the Ticket-ID field: a custom field you create in ClickUp to hold the ticket ID. Until you connect, Velo shows sample lists, each marked Sample. On a ticket, the Related tasks panel lists its linked tasks with status, assignees, due date, when Velo last read them and an Open in ClickUp link. Choose Link task to find a task by name or paste its URL or ID; Velo checks it with ClickUp first and will not link the same task twice. Linking a task to a ticket writes three backlinks once you confirm: the ticket link in the task description, the ticket ID in the Ticket-ID field, and an internal note on the ticket that links to the task. One task can be linked from many tickets, and a ticket can link many tasks. Unlinking removes only the link, never the task. When a linked task is done in ClickUp, the panel shows a Done badge and a Follow-up cue; the ticket itself is never changed.",
+        tips: [
+          { text: "Unlinking writes nothing to ClickUp or Freshdesk." },
+          { text: "Email threads have the same Related tasks panel. An email link is kept only in Velo: nothing from the email is written to ClickUp." },
+          { text: "Create, link and retry need a connection; offline they are disabled and nothing is queued." },
+          { text: "Linked tasks are read again when you open the ticket, every few minutes, and with Refresh tasks." },
+          { text: "The ticket list badges tickets with linked tasks; Linked work only shows just those." },
+          { text: "If ClickUp asks Velo to slow down, refresh waits until the time shown. If the token expires, reconnect in Settings > ClickUp." },
+          { text: "Connecting a different workspace clears the previous workspace's links and tasks." },
+        ],
+        relatedSettingsTab: "clickup",
+      },
+      {
+        id: "clickup-create-task",
+        icon: ListChecks,
+        title: "Create ClickUp tasks from tickets and emails",
+        summary: "Turn a ticket or an email thread into a ClickUp task, with backlinks for tickets.",
+        description:
+          "In the ticket's or email thread's linked work, choose Create task. A drawer opens on the right, below the header actions. It always shows the destination: the last list you used in this workspace, else the default list. Search by list, space or folder name; lists refresh when the drawer opens, show when they were last refreshed, and have a Refresh lists button. Results are paged locally, and partial discovery is labelled. Pick the status from that list's statuses, assignees from that list's searchable members, a standard ClickUp priority and a due date. Me is your authenticated ClickUp identity. ClickUp returns only explicit list members, excluding inherited access. Changing lists removes unsupported assignees and switches statuses; creation waits for the list choices to finish loading. A ticket fills in its subject as the title. Creating a task from a ticket writes three backlinks: the ticket link in the task description, the ticket ID in the Ticket-ID field and an internal note on the ticket. If the list has no Ticket-ID field, Velo warns you and still writes the other two. A task from an email holds only the title and description you choose; the email link stays in Velo. With the Claude API approved in Settings > AI, Propose task text suggests a title, summary and acceptance criteria from the public ticket messages or email text. Edit the proposal, then choose Replace or Insert; your fields stay as they are until you choose. Creating a task works with AI off.",
+        tips: [
+          { text: "Create task, Link task, retry and Check ClickUp use the right-hand drawer for tickets and emails. Escape dismisses it and returns focus to the action that opened it; on narrow windows it becomes a full-width sheet." },
+          { text: "If a backlink fails, the task shows which one. Retry missing backlink opens its details; retry there writes only that one again." },
+          { text: "If ClickUp does not answer, Velo cannot tell whether the task was made. Check ClickUp looks for it instead of creating a second one." },
+          { text: "A due date is a whole day: the date you pick is the date ClickUp shows, in any time zone." },
+          { text: "Offline, Create task is disabled and nothing is queued." },
+          { text: "In a ticket reply or an email reply, select a linked task and choose Draft from task. The draft uses its name, current status, description and recent comments; work is complete only when the task says so. Review it, then Replace or Insert. Sending stays manual." },
+          { text: "AI requests use only the approved Claude API through the gateway. Contact and payment details become placeholders, secrets are removed, and new data kinds require a send preview. Internal ticket notes and attachments stay out; requests are recorded in the local AI audit log." },
+        ],
+        relatedSettingsTab: "clickup",
+      },
     ],
   },
 ];
@@ -1302,7 +1390,7 @@ export const CONTEXTUAL_TIPS: Record<string, ContextualTip> = {
   },
   "ai-provider": {
     title: "AI provider",
-    body: "Choose between Claude, OpenAI, or Gemini. Bring your own API key — your data is sent directly to the provider, never through a middleman.",
+    body: "Only the Claude API (Anthropic) may receive email, ticket or task content, and only after you approve it here. Other providers are refused for this content.",
     helpTopic: "ai-features",
   },
   "search-operators": {

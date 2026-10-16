@@ -1,6 +1,8 @@
+import { findShortcutConflicts } from "@/utils/shortcutKeys";
 import { SHORTCUTS } from "@/constants/shortcuts";
 import { useShortcutStore } from "@/stores/shortcutStore";
 import { Modal } from "@/components/ui/Modal";
+import { formatShortcut } from "@/utils/shortcutLabel";
 
 interface ShortcutsHelpProps {
   isOpen: boolean;
@@ -9,6 +11,8 @@ interface ShortcutsHelpProps {
 
 export function ShortcutsHelp({ isOpen, onClose }: ShortcutsHelpProps) {
   const keyMap = useShortcutStore((s) => s.keyMap);
+  const conflicts = findShortcutConflicts(keyMap);
+  const descriptions = new Map(SHORTCUTS.flatMap((section) => section.items.map((item) => [item.id, item.desc])));
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Keyboard Shortcuts" width="w-full max-w-lg" zIndex="z-[60]">
@@ -22,13 +26,19 @@ export function ShortcutsHelp({ isOpen, onClose }: ShortcutsHelpProps) {
               {section.items.map((item) => (
                 <div
                   key={item.id}
+                  data-shortcut-row
                   className="flex items-center justify-between py-1"
                 >
-                  <span className="text-sm text-text-secondary">
-                    {item.desc}
-                  </span>
+                  <div>
+                    <span className="text-sm text-text-secondary">{item.desc}</span>
+                    {conflicts.has(item.id) && (
+                      <p role="alert" className="text-xs text-warning">
+                        Also used by {conflicts.get(item.id)!.map((id) => descriptions.get(id) ?? id).join(", ")}
+                      </p>
+                    )}
+                  </div>
                   <kbd className="text-xs text-text-tertiary bg-bg-tertiary px-2 py-0.5 rounded font-mono">
-                    {keyMap[item.id] ?? item.keys}
+                    {formatShortcut(keyMap[item.id] ?? item.keys)}
                   </kbd>
                 </div>
               ))}

@@ -5,6 +5,7 @@ import { insertTask, getIncompleteTaskCount } from "@/services/db/tasks";
 import type { TaskPriority } from "@/services/db/tasks";
 import type { DbMessage } from "@/services/db/messages";
 import { useTaskStore } from "@/stores/taskStore";
+import { AiSendNote } from "@/components/ai/AiSendPreview";
 
 const PRIORITY_OPTIONS: { value: TaskPriority; label: string; color: string }[] = [
   { value: "none", label: "None", color: "text-text-tertiary" },
@@ -36,6 +37,7 @@ export function AiTaskExtractDialog({
   const [priority, setPriority] = useState<TaskPriority>("medium");
   const [dueDate, setDueDate] = useState("");
   const [creating, setCreating] = useState(false);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -59,7 +61,13 @@ export function AiTaskExtractDialog({
     }
     extract();
     return () => { cancelled = true; };
-  }, [threadId, accountId, messages]);
+  }, [threadId, accountId, messages, attempt]);
+
+  const handlePreview = useCallback(() => {
+    setLoading(true);
+    setError(null);
+    setAttempt((n) => n + 1);
+  }, []);
 
   const handleCreate = useCallback(async () => {
     if (!title.trim()) return;
@@ -90,8 +98,8 @@ export function AiTaskExtractDialog({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px]" onClick={onClose} />
-      <div className="relative glass-modal rounded-xl shadow-2xl w-[480px] max-w-[90vw] overflow-hidden">
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+      <div className="relative bg-surface-overlay border border-separator rounded-xl overlay-shadow w-[480px] max-w-[90vw] overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-border-secondary">
           <div className="flex items-center gap-2">
@@ -101,6 +109,10 @@ export function AiTaskExtractDialog({
           <button onClick={onClose} className="p-1 text-text-tertiary hover:text-text-primary">
             <X size={16} />
           </button>
+        </div>
+
+        <div className="px-5 pt-3">
+          <AiSendNote features={["task_extraction"]} onPreview={handlePreview} />
         </div>
 
         {/* Body */}

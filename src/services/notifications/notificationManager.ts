@@ -193,3 +193,39 @@ export function notifySnoozeReturn(subject: string): void {
     actionTypeId: "default",
   });
 }
+
+/**
+ * Show a notification for a scheduled email that permanently failed to send.
+ */
+export function notifyScheduledSendFailed(subject: string, reason: string): void {
+  if (!notificationsEnabled) return;
+  sendNotification({
+    title: "Scheduled email not sent",
+    body: `${subject || "(No subject)"}: ${reason}`,
+    actionTypeId: "default",
+  });
+}
+
+/**
+ * Show a notification for a scheduled ticket reply held because the ticket changed.
+ */
+export function notifyScheduledReplyHeld(subject: string, reasons: string[]): void {
+  if (!notificationsEnabled) return;
+  sendNotification({
+    title: "Scheduled reply on hold – ticket changed",
+    body: `${subject || "(No subject)"}: ${reasons.join(" ")}`,
+    actionTypeId: "default",
+  });
+}
+
+/**
+ * Show a notification for a scheduled ticket reply that could not be sent.
+ */
+export function notifyScheduledReplyFailed(subject: string, reason: string): void {
+  if (!notificationsEnabled) return;
+  sendNotification({
+    title: "Scheduled reply not sent",
+    body: `${subject || "(No subject)"}: ${reason}`,
+    actionTypeId: "default",
+  });
+}

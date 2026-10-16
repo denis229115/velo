@@ -1,3 +1,4 @@
+import { dispatchShortcutAction } from "./useShortcutAction";
 import { useEffect, useRef } from "react";
 import { useUIStore } from "@/stores/uiStore";
 import { useThreadStore } from "@/stores/threadStore";
@@ -5,7 +6,8 @@ import { useComposerStore } from "@/stores/composerStore";
 import { useAccountStore } from "@/stores/accountStore";
 import { useShortcutStore } from "@/stores/shortcutStore";
 import { useContextMenuStore } from "@/stores/contextMenuStore";
-import { navigateToLabel, navigateToThread, navigateBack, getActiveLabel, getSelectedThreadId } from "@/router/navigate";
+import { navigateToLabel, navigateToThread, navigateToTicket, navigateBack, getActiveLabel, getSelectedThreadId, getSelectedTicketId } from "@/router/navigate";
+import { selectCurrentView, selectVisibleTickets, useTicketStore } from "@/stores/ticketStore";
 import { archiveThread, trashThread, permanentDeleteThread, starThread, spamThread } from "@/services/emailActions";
 import { deleteThread as deleteThreadFromDb, pinThread as pinThreadDb, unpinThread as unpinThreadDb, muteThread as muteThreadDb, unmuteThread as unmuteThreadDb } from "@/services/db/threads";
 import { deleteDraftsForThread } from "@/services/gmail/draftDeletion";
@@ -14,29 +16,10 @@ import { getMessagesForThread } from "@/services/db/messages";
 import { parseUnsubscribeUrl } from "@/components/email/MessageItem";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { triggerSync } from "@/services/gmail/syncManager";
+import { matchesKey } from "@/utils/shortcutKeys";
+import { COMPOSER_SHORTCUT_IDS } from "@/constants/shortcuts";
 
-/**
- * Parse a key binding string and check if it matches a keyboard event.
- * Supports formats like: "j", "#", "Ctrl+K", "Ctrl+Shift+E", "Ctrl+Enter"
- */
-function matchesKey(binding: string, e: KeyboardEvent): boolean {
-  const parts = binding.split("+");
-  const key = parts[parts.length - 1]!;
-  const needsCtrl = parts.some((p) => p === "Ctrl" || p === "Cmd");
-  const needsShift = parts.some((p) => p === "Shift");
-  const needsAlt = parts.some((p) => p === "Alt");
-
-  const ctrlMatch = needsCtrl ? (e.ctrlKey || e.metaKey) : !(e.ctrlKey || e.metaKey);
-  const shiftMatch = needsShift ? e.shiftKey : !e.shiftKey;
-  const altMatch = needsAlt ? e.altKey : !e.altKey;
-
-  // For single character keys, compare case-insensitively
-  const keyMatch = key.length === 1
-    ? e.key === key || e.key === key.toLowerCase() || e.key === key.toUpperCase()
-    : e.key === key;
-
-  return ctrlMatch && shiftMatch && altMatch && keyMatch;
-}
+const composerShortcutIds = new Set<string>(COMPOSER_SHORTCUT_IDS);
 
 /**
  * Build a reverse map: key binding -> action ID.
@@ -52,11 +35,13 @@ function buildReverseMap(keyMap: Record<string, string>): {
   const ctrlCombos = new Map<string, string>();
 
   for (const [id, keys] of Object.entries(keyMap)) {
+    // Send now / send later are dispatched by the composer (useComposerShortcuts)
+    if (composerShortcutIds.has(id)) continue;
     if (keys.includes(" then ")) {
       // Two-key sequence like "g then i"
       const secondKey = keys.split(" then ")[1]!.trim();
       twoKeySequences.set(secondKey, id);
-    } else if (keys.includes("+") && (keys.includes("Ctrl") || keys.includes("Cmd"))) {
+    } else if (keys.includes("+")) {
       ctrlCombos.set(id, keys);
     } else {
       singleKey.set(keys, id);
@@ -87,6 +72,7 @@ export function useKeyboardShortcuts() {
 
   useEffect(() => {
     const handleKeyDown = async (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return;
       // Close context menu on Escape before any other handling
       if (e.key === "Escape" && useContextMenuStore.getState().menuType) {
         e.preventDefault();
@@ -95,37 +81,33 @@ export function useKeyboardShortcuts() {
       }
 
       const target = e.target as HTMLElement;
-      const isInputFocused =
-        target.tagName === "INPUT" ||
-        target.tagName === "TEXTAREA" ||
-        target.isContentEditable;
+      const isInputFocused = target instanceof HTMLElement && (
+        target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT" ||
+        target.isContentEditable || target.closest("[contenteditable='true']") !== null
+      );
+      // A dialog owns its keys; the underlying ticket must not react.
+      if (document.querySelector('[role="dialog"]')) return;
+      if (isInputFocused) {
+        pendingKeyRef.current = null;
+        if (pendingTimerRef.current) clearTimeout(pendingTimerRef.current);
+      }
 
       const keyMap = useShortcutStore.getState().keyMap;
       const { singleKey, twoKeySequences, ctrlCombos } = getCachedReverseMap(keyMap);
 
-      // Ctrl/Cmd shortcuts work everywhere
-      if (e.ctrlKey || e.metaKey) {
+      // Modified bindings (including Shift and Alt) use the same matcher as composers.
+      if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) {
         for (const [actionId, binding] of ctrlCombos) {
+          // Search keeps its existing command-key behavior in text fields.
+          // Ticket actions never intercept typing, even after a modified rebind.
+          if (isInputFocused && actionId !== "app.search") continue;
           if (matchesKey(binding, e)) {
             e.preventDefault();
             executeAction(actionId);
             return;
           }
         }
-        // Ctrl+K for command palette (also check binding)
-        if (e.key === "k" && !e.shiftKey) {
-          const paletteBinding = keyMap["app.commandPalette"];
-          if (paletteBinding === "Ctrl+K" || paletteBinding === "/" || !paletteBinding) {
-            e.preventDefault();
-            window.dispatchEvent(new Event("velo-toggle-command-palette"));
-            return;
-          }
-        }
-        if (e.key === "Enter") {
-          // Send email shortcut handled by composer
-          return;
-        }
-        return;
+        if (e.ctrlKey || e.metaKey || e.altKey) return;
       }
 
       // F5 sync works even when input is focused
@@ -181,8 +163,12 @@ export function useKeyboardShortcuts() {
         }
       }
 
-      // Single key shortcuts
+      // Focused controls keep their native Enter action.
+      if (key === "Enter" && target instanceof HTMLElement && target.closest("button, a")) return;
+
+      // Single key shortcuts; keep o as an alias only for the default open binding.
       let actionId = singleKey.get(key);
+      if (!actionId && key === "o" && keyMap["nav.open"] === "Enter") actionId = "nav.open";
       // Delete and Backspace always trigger delete action
       if (!actionId && (key === "Delete" || key === "Backspace")) {
         actionId = "action.delete";
@@ -198,7 +184,62 @@ export function useKeyboardShortcuts() {
   }, []);
 }
 
+/**
+ * The Freshdesk ticket list: navigation walks the visible tickets; email thread
+ * actions do not apply. Returns false for actions that work the same everywhere.
+ */
+function executeTicketAction(actionId: string): boolean {
+  const tickets = selectVisibleTickets(useTicketStore.getState());
+  const selectedId = getSelectedTicketId();
+  const currentIdx = tickets.findIndex((t) => t.id === selectedId);
+
+  switch (actionId) {
+    case "ticket.presentation": {
+      const state = useTicketStore.getState();
+      const view = selectCurrentView(state);
+      void state.updateView(view.id, { presentation: view.presentation === "list" ? "board" : "list" });
+      return true;
+    }
+    case "nav.next": {
+      const next = tickets[Math.min(currentIdx + 1, tickets.length - 1)];
+      if (next) navigateToTicket(next.id);
+      return true;
+    }
+    case "nav.prev": {
+      const prev = tickets[Math.max(currentIdx - 1, 0)];
+      if (prev) navigateToTicket(prev.id);
+      return true;
+    }
+    case "nav.open": {
+      if (!selectedId && tickets[0]) navigateToTicket(tickets[0].id);
+      return true;
+    }
+    case "action.reply":
+    case "action.clickupTask":
+    case "ticket.aiDraft":
+    case "ticket.summarize":
+    case "ticket.note":
+    case "ticket.status":
+    case "ticket.priority":
+    case "ticket.assignee":
+      if (selectedId) dispatchShortcutAction({ actionId, ticketId: selectedId });
+      return true;
+    case "nav.escape": {
+      if (useComposerStore.getState().isOpen) return false;
+      if (selectedId) navigateToLabel("freshdesk");
+      return true;
+    }
+    case "app.syncFolder":
+      void useTicketStore.getState().refresh();
+      return true;
+    default:
+      // Thread actions (archive, star, reply…) would hit email threads selected elsewhere
+      return actionId.startsWith("action.") && actionId !== "action.compose";
+  }
+}
+
 async function executeAction(actionId: string): Promise<void> {
+  if (getActiveLabel() === "freshdesk" && executeTicketAction(actionId)) return;
   const threads = useThreadStore.getState().threads;
   const selectedId = getSelectedThreadId();
   const currentIdx = threads.findIndex((t) => t.id === selectedId);
@@ -267,6 +308,9 @@ async function executeAction(actionId: string): Promise<void> {
       break;
     case "nav.goAttachments":
       navigateToLabel("attachments");
+      break;
+    case "nav.goScheduled":
+      navigateToLabel("scheduled");
       break;
     case "nav.escape": {
       if (useComposerStore.getState().isOpen) {
@@ -447,6 +491,10 @@ async function executeAction(actionId: string): Promise<void> {
       }
       break;
     }
+    case "action.clickupTask": {
+      if (selectedId && activeAccountId) dispatchShortcutAction({ actionId, threadId: selectedId, accountId: activeAccountId });
+      break;
+    }
     case "action.createTaskFromEmail": {
       if (selectedId) {
         window.dispatchEvent(new CustomEvent("velo-extract-task", { detail: { threadId: selectedId } }));
@@ -462,6 +510,7 @@ async function executeAction(actionId: string): Promise<void> {
       break;
     }
     case "app.commandPalette":
+    case "app.search":
       window.dispatchEvent(new Event("velo-toggle-command-palette"));
       break;
     case "app.toggleSidebar":

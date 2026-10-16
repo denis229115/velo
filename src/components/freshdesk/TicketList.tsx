@@ -1,0 +1,311 @@
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { Columns3, List, ListChecks, MessageCircleWarning, RefreshCw, UserRound } from "lucide-react";
+import { ListHeader } from "@/components/list/ListHeader";
+import { ListRow } from "@/components/list/ListRow";
+import { DateGroupHeader } from "@/components/list/DateGroupHeader";
+import { groupByDate } from "@/utils/dateGroups";
+import { formatFullDate } from "@/utils/date";
+import { selectCurrentView, selectVisibleTickets, useTicketStore } from "@/stores/ticketStore";
+import { viewCoverage, type OptionalTicketColumn } from "@/services/freshdesk/ticketViews";
+import { TicketViewToolbar } from "./TicketViewToolbar";
+import { TicketFilterPanel } from "./TicketFilterPanel";
+import { navigateToTicket } from "@/router/navigate";
+import type { TicketListItem } from "@/services/freshdesk/ticketSync";
+import { LinkedWorkBadge, TicketPriorityBadge, TicketStatusBadge } from "./TicketBadges";
+import { TicketSyncBar } from "./TicketSyncBar";
+import { TicketBoard } from "./TicketBoard";
+import { ActivityValue, activityText } from "./TicketActivity";
+import { useDisplayTimeZone } from "@/components/ui/Timestamp";
+
+function rowLabel(t: TicketListItem, timeZone: string): string {
+  const a = t.activity;
+  return [
+    `Ticket #${t.id}`,
+    t.subject,
+    `customer ${t.customer ?? "not loaded"}`,
+    `status ${t.status.label ?? "Unknown status"}`,
+    t.priority ? `priority ${t.priority.label}` : null,
+    t.assignee ? `assigned to ${t.assignee}` : "unassigned",
+    `last answered ${activityText(a.lastAnswered, a.history, "never answered", timeZone)}`,
+    `last customer message ${activityText(a.lastCustomerMessage, a.history, "none", timeZone)}`,
+    a.needsReply === true ? "needs reply" : null,
+    `last updated ${formatFullDate(t.updatedAt)}`,
+  ]
+    .filter(Boolean)
+    .join(", ");
+}
+
+function FindOlderTicket() {
+  const findOlder = useTicketStore((s) => s.findOlder);
+  const [value, setValue] = useState("");
+  const [note, setNote] = useState<string | null>(null);
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!value.trim()) return;
+    setNote("Fetching…");
+    try {
+      const id = await findOlder(value);
+      if (id) {
+        setValue("");
+        setNote(null);
+        navigateToTicket(id);
+      } else {
+        setNote("No ticket with that ID");
+      }
+    } catch (err) {
+      setNote(err instanceof Error ? err.message : "Couldn't fetch the ticket");
+    }
+  };
+
+  return (
+    <form onSubmit={submit} className="flex items-center gap-1.5">
+      {note && <span className="text-micro text-text-tertiary max-w-[10rem] truncate" title={note}>{note}</span>}
+      <input
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        placeholder="Ticket ID"
+        aria-label="Fetch an older ticket by ID"
+        title="Tickets outside the downloaded scope can be fetched by ID"
+        inputMode="numeric"
+        className="w-20 h-6 px-1.5 rounded-md border border-border-primary bg-transparent text-meta text-text-primary placeholder:text-text-tertiary"
+      />
+    </form>
+  );
+}
+
+function NeedsReplyBadge() {
+  return (
+    <span
+      title="Needs reply: the customer wrote after the last answer"
+      className="inline-flex items-center gap-1 shrink-0 rounded-md border border-status-warning/40 bg-status-warning/10 px-1.5 py-px text-micro font-medium text-status-warning"
+    >
+      <MessageCircleWarning size={11} aria-hidden className="shrink-0" />
+      Needs reply
+    </span>
+  );
+}
+
+/**
+ * Assignee, Last answered and Last customer message, in that order of importance: the row's detail line
+ * drops whole items from the end when the list is narrow, so the assignee is the last thing to go.
+ */
+function ticketRowDetails(t: TicketListItem): ReactNode[] {
+  const a = t.activity;
+  return [
+    <span key="assignee" data-column="assignee" className="inline-flex items-center gap-1 shrink-0 max-w-40">
+      <UserRound size={11} aria-hidden className="shrink-0" />
+      <span className="truncate">{t.assignee ?? "Unassigned"}</span>
+    </span>,
+    <span key="answered" className="inline-flex items-center gap-1">
+      <span className="text-text-tertiary">Answered</span>
+      <ActivityValue time={a.lastAnswered} history={a.history} never="Never" focusable={false} />
+    </span>,
+    <span key="customer" className="inline-flex items-center gap-1">
+      <span className="text-text-tertiary">Customer</span>
+      <ActivityValue time={a.lastCustomerMessage} history={a.history} never="None" focusable={false} />
+    </span>,
+  ];
+}
+
+/** List or board: one switch, the same view, filters and sort either way (A04) */
+function PresentationSwitch() {
+  const views = useTicketStore((s) => s.views);
+  const selectedViewId = useTicketStore((s) => s.selectedViewId);
+  const updateView = useTicketStore((s) => s.updateView);
+  const view = selectCurrentView({ views, selectedViewId });
+  const options = [
+    { value: "list", label: "List", icon: List },
+    { value: "board", label: "Board", icon: Columns3 },
+  ] as const;
+  return (
+    <div role="group" aria-label="Presentation" className="flex rounded-md border border-border-primary p-px">
+      {options.map(({ value, label, icon: Icon }) => (
+        <button
+          key={value}
+          type="button"
+          aria-pressed={view.presentation === value}
+          aria-label={label}
+          title={`Show as ${label.toLowerCase()}`}
+          onClick={() => view.presentation !== value && void updateView(view.id, { presentation: value })}
+          className={`rounded-[5px] p-1 ${view.presentation === value ? "bg-bg-selected text-text-primary" : "text-text-secondary hover:text-text-primary hover:bg-bg-hover"}`}
+        >
+          <Icon size={13} aria-hidden />
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * The view's optional columns on a line of their own: they were chosen for this view, so they get room
+ * instead of being squeezed out by, or squeezing, the assignee line. Null when the ticket has none to show,
+ * so the row stays two lines.
+ */
+function ticketRowColumns(t: TicketListItem, columns: OptionalTicketColumn[]): ReactNode {
+  const company = columns.includes("company_group") && (t.group || t.companyId);
+  const sla = columns.includes("sla_due") && t.dueBy !== null;
+  if (!company && !sla) return null;
+  return (
+    <>
+      {company && (
+        <span data-column="company_group" className="truncate min-w-0">
+          {[t.group?.name, t.companyId ? `Company ${t.companyId}` : null].filter(Boolean).join(" · ")}
+        </span>
+      )}
+      {sla && t.dueBy !== null && (
+        <span
+          data-column="sla_due"
+          title={`SLA due ${formatFullDate(t.dueBy)}`}
+          className={`shrink-0 ${t.outstanding && t.dueBy < Date.now() ? "text-status-error" : ""}`}
+        >
+          Due {formatFullDate(t.dueBy)}
+        </span>
+      )}
+    </>
+  );
+}
+
+/** The ticket view: header, filters, sync and coverage, then the list rows or the board. Without a width it fills the row. */
+export function TicketList({ selectedTicketId, width }: { selectedTicketId: string | null; width?: number }) {
+  const data = useTicketStore((s) => s.data);
+  const views = useTicketStore((s) => s.views);
+  const selectedViewId = useTicketStore((s) => s.selectedViewId);
+  const draftFilter = useTicketStore((s) => s.draftFilter);
+  const view = selectCurrentView({ views, selectedViewId });
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const linkedWork = useTicketStore((s) => s.linkedWork);
+  const linkedOnly = useTicketStore((s) => s.linkedOnly);
+  const setLinkedOnly = useTicketStore((s) => s.setLinkedOnly);
+  const refresh = useTicketStore((s) => s.refresh);
+  const refreshing = useTicketStore((s) => s.refreshing);
+  const density = view.density;
+  const timeZone = useDisplayTimeZone();
+
+  const tickets = useMemo(
+    () => selectVisibleTickets({ data, views, selectedViewId, draftFilter, linkedOnly, linkedWork }),
+    [data, views, selectedViewId, draftFilter, linkedOnly, linkedWork],
+  );
+  // Date groups only make sense while the list is in date order
+  const groups = useMemo(
+    () => (view.sort === "updated" ? groupByDate(tickets, (t) => t.updatedAt) : [{ key: "all", label: null, items: tickets }]),
+    [tickets, view.sort],
+  );
+  const filter = draftFilter ?? view.filter;
+  const coverage = data && !data.isSample ? viewCoverage({ filter }, data) : null;
+
+  // Keep the keyboard-selected row in view
+  useEffect(() => {
+    if (!selectedTicketId) return;
+    document.querySelector(`[data-ticket-id="${CSS.escape(selectedTicketId)}"]`)?.scrollIntoView?.({ block: "nearest" });
+  }, [selectedTicketId]);
+
+  const mineUnavailable = !!filter.assignees?.includes("me") && data !== null && data.meAgentId === null;
+
+  return (
+    <div className={`flex flex-col bg-surface-list min-w-[240px] ${width === undefined ? "flex-1 min-w-0" : "shrink-0"}`} style={{ width }}>
+      <ListHeader
+        breadcrumb={["Freshdesk", "Tickets"]}
+        title={view.name}
+        tabRow={<TicketViewToolbar data={data} filtersOpen={filtersOpen} onToggleFilters={() => setFiltersOpen((o) => !o)} />}
+        actions={
+          <>
+            <PresentationSwitch />
+            {data && !data.isSample && (
+            <>
+              <button
+                type="button"
+                onClick={() => setLinkedOnly(!linkedOnly)}
+                aria-pressed={linkedOnly}
+                aria-label="Linked work only"
+                title="Show only tickets with linked ClickUp tasks"
+                className={`p-1.5 rounded-md ${linkedOnly ? "text-accent bg-accent/10 ring-1 ring-accent/40" : "text-text-secondary hover:text-text-primary hover:bg-bg-hover"}`}
+              >
+                <ListChecks size={14} aria-hidden />
+              </button>
+              <FindOlderTicket />
+              <button
+                type="button"
+                onClick={() => void refresh()}
+                disabled={refreshing}
+                title="Refresh tickets from Freshdesk"
+                aria-label="Refresh tickets"
+                className="p-1.5 rounded-md text-text-secondary hover:text-text-primary hover:bg-bg-hover disabled:opacity-50"
+              >
+                <RefreshCw size={14} className={refreshing ? "animate-spin" : ""} />
+              </button>
+            </>
+            )}
+          </>
+        }
+      />
+      {filtersOpen && <TicketFilterPanel data={data} onClose={() => setFiltersOpen(false)} />}
+      {data && <TicketSyncBar data={data} />}
+      {coverage && !coverage.complete && (
+        <div
+          role="status"
+          aria-label="Coverage"
+          className="flex items-center gap-2 border-b border-status-warning/30 bg-status-warning/10 px-3 py-1 text-meta text-status-warning"
+        >
+          <span className="min-w-0 flex-1">
+            <span className="font-medium">Partial results</span> · {coverage.reasons.join(" · ")}
+          </span>
+          <button
+            type="button"
+            onClick={() => void refresh()}
+            disabled={refreshing}
+            className="shrink-0 rounded px-1.5 py-0.5 font-medium hover:bg-status-warning/15 disabled:opacity-50"
+          >
+            Refresh
+          </button>
+        </div>
+      )}
+
+      {view.presentation === "board" ? (
+        <TicketBoard tickets={tickets} view={view} selectedTicketId={selectedTicketId} />
+      ) : (
+      <div className="@container flex-1 overflow-y-auto">
+        {data && tickets.length === 0 && (
+          <p className="px-4 py-8 text-center text-meta text-text-tertiary">
+            {mineUnavailable
+              ? `${view.name} needs a connected helpdesk, so Velo knows which agent you are.`
+              : linkedOnly
+                ? "No tickets here have linked ClickUp tasks."
+                : "No downloaded tickets match this view."}
+          </p>
+        )}
+        {groups.map((group) => (
+          <div key={group.key} role="group" aria-label={group.label ?? view.name}>
+            {group.label && <DateGroupHeader label={group.label} />}
+            {group.items.map((t) => (
+              <div key={t.id} data-ticket-id={t.id}>
+                <ListRow
+                  density={density}
+                  unread={false}
+                  sender={t.customer ?? "Customer not loaded"}
+                  subject={t.subject || "(no subject)"}
+                  subjectPrefix={`#${t.id}`}
+                  detailLine={ticketRowDetails(t)}
+                  extraLine={ticketRowColumns(t, view.columns)}
+                  time={t.updatedAt}
+                  selected={t.id === selectedTicketId}
+                  indicators={
+                    <>
+                      {t.activity.needsReply === true && <NeedsReplyBadge />}
+                      <TicketStatusBadge status={t.status} />
+                      {t.priority && <TicketPriorityBadge priority={t.priority} />}
+                      {linkedWork.has(t.id) && <LinkedWorkBadge summary={linkedWork.get(t.id)!} />}
+                    </>
+                  }
+                  onClick={() => navigateToTicket(t.id)}
+                  buttonProps={{ "aria-label": rowLabel(t, timeZone) }}
+                />
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+      )}
+    </div>
+  );
+}

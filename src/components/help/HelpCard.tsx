@@ -1,6 +1,7 @@
 import { ChevronRight } from "lucide-react";
 import { navigateToSettings } from "@/router/navigate";
 import type { HelpCard as HelpCardData } from "@/constants/helpContent";
+import { formatShortcut } from "@/utils/shortcutLabel";
 
 interface HelpCardProps {
   card: HelpCardData;
@@ -12,7 +13,7 @@ export function HelpCard({ card, isExpanded, onToggle }: HelpCardProps) {
   const Icon = card.icon;
 
   return (
-    <div className="rounded-lg border border-border-secondary bg-bg-primary/60 overflow-hidden transition-colors hover:border-border-primary">
+    <div className="rounded-lg border border-border-secondary bg-surface-reader overflow-hidden transition-colors hover:border-border-primary">
       {/* Collapsed header: icon + title + summary + chevron */}
       <button
         onClick={onToggle}
@@ -53,7 +54,7 @@ export function HelpCard({ card, isExpanded, onToggle }: HelpCardProps) {
                     <span className="flex-1">{tip.text}</span>
                     {tip.shortcut && (
                       <kbd className="shrink-0 px-1.5 py-0.5 text-[0.625rem] bg-bg-secondary border border-border-secondary rounded text-text-tertiary font-mono">
-                        {tip.shortcut}
+                        {formatShortcut(tip.shortcut)}
                       </kbd>
                     )}
                   </li>

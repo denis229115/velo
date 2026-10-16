@@ -6,6 +6,7 @@ import { Reply, ReplyAll, Forward, Send, Maximize2, RotateCcw, X, Loader2 } from
 import { useAccountStore } from "@/stores/accountStore";
 import { useComposerStore } from "@/stores/composerStore";
 import { useUIStore } from "@/stores/uiStore";
+import { useComposerShortcuts } from "@/hooks/useComposerShortcuts";
 import { sendEmail, archiveThread } from "@/services/emailActions";
 import { buildRawEmail } from "@/utils/emailBuilder";
 import { upsertContact } from "@/services/db/contacts";
@@ -17,6 +18,8 @@ import {
   regenerateAutoDraft,
   type AutoDraftMode,
 } from "@/services/ai/writingStyleService";
+import { TaskReplyDraft } from "@/components/clickup/TaskReplyDraft";
+import { AiSendNote } from "@/components/ai/AiSendPreview";
 import type { DbMessage } from "@/services/db/messages";
 import type { Thread } from "@/stores/threadStore";
 
@@ -36,9 +39,11 @@ export function InlineReply({ thread, messages, accountId, noReply, onSent }: In
   const [signatureHtml, setSignatureHtml] = useState("");
   const [autoDraftLoading, setAutoDraftLoading] = useState(false);
   const [hasAutoDraft, setHasAutoDraft] = useState(false);
+  const [autoDraftOn, setAutoDraftOn] = useState(false);
   const accounts = useAccountStore((s) => s.accounts);
   const activeAccount = accounts.find((a) => a.id === accountId);
   const openComposer = useComposerStore((s) => s.openComposer);
+  const composerOpen = useComposerStore((s) => s.isOpen);
   const containerRef = useRef<HTMLDivElement>(null);
   const focusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoDraftAbortRef = useRef(false);
@@ -66,6 +71,7 @@ export function InlineReply({ thread, messages, accountId, noReply, onSent }: In
     setAutoDraftLoading(true);
     try {
       const enabled = await isAutoDraftEnabled();
+      setAutoDraftOn(enabled);
       if (!enabled || autoDraftAbortRef.current) return;
 
       const draft = await generateAutoDraft(thread.id, accountId, messages, draftMode);
@@ -284,14 +290,13 @@ export function InlineReply({ thread, messages, accountId, noReply, onSent }: In
     };
   }, []);
 
-  // Handle Ctrl+Enter to send, Escape to close
+  // Send now via the shortcut registry; the full composer takes precedence when open
+  useComposerShortcuts({ onSend: handleSend }, !!mode && !composerOpen, containerRef);
+
+  // Handle Escape to close
   useEffect(() => {
     if (!mode) return;
     const handler = (e: KeyboardEvent) => {
-      if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-        e.preventDefault();
-        handleSend();
-      }
       if (e.key === "Escape") {
         e.preventDefault();
         editor?.commands.setContent("");
@@ -377,11 +382,17 @@ export function InlineReply({ thread, messages, accountId, noReply, onSent }: In
         </button>
       </div>
 
+      {(mode === "reply" || mode === "replyAll") && <TaskReplyDraft
+        key={`${accountId}:${thread.id}:${mode}`}
+        item={{ kind: "email", accountId, threadId: thread.id }}
+        editor={editor}
+        disabled={sending || autoDraftLoading}
+      />}
       {/* Editor */}
       <div className="relative">
         <EditorContent editor={editor} />
         {autoDraftLoading && (
-          <div className="absolute inset-0 flex items-center justify-center bg-bg-primary/60 backdrop-blur-[1px]">
+          <div className="absolute inset-0 flex items-center justify-center bg-bg-primary/60">
             <div className="flex items-center gap-2 text-xs text-text-secondary">
               <Loader2 size={14} className="animate-spin" />
               Generating draft...
@@ -421,6 +432,11 @@ export function InlineReply({ thread, messages, accountId, noReply, onSent }: In
                 Clear
               </button>
             </>
+          )}
+          {autoDraftOn && mode !== "forward" && (
+            <div className="px-2">
+              <AiSendNote features={["auto_draft"]} onPreview={handleRegenerateDraft} />
+            </div>
           )}
         </div>
         <button

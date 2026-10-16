@@ -22,6 +22,7 @@ import { AiTaskExtractDialog } from "@/components/tasks/AiTaskExtractDialog";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { MessageSkeleton } from "@/components/ui/Skeleton";
 import { RawMessageModal } from "./RawMessageModal";
+import { LinkedWorkRow } from "@/components/clickup/LinkedWorkRow";
 
 interface ThreadViewProps {
   thread: Thread;
@@ -378,7 +379,7 @@ export function ThreadView({ thread }: ThreadViewProps) {
   const primarySenderName = lastMessage?.from_name ?? null;
 
   return (
-    <div className="flex h-full @container relative">
+    <div data-clickup-reader className="flex h-full @container relative">
       <div className="flex flex-col flex-1 min-w-0">
         {/* Unified action bar */}
         <ActionBar
@@ -410,6 +411,9 @@ export function ThreadView({ thread }: ThreadViewProps) {
           </h1>
           <div className="text-xs text-text-tertiary mt-1">
             {messages.length} message{messages.length !== 1 ? "s" : ""} in this thread
+          </div>
+          <div className="mt-2 empty:hidden max-h-[45vh] overflow-y-auto">
+            <LinkedWorkRow item={{ kind: "email", accountId: thread.accountId, threadId: thread.id }} />
           </div>
         </div>
 
