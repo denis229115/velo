@@ -49,6 +49,11 @@ export interface TicketSendRequest {
   thenStatusId?: string;
   /** Files sent with it, in the same multipart request */
   attachments?: ReplyAttachment[];
+  /**
+   * When set, the send may use only this helpdesk connection.
+   * A reconnect, including to the same host, refuses the POST.
+   */
+  helpdesk?: { tenantId: string; generation: string };
 }
 
 export type TicketSendResult =
@@ -71,6 +76,7 @@ export type TicketSendResult =
 
 export const OFFLINE_MESSAGE = "Sending needs a connection to Freshdesk. Your draft is kept.";
 export const SAMPLE_MESSAGE = "Sample tickets can't be answered. Connect a helpdesk to send.";
+export const CONNECTION_CHANGED_MESSAGE = "The helpdesk connection changed. Nothing was sent.";
 export const UNCONFIRMED_MESSAGE =
   "Freshdesk did not answer, so Velo can't tell yet whether this went out. Velo checks the conversation instead of sending again.";
 const serverErrorMessage = (status: number) =>
@@ -200,6 +206,10 @@ export async function sendTicketResponse(request: TicketSendRequest): Promise<Ti
   if (!useUIStore.getState().isOnline) return { outcome: "unavailable", message: OFFLINE_MESSAGE };
   const current = await currentCredentials();
   if (!current) return { outcome: "unavailable", message: SAMPLE_MESSAGE };
+  const pinned = request.helpdesk ?? { tenantId: current.tenantId, generation: current.generation };
+  if (current.tenantId !== pinned.tenantId || current.generation !== pinned.generation) {
+    return { outcome: "unavailable", message: CONNECTION_CHANGED_MESSAGE };
+  }
   const { tenantId, credentials } = current;
   const { ticketId, mode } = request;
   const tooLarge = attachmentLimitProblem(request.attachments ?? []);
@@ -224,6 +234,7 @@ export async function sendTicketResponse(request: TicketSendRequest): Promise<Ti
     if (!(error instanceof FreshdeskError)) throw error;
     return { outcome: "failed", message: `Velo could not re-check the ticket before sending: ${failureMessage(error)} Nothing was sent.` };
   }
+  if (!(await samePinnedHelpdesk(pinned))) return { outcome: "unavailable", message: CONNECTION_CHANGED_MESSAGE };
   if (!fresh.complete) return { outcome: "unavailable", message: "The ticket history is incomplete. Velo cannot re-check colleague activity before sending. Nothing was sent." };
   const agentNames = new Map(agents.map((a) => [a.agentId, a.name]));
   const statusLabels = new Map(statuses.map((s) => [s.choiceId, s.label]));
@@ -243,6 +254,10 @@ export async function sendTicketResponse(request: TicketSendRequest): Promise<Ti
   const record: SendRecord = { mode, sentAfter: nowS(), fingerprint: squash(textOf(draft)).slice(0, 200), ccEmails, thenStatusId };
   if (attachments.length > 0) record.attachmentNames = attachments.map((a) => cleanAttachmentName(a.name));
   const entryId = await startJournalEntry(tenantId, ticketId, mode === "reply" ? "send_reply" : "add_note", { ...record });
+  if (!(await samePinnedHelpdesk(pinned))) {
+    await finishJournalEntry(entryId, "failed", CONNECTION_CHANGED_MESSAGE);
+    return { outcome: "unavailable", message: CONNECTION_CHANGED_MESSAGE };
+  }
   try {
     await freshdeskPost<unknown>(
       credentials,
@@ -280,6 +295,12 @@ function formFields(payload: Record<string, string | boolean | string[] | undefi
 async function sentThen(ticketId: string, thenStatusId: string | null): Promise<TicketSendResult> {
   if (thenStatusId === null) return { outcome: "sent" };
   return { outcome: "sent", status: await updateTicket(ticketId, { statusId: thenStatusId }) };
+}
+
+/** The captured connection is still the connected one, including across a same-host reconnect. */
+async function samePinnedHelpdesk(pinned: { tenantId: string; generation: string }): Promise<boolean> {
+  const current = await currentCredentials();
+  return current?.tenantId === pinned.tenantId && current.generation === pinned.generation;
 }
 
 /** Reads the ticket back so the reader and Last answered show the send; a failed read leaves it to the next sync */

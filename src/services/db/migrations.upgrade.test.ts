@@ -224,6 +224,30 @@ describe("migration v37 (ticket reply attachments)", () => {
 });
 
 
+describe("scheduled reply helpdesk generation", () => {
+  it("keeps an existing scheduled reply when the generation column is added", async () => {
+    await runMigrations();
+    const columns = await db.select<{ name: string }[]>("PRAGMA table_info(freshdesk_scheduled_replies)");
+    if (columns.some((column) => column.name === "connection_generation")) {
+      await db.execute("ALTER TABLE freshdesk_scheduled_replies DROP COLUMN connection_generation");
+      await db.execute("DELETE FROM _migrations WHERE version >= 40");
+    }
+    await db.execute(`INSERT INTO freshdesk_scheduled_replies
+      (reply_id, tenant_id, agent_id, ticket_id, body_html, send_at, baseline_started_at, created_at, updated_at)
+      VALUES ('sched-1', 'freshdesk:fixture-alpha.freshdesk.com', 'me', '1001', '<p>Keep me</p>', 1, 1, 1, 1)`);
+
+    await runMigrations();
+    await runMigrations();
+
+    expect(await db.select("SELECT version, description FROM _migrations WHERE version = 40")).toEqual([
+      { version: 40, description: "Helpdesk generation on scheduled Freshdesk replies" },
+    ]);
+    expect(await db.select("SELECT reply_id, body_html, connection_generation FROM freshdesk_scheduled_replies")).toEqual([
+      { reply_id: "sched-1", body_html: "<p>Keep me</p>", connection_generation: "" },
+    ]);
+  });
+});
+
 describe("obsolete AI preferences upgrade", () => {
   it.each([true, false])("removes the obsolete auto-summary key from existing v37 history (key present: %s)", async (present) => {
     await runMigrations();

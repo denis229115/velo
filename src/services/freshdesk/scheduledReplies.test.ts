@@ -611,6 +611,135 @@ describe("switching helpdesks", () => {
 });
 
 
+function fullConversationPages() {
+  const example = alphaTenantWithHistory.conversations![1001]![0]!;
+  for (let page = 1; page <= 10; page++) {
+    stub.respondOnce(ALPHA_HOST, "/api/v2/tickets/1001/conversations", {
+      page,
+      body: Array.from({ length: 100 }, (_, index) => ({
+        ...example,
+        id: 8_100_000_000 + page * 100 + index,
+      })),
+    });
+  }
+}
+
+/** Holds the in-flight ticket read so a reconnect can land before the send posts. */
+function holdTicketRead() {
+  const original = stub.fetch;
+  let releaseGate!: () => void;
+  let started!: () => void;
+  const waiting = new Promise<void>((resolve) => { started = resolve; });
+  const gate = new Promise<void>((resolve) => { releaseGate = resolve; });
+  let delay = true;
+  stub.fetch = async (input: string, init?: RequestInit) => {
+    const url = String(input);
+    const method = init?.method ?? "GET";
+    if (delay && method === "GET" && url.includes("/api/v2/tickets/1001")) {
+      delay = false;
+      started();
+      await gate;
+    }
+    return original(input, init);
+  };
+  return {
+    waiting,
+    release() {
+      releaseGate();
+    },
+  };
+}
+
+describe("a due reply whose ticket history is incomplete", () => {
+  it("waits and checks the ticket again instead of failing", async () => {
+    const id = await scheduleReply();
+    later(HOUR_S * 1000);
+    fullConversationPages();
+
+    await processDueScheduledReplies();
+
+    expect(posts()).toEqual([]);
+    expect(notified.filter((n) => n.title === "failed")).toEqual([]);
+    expect((await listScheduledReplies()).find((r) => r.id === id)).toMatchObject({ state: "pending", error: null });
+
+    stub.requests.length = 0;
+    await processDueScheduledReplies();
+
+    expect(posts().map((r) => new URL(r.url).pathname)).toEqual(["/api/v2/tickets/1001/reply"]);
+    expect((await listScheduledReplies()).find((r) => r.id === id)).toMatchObject({ state: "sent" });
+  });
+});
+
+describe("a scheduled reply pinned to the helpdesk it was scheduled on", () => {
+  async function scheduleWithCopy() {
+    await saveTicketDraft("1001", "reply", {
+      bodyHtml: "<p>We fixed your sign-in.</p>",
+      ccEmails: ["copied.person@example.test"],
+    });
+    await attachToTicketDraft("1001", "reply", { name: "report.csv", contentType: "text/csv", dataBase64: btoa("a,b") });
+    const scheduled = await scheduleTicketReply("1001", { sendAt: nowS() + HOUR_S });
+    if (!scheduled.ok) throw new Error(scheduled.message);
+    stub.requests.length = 0;
+    return scheduled.id;
+  }
+
+  it.each([ALPHA_HOST, BETA_HOST])(
+    "does not post a due reply after reconnecting to %s while the ticket check is in flight",
+    async (host) => {
+      const id = await scheduleWithCopy();
+      later(HOUR_S * 1000);
+      const held = holdTicketRead();
+      const sending = processDueScheduledReplies();
+      await held.waiting;
+      await connectHelpdesk({ host, apiKey: host === ALPHA_HOST ? ALPHA_KEY : BETA_KEY });
+      held.release();
+      await sending;
+
+      expect(posts()).toEqual([]);
+      if (host === ALPHA_HOST) {
+        expect(notified.filter((n) => n.title === "failed")).toEqual([]);
+        expect((await listScheduledReplies()).find((r) => r.id === id)).toMatchObject({ state: "pending" });
+        stub.requests.length = 0;
+        await processDueScheduledReplies();
+        expect(posts()).toHaveLength(1);
+        expect(new URL(posts()[0]!.url).host).toBe(ALPHA_HOST);
+        expect(posts()[0]!.body).toMatchObject({
+          body: expect.stringContaining("We fixed your sign-in."),
+          cc_emails: ["copied.person@example.test"],
+          attachments: [{ name: "report.csv" }],
+        });
+        expect((await listScheduledReplies()).find((r) => r.id === id)?.state).toBe("sent");
+      }
+    },
+  );
+
+  it.each([ALPHA_HOST, BETA_HOST])(
+    "does not post when the operator sends a held reply while reconnecting to %s",
+    async (host) => {
+      const id = await scheduleWithCopy();
+      later(60_000);
+      stub.addConversation(ALPHA_HOST, 1001, { user_id: COLLEAGUE_ID, body: "<p>I've got this one.</p>" });
+      later(HOUR_S * 1000);
+      await processDueScheduledReplies();
+      expect((await listScheduledReplies()).find((r) => r.id === id)?.state).toBe("held");
+      stub.requests.length = 0;
+
+      const held = holdTicketRead();
+      const sending = sendScheduledReplyNow(id);
+      await held.waiting;
+      await connectHelpdesk({ host, apiKey: host === ALPHA_HOST ? ALPHA_KEY : BETA_KEY });
+      held.release();
+      const message = await sending;
+
+      expect(posts()).toEqual([]);
+      expect(message).toMatch(/helpdesk connection changed/i);
+      if (host === ALPHA_HOST) {
+        expect((await listScheduledReplies()).find((r) => r.id === id)?.state).toBe("held");
+      }
+    },
+  );
+});
+
 it.each(["move", "delete", "commit"])("rolls back the entire draft transfer if scheduling fails at %s", async (phase) => {
   await saveTicketDraft("1001", "reply", { bodyHtml: "<p>Keep this draft.</p>" });
   await attachToTicketDraft("1001", "reply", { name: "report.csv", contentType: "text/csv", dataBase64: btoa("a,b") });
