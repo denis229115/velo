@@ -380,6 +380,7 @@ export async function reconcileTaskCreation(operationId: string): Promise<Create
   const helpdeskGeneration = target?.helpdesk.generation;
   const marker = markerLine(operationId);
   const since = (op.createdAt - CLOCK_SKEW_S) * 1000;
+  let complete = false;
   try {
     await assertNotWaiting(credentials.tenantId);
     for (let page = 0; page < RECONCILE_PAGES; page++) {
@@ -389,11 +390,15 @@ export async function reconcileTaskCreation(operationId: string): Promise<Create
       );
       const found = tasks.find((t) => [t.markdown_description, t.description, t.text_content].some((d) => d?.includes(marker)));
       if (found) return completeCreation(op, found, credentials, helpdeskGeneration);
-      if (last_page !== false || tasks.length === 0) break;
+      if (last_page === true) {
+        complete = true;
+        break;
+      }
     }
   } catch {
     return { outcome: "unconfirmed", operationId, message: STILL_UNCONFIRMED_MESSAGE };
   }
+  if (!complete) return { outcome: "unconfirmed", operationId, message: STILL_UNCONFIRMED_MESSAGE };
   const message = "ClickUp has no task from that attempt, so none was created. Create it again when ready.";
   await finishTaskOperation(operationId, "failed", { errorMessage: message });
   return { outcome: "failed", message };

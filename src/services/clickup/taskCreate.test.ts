@@ -274,3 +274,20 @@ describe("offline", () => {
     expect(await getPendingTaskCreations(TICKET)).toEqual([]);
   });
 });
+
+
+it("keeps task creation Unconfirmed after bounded discovery with more pages remaining", async () => {
+  clickup.respondOnce(`/list/${FOLLOW_UPS}/task`, { method: "POST", apply: true, networkError: true });
+  const first = await createTaskFromItem(EMAIL, input());
+  if (first.outcome !== "unconfirmed") throw new Error(first.outcome);
+  for (let page = 0; page < 5; page++) {
+    clickup.respondOnce(`/list/${FOLLOW_UPS}/task`, { method: "GET", body: { tasks: [{ id: `unrelated-${page}` }], last_page: false } });
+  }
+  expect(await reconcileTaskCreation(first.operationId)).toMatchObject({ outcome: "unconfirmed" });
+  expect(await getPendingTaskCreations(EMAIL)).toHaveLength(1);
+  expect(await createTaskFromItem(EMAIL, input())).toMatchObject({ outcome: "unconfirmed" });
+  expect(writes()).toEqual([`POST /list/${FOLLOW_UPS}/task`]);
+  // Once the actual marker is visible, positive evidence settles it.
+  expect(await reconcileTaskCreation(first.operationId)).toMatchObject({ outcome: "created" });
+  expect(writes()).toEqual([`POST /list/${FOLLOW_UPS}/task`]);
+});
