@@ -24,7 +24,6 @@ export function ThreadSummary({ threadId, accountId, messages }: ThreadSummaryPr
   const [failed, setFailed] = useState(false);
   const [notSent, setNotSent] = useState<string | null>(null);
   const checkedRef = useRef(false);
-  const available = readiness?.status === "ready";
 
   useEffect(() => {
     if (checkedRef.current) return;
@@ -54,12 +53,6 @@ export function ThreadSummary({ threadId, accountId, messages }: ThreadSummaryPr
       setLoading(false);
     }
   }, [threadId, accountId, messages]);
-
-  // Auto-load summary when available
-  useEffect(() => {
-    if (!available || messages.length < 2 || summary !== null || failed || loadingRef.current) return;
-    loadSummary();
-  }, [available, messages.length, summary, failed, loadSummary]);
 
   const handleRefresh = useCallback(() => loadSummary(true), [loadSummary]);
 
@@ -99,6 +92,15 @@ export function ThreadSummary({ threadId, accountId, messages }: ThreadSummaryPr
       </button>
       {!collapsed && (
         <div className="mt-2 text-sm text-text-secondary">
+          {!summary && !loading && (
+            <button
+              type="button"
+              onClick={() => loadSummary()}
+              className="text-xs text-accent hover:underline"
+            >
+              Summarize
+            </button>
+          )}
           {loading && !summary && (
             <div className="flex items-center gap-2 text-text-tertiary">
               <div className="w-3 h-3 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />
