@@ -1,4 +1,5 @@
 import type { CachedTicket } from "@/services/db/freshdeskTickets";
+import { uniqueValidAddresses } from "./emailAddress";
 import { FreshdeskError, freshdeskGet, type HelpdeskCredentials } from "./client";
 
 /** Freshdesk caps a list page at 100 tickets. */
@@ -23,6 +24,9 @@ function seconds(iso: unknown): number {
   return Math.floor(ms / 1000);
 }
 
+/** A CC-style list from the ticket; null when the field is absent. Entries that are not addresses are dropped. */
+const addressList = (v: unknown): string[] | null => (Array.isArray(v) ? uniqueValidAddresses(v) : null);
+
 /** Decodes one ticket from /tickets, /tickets/:id or /search/tickets. */
 export function decodeTicket(raw: unknown, fetchedOnDemand = false): CachedTicket {
   if (!raw || typeof raw !== "object") bad("ticket");
@@ -41,6 +45,9 @@ export function decodeTicket(raw: unknown, fetchedOnDemand = false): CachedTicke
     groupId: idOrNull(t.group_id),
     companyId: idOrNull(t.company_id),
     tags: Array.isArray(t.tags) ? t.tags.filter((tag): tag is string => typeof tag === "string") : [],
+    ccEmails: addressList(t.cc_emails),
+    replyCcEmails: addressList(t.reply_cc_emails),
+    fwdEmails: addressList(t.fwd_emails),
     dueBy: typeof t.due_by === "string" && !Number.isNaN(Date.parse(t.due_by)) ? seconds(t.due_by) : null,
     createdAt: seconds(t.created_at),
     updatedAt: seconds(t.updated_at),

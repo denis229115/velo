@@ -46,6 +46,7 @@ const FRESHDESK_TENANT_TABLES = [
   "freshdesk_view_selection",
   "freshdesk_operation_journal",
   "freshdesk_ticket_drafts",
+  "freshdesk_scheduled_replies",
 ] as const;
 
 export async function getIntegrationAccount(kind: IntegrationKind): Promise<IntegrationAccount | null> {
@@ -111,6 +112,14 @@ export async function deleteFreshdeskDataExcept(keepTenantId: string): Promise<v
     for (const table of FRESHDESK_TENANT_TABLES) {
       await db.execute(`DELETE FROM ${table} WHERE tenant_id != $1`, [keepTenantId]);
     }
+    // Files belong to a draft or schedule, rather than carrying a tenant column.
+    // Remove files whose owner was just deleted, including any older orphaned files.
+    await db.execute(`DELETE FROM freshdesk_reply_attachments WHERE owner NOT IN (
+      SELECT 'draft:' || tenant_id || '|' || agent_id || '|' || ticket_id || '|' || mode
+        FROM freshdesk_ticket_drafts
+      UNION ALL
+      SELECT 'scheduled:' || reply_id FROM freshdesk_scheduled_replies
+    )`);
   });
 }
 

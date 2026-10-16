@@ -28,6 +28,8 @@ import {
 import { attachRefusal, attachmentLimitProblem, formatAttachmentSize } from "@/services/freshdesk/replyAttachments";
 import { readFileAsBase64 } from "@/utils/fileUtils";
 import { TicketAttachments } from "./TicketAttachments";
+import { isEmailAddress, splitAddressText } from "@/services/freshdesk/emailAddress";
+import { replyCcPrefill, sameAddresses } from "@/services/freshdesk/ticketCc";
 import { FreshdeskWriteReason, useFreshdeskWritable } from "./useFreshdeskWritable";
 import type { TicketHistoryView } from "@/services/freshdesk/ticketHistory";
 import { TicketAiDraft } from "./TicketAiDraft";
@@ -66,10 +68,7 @@ function toOutcome(result: TicketSendResult): Outcome {
   }
 }
 
-function parseCc(text: string): string[] {
-  return text.split(/[\s,;]+/).filter(Boolean);
-}
-const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+const parseCc = splitAddressText;
 
 /**
  * Reply to customer or Internal note on the open ticket. Text lives in a durable
@@ -126,6 +125,9 @@ function ComposerPane({
   const dirty = useRef(false);
   const ccRef = useRef("");
   ccRef.current = ccText;
+  // The ticket's CC as the Reply opened with it; a later sync does not rewrite what the operator sees
+  const prefillRef = useRef<string[]>([]);
+  if (mode === "reply" && prefillRef.current.length === 0) prefillRef.current = replyCcPrefill(ticket);
 
   const editor = useEditor({
     extensions: [
@@ -153,8 +155,8 @@ function ComposerPane({
     if (!dirty.current || !editor) return;
     dirty.current = false;
     const ccEmails = parseCc(ccRef.current);
-    // A draft holding files is kept even with no text
-    if (editor.isEmpty && ccEmails.length === 0 && attachmentsRef.current.length === 0) await discardTicketDraft(ticket.id, mode);
+    // An empty draft is discarded only when its CC is unchanged and it holds no files.
+    if (editor.isEmpty && sameAddresses(ccEmails, mode === "reply" ? prefillRef.current : []) && attachmentsRef.current.length === 0) await discardTicketDraft(ticket.id, mode);
     else await saveTicketDraft(ticket.id, mode, { bodyHtml: editor.getHTML(), ccEmails });
   }, [editor, ticket.id, mode]);
 
@@ -185,6 +187,9 @@ function ComposerPane({
         setCcText(draft.ccEmails.join(", "));
         setAttachments(draft.attachments);
         if (draft.unconfirmedEntryId !== null) setOutcome({ kind: "unconfirmed", message: UNCONFIRMED_MESSAGE });
+      } else if (mode === "reply") {
+        // No draft yet: the Reply starts with the ticket's CC. A draft, even one with no CC, keeps its own.
+        setCcText(prefillRef.current.join(", "));
       }
     })();
     return () => {
@@ -202,7 +207,7 @@ function ComposerPane({
   }, [editor, unconfirmed]);
 
   const ccEmails = parseCc(ccText);
-  const badCc = ccEmails.filter((e) => !EMAIL.test(e));
+  const badCc = ccEmails.filter((e) => !isEmailAddress(e));
   const thenStatus = doneStatuses.find((s) => s.id === thenStatusId) ?? null;
 
   /** Clears the composer once its text has left it (sent, or moved into the schedule) */
@@ -230,10 +235,13 @@ function ComposerPane({
           setAttachError(refusal);
           continue;
         }
+        const dataBase64 = await readFileAsBase64(file);
+        // A file can start the draft before typing; keep the visible CC prefill with it.
+        if (editor) await saveTicketDraft(ticket.id, mode, { bodyHtml: editor.getHTML(), ccEmails: parseCc(ccRef.current) });
         const result = await attachToTicketDraft(ticket.id, mode, {
           name: file.name,
           contentType: file.type,
-          dataBase64: await readFileAsBase64(file),
+          dataBase64,
         });
         if (result.ok) {
           kept = [...kept, result.attachment];

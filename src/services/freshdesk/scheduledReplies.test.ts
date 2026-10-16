@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { createSqliteTestDb, type SqliteTestDb } from "@/test/sqliteTestDb";
 import { createFreshdeskFetchStub } from "@/test/freshdeskFetchStub";
-import { ALPHA_HOST } from "./__fixtures__/freshdeskFixtures";
+import { ALPHA_HOST, BETA_HOST, betaTenant } from "./__fixtures__/freshdeskFixtures";
 import { COLLEAGUE_ID, FIXTURE_NOW, ME_ID } from "./__fixtures__/freshdeskTicketFixtures";
 import { alphaTenantWithHistory } from "./__fixtures__/freshdeskConversationFixtures";
 
@@ -20,6 +20,7 @@ vi.mock("@/utils/crypto", () => ({
   isEncrypted: vi.fn((v: string) => v.startsWith("enc:")),
 }));
 const ALPHA_KEY = "fixture-key-alpha-0001";
+const BETA_KEY = "fixture-key-beta-0002";
 let stub: ReturnType<typeof createFreshdeskFetchStub>;
 vi.mock("@tauri-apps/plugin-http", () => ({
   fetch: (input: string, init?: RequestInit) => stub.fetch(input, init),
@@ -82,7 +83,10 @@ beforeEach(async () => {
   invoked.length = 0;
   notified.length = 0;
   db = createSqliteTestDb();
-  stub = createFreshdeskFetchStub({ [ALPHA_HOST]: { apiKey: ALPHA_KEY, tenant: alphaTenantWithHistory } });
+  stub = createFreshdeskFetchStub({
+    [ALPHA_HOST]: { apiKey: ALPHA_KEY, tenant: alphaTenantWithHistory },
+    [BETA_HOST]: { apiKey: BETA_KEY, tenant: betaTenant },
+  });
   await runMigrations();
   useUIStore.setState({ isOnline: true });
   await connectHelpdesk({ host: ALPHA_HOST, apiKey: ALPHA_KEY });
@@ -575,3 +579,33 @@ describe("a scheduled reply with attachments (#34)", () => {
   });
 });
 
+describe("switching helpdesks", () => {
+  it("leaves no CC address of a scheduled reply behind after connecting a different helpdesk", async () => {
+    await saveTicketDraft("1001", "reply", { bodyHtml: "<p>We fixed your sign-in.</p>", ccEmails: ["copied.person@example.test"] });
+    const scheduled = await scheduleTicketReply("1001", { sendAt: nowS() + HOUR_S });
+    expect(scheduled.ok).toBe(true);
+
+    await connectHelpdesk({ host: BETA_HOST, apiKey: BETA_KEY });
+
+    const rows = await db.select("SELECT * FROM freshdesk_scheduled_replies");
+    expect(JSON.stringify(rows)).not.toContain("copied.person@example.test");
+  });
+
+  it("removes the old helpdesk's draft and scheduled files while keeping files when reconnecting the same helpdesk", async () => {
+    const file = { name: "server.log", contentType: "text/plain", dataBase64: btoa("hello") };
+    await saveTicketDraft("1001", "reply", { bodyHtml: "<p>Logs attached</p>" });
+    await attachToTicketDraft("1001", "reply", file);
+    expect((await scheduleTicketReply("1001", { sendAt: nowS() + HOUR_S })).ok).toBe(true);
+    await attachToTicketDraft("1001", "note", file);
+
+    await connectHelpdesk({ host: ALPHA_HOST, apiKey: ALPHA_KEY });
+    expect((await loadTicketDraft("1001", "note"))?.attachments).toMatchObject([{ name: "server.log" }]);
+    expect((await listScheduledReplies())[0]?.attachments).toEqual([{ name: "server.log", size: 5 }]);
+
+    await connectHelpdesk({ host: BETA_HOST, apiKey: BETA_KEY });
+    expect(await db.select("SELECT * FROM freshdesk_reply_attachments")).toEqual([]);
+    await connectHelpdesk({ host: ALPHA_HOST, apiKey: ALPHA_KEY });
+    await saveTicketDraft("1001", "note", { bodyHtml: "<p>New draft</p>" });
+    expect((await loadTicketDraft("1001", "note"))?.attachments).toEqual([]);
+  });
+});

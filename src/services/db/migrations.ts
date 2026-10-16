@@ -1169,6 +1169,15 @@ const MIGRATIONS = [
   },
   {
     version: 36,
+    description: "Freshdesk ticket CC, reply-CC and forward lists (NULL when Freshdesk gave none)",
+    sql: `
+      ALTER TABLE freshdesk_tickets ADD COLUMN cc_emails_json TEXT;
+      ALTER TABLE freshdesk_tickets ADD COLUMN reply_cc_emails_json TEXT;
+      ALTER TABLE freshdesk_tickets ADD COLUMN fwd_emails_json TEXT;
+    `,
+  },
+  {
+    version: 37,
     description: "Files attached to Freshdesk ticket drafts and scheduled replies",
     sql: `
       CREATE TABLE IF NOT EXISTS freshdesk_reply_attachments (
@@ -1244,10 +1253,17 @@ export async function runMigrations(): Promise<void> {
   `);
 
   // Get already-applied versions
-  const applied = await db.select<{ version: number }[]>(
-    "SELECT version FROM _migrations ORDER BY version",
+  const applied = await db.select<{ version: number; description: string | null }[]>(
+    "SELECT version, description FROM _migrations ORDER BY version",
   );
   const appliedVersions = new Set(applied.map((r) => r.version));
+
+  // The unreleased attachment branch used v36 before the CC migration landed.
+  // Re-run the canonical v36; v37 keeps the existing attachment table and bytes.
+  if (applied.some((r) => r.version === 36 && r.description === "Files attached to Freshdesk ticket drafts and scheduled replies")) {
+    await db.execute("DELETE FROM _migrations WHERE version = 36");
+    appliedVersions.delete(36);
+  }
 
   // Repair: if migration 18 is marked applied but tasks table is missing,
   // remove the stale record so it re-runs

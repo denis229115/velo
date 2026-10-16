@@ -14,7 +14,7 @@ import { ALPHA_HOST } from "@/services/freshdesk/__fixtures__/freshdeskFixtures"
 import {
   FIXTURE_NOW,
   COLLEAGUE_ID,
-  alphaTenantWithTickets,
+  alphaTenantWithCcTickets,
 } from "@/services/freshdesk/__fixtures__/freshdeskTicketFixtures";
 
 let db: SqliteTestDb;
@@ -122,7 +122,7 @@ beforeEach(async () => {
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(FIXTURE_NOW);
   db = createSqliteTestDb();
-  stub = createFreshdeskFetchStub({ [ALPHA_HOST]: { apiKey: ALPHA_KEY, tenant: alphaTenantWithTickets } });
+  stub = createFreshdeskFetchStub({ [ALPHA_HOST]: { apiKey: ALPHA_KEY, tenant: alphaTenantWithCcTickets } });
   await runMigrations();
   useTicketStore.setState(useTicketStore.getInitialState(), true);
   useUIStore.setState({ isOnline: true });
@@ -402,6 +402,140 @@ describe("attachments in the ticket composer (#34)", () => {
 
     expect(reply.queryByRole("button", { name: "Image" })).toBeNull();
     expect(reply.queryByTitle("Insert image")).toBeNull();
+  });
+});
+
+describe("CC prefill from the ticket", () => {
+  const ccField = (reply: ReturnType<typeof within>) => reply.getByRole("textbox", { name: "CC" }) as HTMLInputElement;
+  /** What the operator typed into the editor (ProseMirror reads the DOM change) */
+  async function typeBody(pane: ReturnType<typeof within>, text: string) {
+    const editor = pane.getByRole("textbox", { name: "Reply text" });
+    await act(async () => {
+      editor.innerHTML = `<p>${text}</p>`;
+      await Promise.resolve();
+    });
+    await pane.findByText(text);
+  }
+
+  it("keeps the prefilled CC when attaching a file before typing, including after reopening the draft", async () => {
+    await openTicket("1101");
+    let reply = await openComposer("Reply");
+    await waitFor(() => expect(ccField(reply).value).not.toBe(""));
+
+    fireEvent.change(reply.getByLabelText("Attach files"), { target: { files: [new File(["hello"], "server.log", { type: "text/plain" })] } });
+    await within(await reply.findByRole("list", { name: "Attached files" })).findByText("server.log");
+
+    expect((await loadTicketDraft("1101", "reply"))?.ccEmails).toEqual(["cc.one@example.test", "Cc.Two@example.test", "reply.only@example.test"]);
+    fireEvent.click(reply.getByRole("button", { name: "Close composer" }));
+    reply = await openComposer("Reply");
+    await within(await reply.findByRole("list", { name: "Attached files" })).findByText("server.log");
+    expect(ccField(reply).value).toBe("cc.one@example.test, Cc.Two@example.test, reply.only@example.test");
+    await typeBody(reply, "Logs attached");
+    fireEvent.click(reply.getByRole("button", { name: "Send reply" }));
+    await screen.findByText("Reply sent.");
+    expect(posts()[0]!.body).toMatchObject({
+      cc_emails: ["cc.one@example.test", "Cc.Two@example.test", "reply.only@example.test"],
+      attachments: [{ name: "server.log", size: 5 }],
+    });
+  });
+
+  it("starts the Reply with the ticket's CC and reply-CC addresses, once each, without the customer", async () => {
+    await openTicket("1101");
+
+    const reply = await openComposer("Reply");
+
+    await waitFor(() => expect(ccField(reply).value).toBe("cc.one@example.test, Cc.Two@example.test, reply.only@example.test"));
+    expect(reply.getByText(/Fixture Customer Ada/)).toBeInTheDocument();
+  });
+
+  it("starts with an empty CC for a ticket nobody is copied on", async () => {
+    await openTicket("1102");
+
+    const reply = await openComposer("Reply");
+
+    expect(ccField(reply).value).toBe("");
+  });
+
+  it("lets the operator remove and add addresses, and sends exactly the final list", async () => {
+    await openTicket("1101");
+    const reply = await openComposer("Reply");
+    await waitFor(() => expect(ccField(reply).value).not.toBe(""));
+
+    fireEvent.change(ccField(reply), { target: { value: "cc.one@example.test, Cc.Two@example.test, new.person@example.test" } });
+    await typeBody(reply, "Thanks all");
+    fireEvent.click(reply.getByRole("button", { name: "Send reply" }));
+
+    await screen.findByText("Reply sent.");
+    expect(posts()[0]!.body).toMatchObject({ cc_emails: ["cc.one@example.test", "Cc.Two@example.test", "new.person@example.test"] });
+  });
+
+  it("sends the prefilled CC when the operator only writes the reply", async () => {
+    await openTicket("1101");
+    const reply = await openComposer("Reply");
+    await waitFor(() => expect(ccField(reply).value).not.toBe(""));
+
+    await typeBody(reply, "On it");
+    fireEvent.click(reply.getByRole("button", { name: "Send reply" }));
+
+    await screen.findByText("Reply sent.");
+    expect(posts()[0]!.body).toMatchObject({ cc_emails: ["cc.one@example.test", "Cc.Two@example.test", "reply.only@example.test"] });
+  });
+
+  it("refuses an address that is not an email address and keeps Send disabled", async () => {
+    await openTicket("1101");
+    const reply = await openComposer("Reply");
+    await waitFor(() => expect(ccField(reply).value).not.toBe(""));
+
+    fireEvent.change(ccField(reply), { target: { value: "cc.one@example.test, not-an-address" } });
+    await typeBody(reply, "On it");
+
+    expect(reply.getByText("Not an email address: not-an-address")).toBeInTheDocument();
+    expect(reply.getByRole("button", { name: "Send reply" })).toBeDisabled();
+    // The autosave lands before the test ends, so the draft keeps what was typed
+    await waitFor(async () => expect((await loadTicketDraft("1101", "reply"))?.ccEmails).toEqual(["cc.one@example.test", "not-an-address"]), { timeout: 3000 });
+  });
+
+  it("remembers that the operator removed everyone, even before any text is written", async () => {
+    await openTicket("1101");
+    const reply = await openComposer("Reply");
+    await waitFor(() => expect(ccField(reply).value).not.toBe(""));
+
+    fireEvent.change(ccField(reply), { target: { value: "" } });
+
+    await waitFor(async () => expect(await loadTicketDraft("1101", "reply")).toMatchObject({ ccEmails: [] }), { timeout: 3000 });
+  });
+
+  it("keeps a restored draft's own CC instead of the ticket's", async () => {
+    await openTicket("1101");
+    await saveTicketDraft("1101", "reply", { bodyHtml: "<p>Half written</p>", ccEmails: ["mine.only@example.test"] });
+
+    const reply = await openComposer("Reply");
+
+    await reply.findByText("Half written");
+    expect(ccField(reply).value).toBe("mine.only@example.test");
+  });
+
+  it("keeps a restored draft's empty CC when the operator had removed everyone", async () => {
+    await openTicket("1101");
+    await saveTicketDraft("1101", "reply", { bodyHtml: "<p>Half written</p>", ccEmails: [] });
+
+    const reply = await openComposer("Reply");
+
+    await reply.findByText("Half written");
+    expect(ccField(reply).value).toBe("");
+  });
+
+  it("gives an internal note no CC at all", async () => {
+    await openTicket("1101");
+    await saveTicketDraft("1101", "note", { bodyHtml: "<p>Checked the logs</p>" });
+
+    const note = await openComposer("Internal note");
+
+    await note.findByText("Checked the logs");
+    expect(note.queryByRole("textbox", { name: "CC" })).not.toBeInTheDocument();
+    fireEvent.click(note.getByRole("button", { name: "Add internal note" }));
+    await screen.findByText("Internal note added.");
+    expect(posts()[0]!.body).toEqual({ body: "<p>Checked the logs</p>", private: true });
   });
 });
 
