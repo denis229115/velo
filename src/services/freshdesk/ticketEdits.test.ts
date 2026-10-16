@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { createSqliteTestDb, type SqliteTestDb } from "@/test/sqliteTestDb";
 import { createFreshdeskFetchStub } from "@/test/freshdeskFetchStub";
-import { ALPHA_HOST } from "./__fixtures__/freshdeskFixtures";
+import { ALPHA_HOST, BETA_HOST, betaTenant } from "./__fixtures__/freshdeskFixtures";
 import {
   COLLEAGUE_ID,
   FIXTURE_NOW,
@@ -26,13 +26,14 @@ vi.mock("@/utils/crypto", () => ({
   isEncrypted: vi.fn((v: string) => v.startsWith("enc:")),
 }));
 const ALPHA_KEY = "fixture-key-alpha-0001";
+const BETA_KEY = "fixture-key-beta-0002";
 let stub: ReturnType<typeof createFreshdeskFetchStub>;
 vi.mock("@tauri-apps/plugin-http", () => ({
   fetch: (input: string, init?: RequestInit) => stub.fetch(input, init),
 }));
 
 import { runMigrations } from "@/services/db/migrations";
-import { classifyStatus, connectHelpdesk } from "./connection";
+import { classifyStatus, connectHelpdesk, currentCredentials } from "./connection";
 import { getTicketList, syncTickets } from "./ticketSync";
 import { getOperationJournal, updateTicket } from "./ticketEdits";
 import { useUIStore } from "@/stores/uiStore";
@@ -47,7 +48,10 @@ beforeEach(async () => {
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(FIXTURE_NOW);
   db = createSqliteTestDb();
-  stub = createFreshdeskFetchStub({ [ALPHA_HOST]: { apiKey: ALPHA_KEY, tenant: alphaTenantWithTickets } });
+  stub = createFreshdeskFetchStub({
+    [ALPHA_HOST]: { apiKey: ALPHA_KEY, tenant: alphaTenantWithTickets },
+    [BETA_HOST]: { apiKey: BETA_KEY, tenant: betaTenant },
+  });
   await runMigrations();
   useUIStore.setState({ isOnline: true });
   await connectHelpdesk({ host: ALPHA_HOST, apiKey: ALPHA_KEY });
@@ -182,5 +186,24 @@ describe("ticket edits (remote writes)", () => {
     });
     expect(writes()).toHaveLength(1);
     expect(await getOperationJournal("1001")).toEqual([expect.objectContaining({ outcome: "unconfirmed" })]);
+  });
+
+  it("keeps an operator edit on the helpdesk connected now, and skips a change pinned to the previous connection", async () => {
+    const previous = await currentCredentials();
+    if (!previous) throw new Error("expected a connected helpdesk");
+    await connectHelpdesk({ host: BETA_HOST, apiKey: BETA_KEY });
+    stub.requests.length = 0;
+
+    const skipped = await updateTicket("1001", { statusId: "4" }, {}, { tenantId: previous.tenantId, generation: previous.generation });
+
+    expect(skipped).toMatchObject({ outcome: "unavailable", message: expect.stringMatching(/helpdesk connection changed/i) });
+    expect(writes()).toEqual([]);
+
+    const edited = await updateTicket("1001", { statusId: "3" });
+
+    expect(writes().map((r) => `${r.method} ${new URL(r.url).host}${new URL(r.url).pathname}`)).toEqual([
+      `PUT ${BETA_HOST}/api/v2/tickets/1001`,
+    ]);
+    expect(edited).toEqual({ outcome: "rejected", message: "Freshdesk could not find ticket #1001." });
   });
 });

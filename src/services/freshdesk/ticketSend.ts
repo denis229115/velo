@@ -281,7 +281,7 @@ export async function sendTicketResponse(request: TicketSendRequest): Promise<Ti
   }
   await finishJournalEntry(entryId, "confirmed", null);
   await refreshAfterSend(tenantId, credentials, ticketId);
-  return sentThen(ticketId, thenStatusId);
+  return sentThen(ticketId, thenStatusId, pinned);
 }
 
 /** A JSON payload as multipart fields (booleans as "true"/"false") */
@@ -291,10 +291,14 @@ function formFields(payload: Record<string, string | boolean | string[] | undefi
   );
 }
 
-/** The second operation of reply-and-set-status, journalled on its own */
-async function sentThen(ticketId: string, thenStatusId: string | null): Promise<TicketSendResult> {
+/** The second operation of reply-and-set-status, on the same helpdesk the send just confirmed. */
+async function sentThen(
+  ticketId: string,
+  thenStatusId: string | null,
+  helpdesk: { tenantId: string; generation: string },
+): Promise<TicketSendResult> {
   if (thenStatusId === null) return { outcome: "sent" };
-  return { outcome: "sent", status: await updateTicket(ticketId, { statusId: thenStatusId }) };
+  return { outcome: "sent", status: await updateTicket(ticketId, { statusId: thenStatusId }, {}, helpdesk) };
 }
 
 /** The captured connection is still the connected one, including across a same-host reconnect. */
@@ -331,6 +335,7 @@ export async function reconcileTicketSend(ticketId: string, entryId: number): Pr
   const current = await currentCredentials();
   if (!current) return { outcome: "unavailable", message: SAMPLE_MESSAGE };
   const { tenantId, credentials } = current;
+  const pinned = { tenantId: current.tenantId, generation: current.generation };
   const { entry, account } = await withReadSnapshot(async () => ({
     entry: (await getJournalEntries(tenantId, ticketId)).find((e) => e.entryId === entryId),
     account: await getIntegrationAccount("freshdesk"),
@@ -350,7 +355,7 @@ export async function reconcileTicketSend(ticketId: string, entryId: number): Pr
   const meId = account?.me?.agentId ?? null;
   if (fresh.conversations.some((c) => sentByThisSend(c, record, meId))) {
     await finishJournalEntry(entryId, "confirmed", null);
-    return sentThen(ticketId, record.thenStatusId);
+    return sentThen(ticketId, record.thenStatusId, pinned);
   }
   if (!fresh.complete) return { outcome: "unconfirmed", entryId, message: "The ticket history is incomplete. Velo cannot rule out this send and will not send again." };
   const what = record.mode === "note" ? "internal note" : "reply";

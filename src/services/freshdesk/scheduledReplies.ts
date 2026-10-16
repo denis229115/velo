@@ -438,7 +438,15 @@ export async function recoverInterruptedScheduledReplies(): Promise<void> {
     } else if (send.outcome === "confirmed") {
       // Sent: only the optional status may be missing
       const statusSet = journal.some((e) => e.operation === "update_ticket" && e.entryId > send.entryId && e.outcome === "confirmed");
-      const status = reply.thenStatusId !== null && !statusSet ? await updateTicket(reply.ticketId, { statusId: reply.thenStatusId }) : undefined;
+      const status =
+        reply.thenStatusId !== null && !statusSet
+          ? await updateTicket(
+              reply.ticketId,
+              { statusId: reply.thenStatusId },
+              {},
+              { tenantId: reply.tenantId, generation: reply.connectionGeneration },
+            )
+          : undefined;
       await settle(reply, "sending", reply.attempts, { outcome: "sent", ...(status && { status }) });
     } else {
       if (send.outcome === "pending") await finishJournalEntry(send.entryId, "unconfirmed", UNCONFIRMED_MESSAGE);
