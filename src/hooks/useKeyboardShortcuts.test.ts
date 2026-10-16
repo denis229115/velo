@@ -77,6 +77,31 @@ describe("useKeyboardShortcuts", () => {
     shortcutState.keyMap = DEFAULT_TEST_KEYMAP;
   });
 
+  it("lets mail shortcuts through the hidden-pane reader and blocks other dialogs", () => {
+    renderHook(() => useKeyboardShortcuts());
+    const listener = vi.fn();
+    window.addEventListener("velo-toggle-ask-inbox", listener);
+    const reader = document.createElement("div");
+    const other = document.createElement("div");
+    reader.setAttribute("role", "dialog");
+    reader.setAttribute("data-mail-reader", "");
+    other.setAttribute("role", "dialog");
+    document.body.appendChild(reader);
+
+    try {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "i", bubbles: true }));
+      expect(listener).toHaveBeenCalledTimes(1);
+
+      document.body.appendChild(other);
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "i", bubbles: true }));
+      expect(listener).toHaveBeenCalledTimes(1);
+    } finally {
+      reader.remove();
+      other.remove();
+      window.removeEventListener("velo-toggle-ask-inbox", listener);
+    }
+  });
+
   it("dispatches velo-toggle-ask-inbox when 'i' is pressed", () => {
     renderHook(() => useKeyboardShortcuts());
 
