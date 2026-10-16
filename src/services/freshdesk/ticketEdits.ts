@@ -95,24 +95,46 @@ function rejectionMessage(error: FreshdeskError, ticketId: string): string {
   }
 }
 
+/** A change that belonged to a send whose helpdesk has since been replaced. */
+const CONNECTION_CHANGED_MESSAGE = "The helpdesk connection changed.";
+
+function sameHelpdesk(
+  current: { tenantId: string; generation: string },
+  helpdesk: { tenantId: string; generation: string },
+): boolean {
+  return current.tenantId === helpdesk.tenantId && current.generation === helpdesk.generation;
+}
+
 /**
  * Changes a ticket's status, priority or assignee in Freshdesk (a remote write,
  * journalled), then updates the local copy with what Freshdesk returns. Nothing
  * is written locally unless Freshdesk confirms, so a rejection needs no undo here.
  * `requiredFields` carries values the operator gave after a `needs_fields` result.
+ * `helpdesk`, when set, is the connection a send just confirmed on: a reconnect,
+ * including to the same host, skips the write. An operator edit omits it and uses
+ * the helpdesk connected now.
  */
 export async function updateTicket(
   ticketId: string,
   changes: TicketChanges,
   requiredFields: Record<string, string> = {},
+  helpdesk?: { tenantId: string; generation: string },
 ): Promise<TicketEditResult> {
   if (!useUIStore.getState().isOnline) return { outcome: "unavailable", message: OFFLINE_MESSAGE };
   const current = await currentCredentials();
   if (!current) return { outcome: "unavailable", message: SAMPLE_MESSAGE };
+  if (helpdesk && !sameHelpdesk(current, helpdesk)) return { outcome: "unavailable", message: CONNECTION_CHANGED_MESSAGE };
   const { tenantId, credentials } = current;
 
   const payload = payloadFor(changes, requiredFields);
   const entryId = await startJournalEntry(tenantId, ticketId, "update_ticket", payload);
+  if (helpdesk) {
+    const pinned = await currentCredentials();
+    if (!pinned || !sameHelpdesk(pinned, helpdesk)) {
+      await finishJournalEntry(entryId, "failed", CONNECTION_CHANGED_MESSAGE);
+      return { outcome: "unavailable", message: CONNECTION_CHANGED_MESSAGE };
+    }
+  }
   const path = `/tickets/${encodeURIComponent(ticketId)}`;
   try {
     const raw = await freshdeskPut<unknown>(credentials, path, payload);

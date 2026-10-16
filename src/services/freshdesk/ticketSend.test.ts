@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { createSqliteTestDb, type SqliteTestDb } from "@/test/sqliteTestDb";
 import { createFreshdeskFetchStub } from "@/test/freshdeskFetchStub";
-import { ALPHA_HOST } from "./__fixtures__/freshdeskFixtures";
+import { ALPHA_HOST, BETA_HOST, betaTenant } from "./__fixtures__/freshdeskFixtures";
 import { COLLEAGUE_ID, FIXTURE_NOW, ME_ID } from "./__fixtures__/freshdeskTicketFixtures";
 import { alphaTenantWithHistory } from "./__fixtures__/freshdeskConversationFixtures";
 
@@ -20,6 +20,7 @@ vi.mock("@/utils/crypto", () => ({
   isEncrypted: vi.fn((v: string) => v.startsWith("enc:")),
 }));
 const ALPHA_KEY = "fixture-key-alpha-0001";
+const BETA_KEY = "fixture-key-beta-0002";
 let stub: ReturnType<typeof createFreshdeskFetchStub>;
 vi.mock("@tauri-apps/plugin-http", () => ({
   fetch: (input: string, init?: RequestInit) => stub.fetch(input, init),
@@ -54,7 +55,10 @@ beforeEach(async () => {
   vi.setSystemTime(FIXTURE_NOW);
   invoked.length = 0;
   db = createSqliteTestDb();
-  stub = createFreshdeskFetchStub({ [ALPHA_HOST]: { apiKey: ALPHA_KEY, tenant: alphaTenantWithHistory } });
+  stub = createFreshdeskFetchStub({
+    [ALPHA_HOST]: { apiKey: ALPHA_KEY, tenant: alphaTenantWithHistory },
+    [BETA_HOST]: { apiKey: BETA_KEY, tenant: betaTenant },
+  });
   await runMigrations();
   useUIStore.setState({ isOnline: true });
   await connectHelpdesk({ host: ALPHA_HOST, apiKey: ALPHA_KEY });
@@ -340,6 +344,112 @@ describe("reply and set status", () => {
     expect(result).toMatchObject({ outcome: "failed" });
     expect(writes().map((r) => r.method)).toEqual(["POST"]);
   });
+
+  /** Holds the ticket read that follows a confirmed reply, so a reconnect can land before the status change. */
+  function holdRefreshAfterReply() {
+    const original = stub.fetch;
+    let releaseGate!: () => void;
+    let started!: () => void;
+    const waiting = new Promise<void>((resolve) => { started = resolve; });
+    const gate = new Promise<void>((resolve) => { releaseGate = resolve; });
+    let posted = false;
+    let held = false;
+    stub.fetch = async (input: string, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+      if (method === "POST" && url.includes("/api/v2/tickets/1001/reply")) posted = true;
+      if (!held && posted && method === "GET" && url.includes("/api/v2/tickets/1001") && !url.includes("/conversations")) {
+        held = true;
+        started();
+        await gate;
+      }
+      return original(input, init);
+    };
+    return {
+      waiting,
+      release() {
+        releaseGate();
+      },
+    };
+  }
+
+  it.each([ALPHA_HOST, BETA_HOST])(
+    "leaves the reply sent and does not change the status on %s connected after the reply",
+    async (host) => {
+      const baseline = await captureStalenessBaseline("1001");
+      const held = holdRefreshAfterReply();
+      const sending = sendTicketResponse({
+        ticketId: "1001",
+        mode: "reply",
+        bodyHtml: "<p>Done.</p>",
+        baseline,
+        thenStatusId: "4",
+      });
+      await held.waiting;
+      await connectHelpdesk({ host, apiKey: host === ALPHA_HOST ? ALPHA_KEY : BETA_KEY });
+      held.release();
+
+      const result = await sending;
+
+      expect(writes().map((r) => `${r.method} ${new URL(r.url).host}${new URL(r.url).pathname}`)).toEqual([
+        `POST ${ALPHA_HOST}/api/v2/tickets/1001/reply`,
+      ]);
+      expect(result).toMatchObject({
+        outcome: "sent",
+        status: { outcome: "unavailable", message: expect.stringMatching(/helpdesk connection changed/i) },
+      });
+      if (host === ALPHA_HOST) {
+        expect((await getOperationJournal("1001")).map((e) => [e.operation, e.outcome])).toEqual([["send_reply", "confirmed"]]);
+      }
+    },
+  );
+
+  it.each([ALPHA_HOST, BETA_HOST])(
+    "does not change the status on %s connected while reconciliation confirms the reply",
+    async (host) => {
+      const baseline = await captureStalenessBaseline("1001");
+      stub.respondOnce(ALPHA_HOST, "/api/v2/tickets/1001/reply", { method: "POST", networkError: true, apply: true });
+      const sent = await sendTicketResponse({
+        ticketId: "1001",
+        mode: "reply",
+        bodyHtml: "<p>Done.</p>",
+        baseline,
+        thenStatusId: "4",
+      });
+      expect(sent).toMatchObject({ outcome: "unconfirmed" });
+      stub.requests.length = 0;
+
+      const original = stub.fetch;
+      let releaseGate!: () => void;
+      let started!: () => void;
+      const waiting = new Promise<void>((resolve) => { started = resolve; });
+      const gate = new Promise<void>((resolve) => { releaseGate = resolve; });
+      let held = false;
+      stub.fetch = async (input: string, init?: RequestInit) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+        if (!held && method === "GET" && url.includes("/api/v2/tickets/1001") && !url.includes("/conversations")) {
+          held = true;
+          started();
+          await gate;
+        }
+        return original(input, init);
+      };
+      const reconciling = reconcileTicketSend("1001", (sent as { entryId: number }).entryId);
+      await waiting;
+      await connectHelpdesk({ host, apiKey: host === ALPHA_HOST ? ALPHA_KEY : BETA_KEY });
+      releaseGate();
+
+      const result = await reconciling;
+
+      expect(posts()).toEqual([]);
+      expect(writes().filter((r) => r.method === "PUT")).toEqual([]);
+      expect(result).toMatchObject({
+        outcome: "sent",
+        status: { outcome: "unavailable", message: expect.stringMatching(/helpdesk connection changed/i) },
+      });
+    },
+  );
 });
 
 describe("offline", () => {

@@ -41,7 +41,7 @@ vi.mock("@/services/notifications/notificationManager", () => ({
 
 import { runMigrations } from "@/services/db/migrations";
 import { moveScheduledReply } from "@/services/db/freshdeskScheduledReplies";
-import { startJournalEntry } from "@/services/db/freshdeskJournal";
+import { finishJournalEntry, startJournalEntry } from "@/services/db/freshdeskJournal";
 import { classifyStatus, connectHelpdesk, currentTenantId } from "./connection";
 import { syncTickets } from "./ticketSync";
 import { getOperationJournal } from "./ticketEdits";
@@ -517,6 +517,54 @@ describe("a scheduled reply interrupted by a crash or quit while sending", () =>
     expect(posts()).toEqual([]);
     expect((await listScheduledReplies()).find((r) => r.id === id)).toMatchObject({ state: "sent" });
   });
+
+  /** The reply was confirmed on this helpdesk, then Velo stopped before the status change. */
+  async function interruptedAfterSend() {
+    const id = await scheduleReply({ thenStatusId: "4" });
+    later(HOUR_S * 1000);
+    const claimedAt = nowS();
+    await moveScheduledReply(id, ["pending"], "sending", { claimedAt, attempts: 1 });
+    const entryId = await startJournalEntry(await currentTenantId(), "1001", "send_reply", {
+      mode: "reply",
+      sentAfter: claimedAt,
+      fingerprint: "Wefixedyoursign-in.",
+      ccEmails: [],
+      thenStatusId: "4",
+    });
+    await finishJournalEntry(entryId, "confirmed", null);
+    stub.requests.length = 0;
+    return id;
+  }
+
+  it("sets the status when recovery still has the helpdesk the reply was sent on", async () => {
+    const id = await interruptedAfterSend();
+
+    await recoverInterruptedScheduledReplies();
+
+    expect(writes()).toEqual([
+      expect.objectContaining({ method: "PUT", url: `https://${ALPHA_HOST}/api/v2/tickets/1001`, body: { status: 4 } }),
+    ]);
+    expect((await listScheduledReplies()).find((r) => r.id === id)).toMatchObject({ state: "sent", statusProblem: null });
+  });
+
+  it.each([ALPHA_HOST, BETA_HOST])(
+    "does not change the status on %s when recovery runs after a reconnect",
+    async (host) => {
+      const id = await interruptedAfterSend();
+      await connectHelpdesk({ host, apiKey: host === ALPHA_HOST ? ALPHA_KEY : BETA_KEY });
+      stub.requests.length = 0;
+
+      await recoverInterruptedScheduledReplies();
+
+      expect(writes().filter((r) => r.method === "PUT")).toEqual([]);
+      if (host === ALPHA_HOST) {
+        expect((await listScheduledReplies()).find((r) => r.id === id)).toMatchObject({
+          state: "sent",
+          statusProblem: expect.stringMatching(/helpdesk connection changed/i),
+        });
+      }
+    },
+  );
 });
 
 describe("the operator checking an Unconfirmed scheduled reply", () => {
@@ -622,6 +670,34 @@ function fullConversationPages() {
       })),
     });
   }
+}
+
+/** Holds the ticket read that follows a confirmed reply, so a reconnect can land before the status change. */
+function holdRefreshAfterReply() {
+  const original = stub.fetch;
+  let releaseGate!: () => void;
+  let started!: () => void;
+  const waiting = new Promise<void>((resolve) => { started = resolve; });
+  const gate = new Promise<void>((resolve) => { releaseGate = resolve; });
+  let posted = false;
+  let held = false;
+  stub.fetch = async (input: string, init?: RequestInit) => {
+    const url = String(input);
+    const method = init?.method ?? "GET";
+    if (method === "POST" && url.includes("/api/v2/tickets/1001/reply")) posted = true;
+    if (!held && posted && method === "GET" && url.includes("/api/v2/tickets/1001") && !url.includes("/conversations")) {
+      held = true;
+      started();
+      await gate;
+    }
+    return original(input, init);
+  };
+  return {
+    waiting,
+    release() {
+      releaseGate();
+    },
+  };
 }
 
 /** Holds the in-flight ticket read so a reconnect can land before the send posts. */
@@ -735,6 +811,35 @@ describe("a scheduled reply pinned to the helpdesk it was scheduled on", () => {
       expect(message).toMatch(/helpdesk connection changed/i);
       if (host === ALPHA_HOST) {
         expect((await listScheduledReplies()).find((r) => r.id === id)?.state).toBe("held");
+      }
+    },
+  );
+
+  it.each([ALPHA_HOST, BETA_HOST])(
+    "does not change the status on %s when that helpdesk is connected after the reply was sent",
+    async (host) => {
+      const id = await scheduleReply({ thenStatusId: "4" });
+      later(HOUR_S * 1000);
+      const held = holdRefreshAfterReply();
+      const sending = processDueScheduledReplies();
+      await held.waiting;
+      await connectHelpdesk({ host, apiKey: host === ALPHA_HOST ? ALPHA_KEY : BETA_KEY });
+      held.release();
+      await sending;
+
+      expect(writes().map((r) => `${r.method} ${new URL(r.url).host}${new URL(r.url).pathname}`)).toEqual([
+        `POST ${ALPHA_HOST}/api/v2/tickets/1001/reply`,
+      ]);
+      expect(String((posts()[0]!.body as { body: string }).body)).toContain("We fixed your sign-in.");
+      if (host === ALPHA_HOST) {
+        expect((await listScheduledReplies()).find((r) => r.id === id)).toMatchObject({
+          state: "sent",
+          statusProblem: expect.stringMatching(/helpdesk connection changed/i),
+        });
+        expect((await getOperationJournal("1001")).map((e) => [e.operation, e.outcome])).toEqual([["send_reply", "confirmed"]]);
+        stub.requests.length = 0;
+        await processDueScheduledReplies();
+        expect(writes()).toEqual([]);
       }
     },
   );
