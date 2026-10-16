@@ -24,6 +24,8 @@ export interface StoredScheduledReply {
   baselineStartedAt: number;
   baselineAssignee: string | null;
   baselineStatus: string | null;
+  /** Helpdesk connection generation this reply is pinned to. Empty on rows scheduled before generations were stored. */
+  connectionGeneration: string;
   state: ScheduledReplyState;
   holdReasons: string[];
   /** The journal entry of a send still Unconfirmed */
@@ -53,6 +55,7 @@ interface Row {
   baseline_started_at: number;
   baseline_assignee: string | null;
   baseline_status: string | null;
+  connection_generation: string;
   state: ScheduledReplyState;
   hold_reasons_json: string;
   journal_entry_id: number | null;
@@ -91,6 +94,7 @@ function fromRow(row: Row): StoredScheduledReply {
     baselineStartedAt: row.baseline_started_at,
     baselineAssignee: row.baseline_assignee,
     baselineStatus: row.baseline_status,
+    connectionGeneration: row.connection_generation,
     state: row.state,
     holdReasons: stringList(row.hold_reasons_json),
     journalEntryId: row.journal_entry_id,
@@ -118,6 +122,7 @@ export type NewScheduledReply = Pick<
   | "baselineStartedAt"
   | "baselineAssignee"
   | "baselineStatus"
+  | "connectionGeneration"
 >;
 
 export async function insertScheduledReply(reply: NewScheduledReply): Promise<string> {
@@ -127,8 +132,8 @@ export async function insertScheduledReply(reply: NewScheduledReply): Promise<st
   await db.execute(
     `INSERT INTO freshdesk_scheduled_replies
        (reply_id, tenant_id, agent_id, ticket_id, subject, recipient, body_html, cc_json, send_at, then_status_id,
-        baseline_started_at, baseline_assignee, baseline_status, state, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'pending', $14, $14)`,
+        baseline_started_at, baseline_assignee, baseline_status, connection_generation, state, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'pending', $15, $15)`,
     [
       id,
       reply.tenantId,
@@ -143,6 +148,7 @@ export async function insertScheduledReply(reply: NewScheduledReply): Promise<st
       reply.baselineStartedAt,
       reply.baselineAssignee,
       reply.baselineStatus,
+      reply.connectionGeneration,
       now,
     ],
   );
@@ -244,6 +250,24 @@ export async function moveScheduledReply(
     `UPDATE freshdesk_scheduled_replies SET state = $1, updated_at = $2${assignments}
      WHERE reply_id = $${idParam} AND state IN (${fromParams})`,
     params,
+  );
+  return result.rowsAffected > 0;
+}
+
+/**
+ * Pins a still-editable reply to a new connection generation of the same helpdesk.
+ * True when this call stored `generation`. A reply already on that generation, or no longer in `from`, is left alone.
+ */
+export async function rememberScheduledReplyGeneration(
+  replyId: string,
+  from: ScheduledReplyState[],
+  generation: string,
+): Promise<boolean> {
+  const db = await getDb();
+  const result = await db.execute(
+    `UPDATE freshdesk_scheduled_replies SET connection_generation = $1, updated_at = $2
+     WHERE reply_id = $3 AND connection_generation != $1 AND state IN (${from.map((_, i) => `$${i + 4}`).join(", ")})`,
+    [generation, nowSeconds(), replyId, ...from],
   );
   return result.rowsAffected > 0;
 }

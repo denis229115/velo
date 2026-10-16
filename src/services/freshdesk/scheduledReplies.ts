@@ -18,6 +18,7 @@ import {
   getUnconfirmedRepliesToCheck,
   insertScheduledReply,
   moveScheduledReply,
+  rememberScheduledReplyGeneration,
   type ScheduledReplyState,
   type StoredScheduledReply,
 } from "@/services/db/freshdeskScheduledReplies";
@@ -33,6 +34,7 @@ import {
   moveStoredAttachments,
 } from "@/services/db/freshdeskReplyAttachments";
 import {
+  CONNECTION_CHANGED_MESSAGE,
   OFFLINE_MESSAGE,
   SAMPLE_MESSAGE,
   UNCONFIRMED_MESSAGE,
@@ -134,6 +136,7 @@ export async function scheduleTicketReply(
       baselineStartedAt: draft.baseline.startedAt,
       baselineAssignee: draft.baseline.assigneeId,
       baselineStatus: ticket?.statusId ?? null,
+      connectionGeneration: account?.generation ?? "",
     });
     const key = { tenantId, agentId: account?.me?.agentId ?? "", ticketId, mode: "reply" as const };
     await moveStoredAttachments(draftAttachmentOwner(key), scheduledOwner(id));
@@ -241,17 +244,33 @@ async function settle(reply: StoredScheduledReply, from: ScheduledReplyState, at
       else await failedAttempt(reply, attemptsMade, result.message, result.retryAfterSeconds);
       return;
     case "unavailable":
-      if (result.message === OFFLINE_MESSAGE) {
-        // Went offline meanwhile: waits without using up an attempt
-        await moveScheduledReply(reply.replyId, [from], from === "unconfirmed" ? "unconfirmed" : "pending", { attempts: reply.attempts });
-      } else {
-        await failFinally(reply, [from], result.message);
-      }
+      // Offline, an incomplete ticket check, or a replaced helpdesk: nothing was sent.
+      // Wait and check again. This is not a rejection, so it does not become Failed.
+      await moveScheduledReply(reply.replyId, [from], from === "unconfirmed" ? "unconfirmed" : "pending", { attempts: reply.attempts });
       return;
   }
 }
 
+/**
+ * The connection this attempt may send on. A same-helpdesk reconnect that has already
+ * finished is stored on the reply first. A different helpdesk is never adopted.
+ */
+async function pinForSend(
+  reply: StoredScheduledReply,
+  from: ScheduledReplyState[],
+): Promise<{ tenantId: string; generation: string } | "disconnected" | null> {
+  const current = await currentCredentials();
+  if (!current) return "disconnected";
+  if (current.tenantId !== reply.tenantId) return null;
+  if (current.generation !== reply.connectionGeneration) {
+    if (!(await rememberScheduledReplyGeneration(reply.replyId, from, current.generation))) return null;
+  }
+  return { tenantId: current.tenantId, generation: current.generation };
+}
+
 async function sendDue(reply: StoredScheduledReply): Promise<void> {
+  const pin = await pinForSend(reply, ["pending"]);
+  if (!pin || pin === "disconnected") return;
   const attemptsMade = reply.attempts + 1;
   if (!(await moveScheduledReply(reply.replyId, ["pending"], "sending", { claimedAt: nowS(), attempts: attemptsMade }))) return;
   const result = await sendTicketResponse({
@@ -262,6 +281,7 @@ async function sendDue(reply: StoredScheduledReply): Promise<void> {
     baseline: baselineOf(reply),
     ...(reply.thenStatusId !== null && { thenStatusId: reply.thenStatusId }),
     ...(await filesOf(reply)),
+    helpdesk: pin,
   });
   await settle(reply, "sending", attemptsMade, result);
 }
@@ -349,6 +369,9 @@ export async function sendScheduledReplyNow(id: string): Promise<string | null> 
     return "This reply is no longer held or failed, so there is nothing to send.";
   }
   const from = reply.state;
+  const pin = await pinForSend(reply, [from]);
+  if (pin === "disconnected") return SAMPLE_MESSAGE;
+  if (!pin) return CONNECTION_CHANGED_MESSAGE;
   const attemptsMade = reply.attempts + 1;
   if (!(await moveScheduledReply(id, [from], "sending", { claimedAt: nowS(), attempts: attemptsMade }))) {
     return "This reply is already being sent.";
@@ -361,6 +384,7 @@ export async function sendScheduledReplyNow(id: string): Promise<string | null> 
     baseline: baselineOf(reply),
     ...(reply.thenStatusId !== null && { thenStatusId: reply.thenStatusId }),
     ...(await filesOf(reply)),
+    helpdesk: pin,
   });
   announceScheduledRepliesChanged();
   switch (result.outcome) {

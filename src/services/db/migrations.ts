@@ -1205,6 +1205,11 @@ const MIGRATIONS = [
     description: "Freshdesk connection generations",
     sql: `ALTER TABLE integration_accounts ADD COLUMN connection_generation TEXT NOT NULL DEFAULT '';`,
   },
+  {
+    version: 40,
+    description: "Helpdesk generation on scheduled Freshdesk replies",
+    sql: `ALTER TABLE freshdesk_scheduled_replies ADD COLUMN connection_generation TEXT NOT NULL DEFAULT '';`,
+  },
 ];
 
 /**
