@@ -57,13 +57,30 @@ import {
 import { getAccount } from "../db/accounts";
 import { getGmailClient } from "./tokenManager";
 import { initialSync, deltaSync } from "./sync";
+import { imapInitialSync } from "../imap/imapSync";
+import { hasCalendarSupport, getCalendarProvider } from "../calendar/providerFactory";
 
 const mockGetAccount = vi.mocked(getAccount);
 const mockGetGmailClient = vi.mocked(getGmailClient);
 const mockInitialSync = vi.mocked(initialSync);
 const mockDeltaSync = vi.mocked(deltaSync);
+const mockImapInitialSync = vi.mocked(imapInitialSync);
+const mockHasCalendarSupport = vi.mocked(hasCalendarSupport);
+const mockGetCalendarProvider = vi.mocked(getCalendarProvider);
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+function makeImapAccount(id: string) {
+  return {
+    ...makeGmailAccount(id),
+    email: `${id}@example.com`,
+    provider: "imap" as const,
+    history_id: null,
+    auth_method: "password",
+    calendar_provider: "caldav",
+    caldav_url: "https://cloud.example.com/remote.php/dav",
+  };
+}
 
 function makeGmailAccount(id: string, historyId: string | null = null) {
   return {
@@ -103,6 +120,8 @@ describe("syncManager", () => {
     );
     mockInitialSync.mockResolvedValue();
     mockDeltaSync.mockResolvedValue();
+    mockImapInitialSync.mockResolvedValue({ messages: [], threads: [] } as never);
+    mockHasCalendarSupport.mockResolvedValue(false);
   });
 
   afterEach(() => {
@@ -258,6 +277,35 @@ describe("syncManager", () => {
       await triggerSync(["a1", "a2"]);
 
       expect(mockDeltaSync).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe("calendar sync alongside IMAP", () => {
+    it("starts listCalendars while imapInitialSync is still in flight", async () => {
+      mockGetAccount.mockResolvedValue(makeImapAccount("imap-1"));
+      mockHasCalendarSupport.mockResolvedValue(true);
+
+      let releaseImap = () => {};
+      const imapBarrier = new Promise<void>((resolve) => {
+        releaseImap = resolve;
+      });
+      mockImapInitialSync.mockImplementation(() => imapBarrier as never);
+
+      const listCalendars = vi.fn().mockResolvedValue([]);
+      mockGetCalendarProvider.mockResolvedValue({
+        type: "caldav",
+        listCalendars,
+      } as never);
+
+      const syncing = syncAccount("imap-1");
+      try {
+        await wait(50);
+        expect(mockImapInitialSync).toHaveBeenCalled();
+        expect(listCalendars).toHaveBeenCalled();
+      } finally {
+        releaseImap();
+        await syncing;
+      }
     });
   });
 

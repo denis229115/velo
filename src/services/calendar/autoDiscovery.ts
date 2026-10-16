@@ -1,3 +1,5 @@
+import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
+
 interface CalDavPreset {
   name: string;
   domains: string[];
@@ -94,7 +96,7 @@ export async function discoverCalDavSettings(email: string): Promise<CalDavDisco
 
 async function tryWellKnownDiscovery(domain: string): Promise<string | null> {
   try {
-    const response = await fetch(`https://${domain}/.well-known/caldav`, {
+    const response = await tauriFetch(`https://${domain}/.well-known/caldav`, {
       method: "GET",
       redirect: "manual",
     });
@@ -123,7 +125,7 @@ async function tryWellKnownDiscovery(domain: string): Promise<string | null> {
 
 async function tryNextcloudDiscovery(domain: string): Promise<string | null> {
   try {
-    const response = await fetch(`https://${domain}/remote.php/dav/`, {
+    const response = await tauriFetch(`https://${domain}/remote.php/dav/`, {
       method: "OPTIONS",
     });
     if (response.ok || response.status === 401) {
@@ -151,6 +153,7 @@ export async function testCalDavConnection(
       credentials: { username, password },
       authMethod: "Basic",
       defaultAccountType: "caldav",
+      fetch: tauriFetch,
     });
 
     await client.login();
