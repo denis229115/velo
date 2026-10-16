@@ -336,7 +336,7 @@ export async function createTaskFromItem(item: LinkedItem, input: NewTaskInput):
     created = await clickupWrite<ApiTask>(credentials.token, "POST", `/list/${encodeURIComponent(input.listId)}/task`, request);
   } catch (err) {
     if (!(err instanceof ClickUpError)) throw err;
-    if (err.kind === "network") {
+    if (err.kind === "network" || (err.status ?? 0) >= 500) {
       await finishTaskOperation(operationId, "unconfirmed", { errorMessage: CREATE_UNCONFIRMED_MESSAGE });
       return { outcome: "unconfirmed", operationId, message: CREATE_UNCONFIRMED_MESSAGE };
     }

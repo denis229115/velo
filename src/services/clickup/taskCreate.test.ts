@@ -138,8 +138,8 @@ describe("backlinks that cannot or did not get written", () => {
     expect(writes()).toEqual([`POST /list/${ALPHA_BACKLOG_LIST_ID}/task`, "POST /tickets/1002/notes"]);
   });
 
-  it("keeps a failed backlink as a pending step and retries only that one (A14)", async () => {
-    freshdesk.respondOnce(ALPHA_HOST, "/api/v2/tickets/1002/notes", { method: "POST", status: 500, body: {} });
+  it("keeps a rejected backlink as a pending step and retries only that one (A14)", async () => {
+    freshdesk.respondOnce(ALPHA_HOST, "/api/v2/tickets/1002/notes", { method: "POST", status: 403, body: {} });
     const result = await createTaskFromItem(TICKET, input());
     if (result.outcome !== "created") throw new Error(result.outcome);
     expect(result.task.backlinks.map((b) => b.state)).toEqual(["done", "done", "failed"]);
@@ -152,8 +152,8 @@ describe("backlinks that cannot or did not get written", () => {
     expect(clickup.tasksInList(FOLLOW_UPS).filter((t) => t.name === "Fixture: chase the export fix")).toHaveLength(1);
   });
 
-  it("checks the ticket before retrying an internal note whose answer never came", async () => {
-    freshdesk.respondOnce(ALPHA_HOST, "/api/v2/tickets/1002/notes", { method: "POST", apply: true, networkError: true });
+  it.each([0, 500, 502, 503])("checks the ticket before retrying an internal note with ambiguous response %s", async (status) => {
+    freshdesk.respondOnce(ALPHA_HOST, "/api/v2/tickets/1002/notes", { method: "POST", apply: true, ...(status ? { status, body: {} } : { networkError: true }) });
     const result = await createTaskFromItem(TICKET, input());
     if (result.outcome !== "created") throw new Error(result.outcome);
     expect(result.task.backlinks[2]!.state).toBe("unconfirmed");
@@ -166,8 +166,8 @@ describe("backlinks that cannot or did not get written", () => {
 });
 
 describe("an ambiguous creation timeout", () => {
-  it("is reconciled through the operation marker, with no second create request (A10-style)", async () => {
-    clickup.respondOnce(`/list/${FOLLOW_UPS}/task`, { method: "POST", apply: true, networkError: true });
+  it.each([0, 500, 502, 503])("reconciles an accepted creation with ambiguous response %s without a second create", async (status) => {
+    clickup.respondOnce(`/list/${FOLLOW_UPS}/task`, { method: "POST", apply: true, ...(status ? { status, body: {} } : { networkError: true }) });
     const first = await createTaskFromItem(TICKET, input());
     if (first.outcome !== "unconfirmed") throw new Error(first.outcome);
     expect(writes()).toEqual([`POST /list/${FOLLOW_UPS}/task`]);

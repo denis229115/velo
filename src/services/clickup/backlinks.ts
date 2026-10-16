@@ -153,7 +153,7 @@ async function writeInternalNote(t: BacklinkTarget, previous: BacklinkRecord | u
     await freshdeskPost<unknown>(credentials, `/tickets/${encodeURIComponent(t.ticketId)}/notes`, { body: noteBody(t), private: true });
   } catch (error) {
     if (!(error instanceof FreshdeskError)) throw error;
-    if (error.kind === "network") {
+    if (error.kind === "network" || (error.status ?? 0) >= 500) {
       await finishJournalEntry(entryId, "unconfirmed", NOTE_UNCONFIRMED_MESSAGE);
       return { state: "unconfirmed", message: NOTE_UNCONFIRMED_MESSAGE, entryId };
     }

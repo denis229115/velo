@@ -121,7 +121,10 @@ export async function updateTicket(
     return { outcome: "confirmed" };
   } catch (error) {
     if (!(error instanceof FreshdeskError)) throw error;
-    if (error.kind === "network") return reconcile(tenantId, entryId, credentials, path, changes);
+    if (error.kind === "network" || (error.status ?? 0) >= 500) {
+      await finishJournalEntry(entryId, "unconfirmed", "Freshdesk did not confirm the change. Velo is reading the ticket back.");
+      return reconcile(tenantId, entryId, credentials, path, changes);
+    }
 
     const missing = error.detail?.fieldErrors ?? [];
     if (error.kind === "validation" && missing.length > 0 && missing.every((e) => e.code === "missing_field")) {
