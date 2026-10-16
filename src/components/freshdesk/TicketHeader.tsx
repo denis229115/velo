@@ -361,7 +361,7 @@ export function TicketHeader({
   return (
     <div role="group" aria-label="Ticket header" className="@container max-w-4xl mb-6 space-y-4">
       <div>
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 min-w-0 text-meta text-text-tertiary">
+        <div data-clickup-drawer-header className="flex flex-wrap items-center gap-x-2 gap-y-1.5 min-w-0 text-meta text-text-tertiary">
           <nav aria-label="Breadcrumb" className="hidden @md:block truncate">
             <span>Freshdesk</span> <span aria-hidden>›</span> <span>Tickets</span>
           </nav>

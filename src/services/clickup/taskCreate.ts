@@ -5,8 +5,9 @@
  * description before anything is sent again, and a failed backlink is retried
  * on its own. A task from an email carries nothing about the email.
  */
+import { withReadSnapshot } from "@/services/db/connection";
 import { useUIStore } from "@/stores/uiStore";
-import { getClickUpLists, getClickUpWorkspace, upsertCachedTask } from "@/services/db/clickup";
+import { getClickUpLists, getClickUpWorkspace, replaceTaskDestinations, replaceTaskListDetails, upsertCachedTask } from "@/services/db/clickup";
 import {
   finishTaskOperation,
   getTaskOperation,
@@ -15,7 +16,7 @@ import {
   type TaskOperation,
 } from "@/services/db/clickupOperations";
 import { getCachedTickets } from "@/services/db/freshdeskTickets";
-import { getSetting, setSetting } from "@/services/db/settings";
+import { deleteSetting, getSetting, setSetting } from "@/services/db/settings";
 import { getTaskLink, insertTaskLink, setLinkBacklink, type BacklinkStep, type LinkKey } from "@/services/db/taskLinks";
 import { ClickUpError, clickupGet, clickupWrite } from "./client";
 import { currentClickUpCredentials } from "./connection";
@@ -32,13 +33,15 @@ import {
   type LinkedItem,
   type RelatedTask,
 } from "./links";
-import { fetchListMembers, type ClickUpMember } from "./metadata";
+import { fetchListMembers, fetchListStatuses, fetchListFields, fetchTaskDestinations, type ClickUpMember } from "./metadata";
 import { cachedTaskFrom, type ApiTask } from "./tasks";
 
 /** ClickUp's priorities: 1 urgent, 2 high, 3 normal, 4 low */
 export type TaskPriority = 1 | 2 | 3 | 4;
 
 export interface NewTaskInput {
+  /** The drawer's workspace, so a connection switch cannot submit stale choices. */
+  expectedTenantId?: string;
   listId: string;
   name: string;
   description: string;
@@ -103,39 +106,109 @@ export interface CreateTaskList {
 }
 
 export interface CreateTaskOptions {
+  tenantId: string | null;
+  meUserId: string | null;
+  discoveryRefreshedAt: number | null;
+  discoveryComplete: boolean;
   lists: CreateTaskList[];
   /** The last list a task went to, else the default list */
   initialListId: string | null;
-  /** For tickets: why the Ticket-ID field is not written, per list (absent when it is) */
-  fieldGaps: Record<string, string>;
   /** The ticket's subject, as the task title; empty for emails, whose content stays in Velo */
   suggestedName: string;
 }
 
 /** The connected workspace's lists and the remembered destination. */
-export async function getCreateTaskOptions(item: LinkedItem): Promise<CreateTaskOptions> {
-  const workspace = await getClickUpWorkspace();
-  if (!workspace) return { lists: [], initialListId: null, fieldGaps: {}, suggestedName: "" };
-  const lists = (await getClickUpLists(workspace.tenantId)).map((l) => ({
-    listId: l.listId,
-    name: l.name,
-    location: l.folderName ? `${l.spaceName} / ${l.folderName}` : l.spaceName,
-    statuses: [...l.statuses].sort((a, b) => a.position - b.position).map((s) => s.name),
-  }));
-  const valid = (id: string | null) => (id && lists.some((l) => l.listId === id) ? id : null);
-  const initialListId = valid(await getSetting(LAST_LIST_SETTING)) ?? valid(workspace.defaultListId) ?? lists[0]?.listId ?? null;
-  const fieldGaps: Record<string, string> = {};
-  let suggestedName = "";
-  if (item.kind === "ticket") {
-    for (const l of lists) {
-      const gap = await ticketIdFieldGap(workspace.tenantId, l.listId);
-      if (gap) fieldGaps[l.listId] = gap;
+export async function getCreateTaskOptions(item: LinkedItem, config: { refresh?: boolean } = {}): Promise<CreateTaskOptions> {
+  if (config.refresh) await refreshTaskDestinations();
+  return withReadSnapshot(async () => {
+    const workspace = await getClickUpWorkspace();
+    if (!workspace) return { tenantId: null, meUserId: null, discoveryRefreshedAt: null, discoveryComplete: false, lists: [], initialListId: null, suggestedName: "" };
+    const lists = (await getClickUpLists(workspace.tenantId)).map((l) => ({
+      listId: l.listId,
+      name: l.name,
+      location: l.folderName ? `${l.spaceName} / ${l.folderName}` : l.spaceName,
+      statuses: [...l.statuses].sort((a, b) => a.position - b.position).map((s) => s.name),
+    }));
+    const valid = (id: string | null) => (id && lists.some((l) => l.listId === id) ? id : null);
+    const rememberedKey = `${LAST_LIST_SETTING}:${workspace.tenantId}`;
+    let remembered = valid(await getSetting(rememberedKey));
+    // Upgrade the old global preference only after verifying this workspace owns the list.
+    if (!remembered) {
+      const legacy = valid(await getSetting(LAST_LIST_SETTING));
+      if (legacy) {
+        await setSetting(rememberedKey, legacy);
+        await deleteSetting(LAST_LIST_SETTING);
+        remembered = legacy;
+      }
     }
-    const scope = await scopeFor(item);
-    const ticket = scope ? (await getCachedTickets(scope)).find((t) => t.ticketId === item.ticketId) : undefined;
-    suggestedName = ticket?.subject ?? "";
+    const initialListId = remembered ?? valid(workspace.defaultListId) ?? lists[0]?.listId ?? null;
+    let suggestedName = "";
+    if (item.kind === "ticket") {
+      const scope = await scopeFor(item);
+      const ticket = scope ? (await getCachedTickets(scope)).find((t) => t.ticketId === item.ticketId) : undefined;
+      suggestedName = ticket?.subject ?? "";
+    }
+    const discovery = await getSetting(`clickup_discovery:${workspace.tenantId}`);
+    const stamp: { refreshedAt: number; complete: boolean } | null = discovery ? JSON.parse(discovery) : null;
+    return { tenantId: workspace.tenantId, meUserId: workspace.me?.userId ?? null,
+      discoveryRefreshedAt: stamp?.refreshedAt ?? (workspace.metadataRefreshedAt === null ? null : workspace.metadataRefreshedAt * 1000),
+      discoveryComplete: stamp?.complete ?? false, lists, initialListId, suggestedName };
+  });
+}
+
+/** Reject results from a disconnected/replaced token before caching or offering them. */
+async function sameConnection(credentials: { tenantId: string; token: string }): Promise<void> {
+  const current = await currentClickUpCredentials();
+  if (current?.tenantId !== credentials.tenantId || current.token !== credentials.token) {
+    throw new ClickUpError("not_in_workspace", "The ClickUp connection changed. Close and reopen the drawer.");
   }
-  return { lists, initialListId, fieldGaps, suggestedName };
+}
+
+const destinationReads = new Map<string, symbol>();
+const listDetailReads = new Map<string, symbol>();
+
+async function refreshTaskDestinations(): Promise<void> {
+  if (!useUIStore.getState().isOnline) throw new Error(NEEDS_CONNECTION_MESSAGE);
+  const current = await currentClickUpCredentials();
+  if (!current) throw new Error("Connect a ClickUp workspace in Settings → ClickUp.");
+  const generation = Symbol();
+  destinationReads.set(current.tenantId, generation);
+  await assertNotWaiting(current.tenantId);
+  try {
+    const result = await fetchTaskDestinations(current.token, current.workspaceId);
+    await sameConnection(current);
+    if (destinationReads.get(current.tenantId) !== generation) throw new ClickUpError("not_in_workspace", "List choices changed. Refresh again.");
+    await replaceTaskDestinations(current.tenantId, result.lists, Date.now(), result.complete);
+  } catch (err) { await sameConnection(current); return failAction(current.tenantId, err); }
+}
+
+export interface TaskListDetails {
+  listId: string;
+  members: ClickUpMember[];
+  statuses: string[];
+  fieldGap: string | null;
+}
+
+/** Authoritative choices for one selected destination, never workspace-wide members. */
+export async function getTaskListDetails(listId: string, tenantId: string): Promise<TaskListDetails> {
+  if (!useUIStore.getState().isOnline) throw new Error(NEEDS_CONNECTION_MESSAGE);
+  const current = await currentClickUpCredentials();
+  if (!current || current.tenantId !== tenantId) throw new Error("The ClickUp connection changed. Close and reopen the drawer.");
+  if (!(await getClickUpLists(tenantId)).some((l) => l.listId === listId)) throw new Error("Choose a list in the connected workspace.");
+  const readKey = `${tenantId}:${listId}`;
+  const generation = Symbol();
+  listDetailReads.set(readKey, generation);
+  await assertNotWaiting(tenantId);
+  try {
+    const results = await Promise.allSettled([fetchListMembers(current.token, listId), fetchListStatuses(current.token, listId), fetchListFields(current.token, listId)]);
+    await sameConnection(current);
+    if (listDetailReads.get(readKey) !== generation) throw new ClickUpError("not_in_workspace", "List choices changed. Read the selected list again.");
+    const failure = results.find((r) => r.status === "rejected");
+    if (failure?.status === "rejected") throw failure.reason;
+    const [members, statuses, fields] = results as [PromiseFulfilledResult<ClickUpMember[]>, PromiseFulfilledResult<Awaited<ReturnType<typeof fetchListStatuses>>>, PromiseFulfilledResult<Awaited<ReturnType<typeof fetchListFields>>>];
+    await replaceTaskListDetails(tenantId, listId, statuses.value, fields.value);
+    return { listId, members: members.value, statuses: statuses.value.sort((a, b) => a.position - b.position).map((s) => s.name), fieldGap: await ticketIdFieldGap(tenantId, listId) };
+  } catch (err) { await sameConnection(current); return failAction(tenantId, err); }
 }
 
 /** Who can be assigned in the list, read from ClickUp. */
@@ -204,6 +277,9 @@ export async function createTaskFromItem(item: LinkedItem, input: NewTaskInput):
   if (!useUIStore.getState().isOnline) return { outcome: "unavailable", message: NEEDS_CONNECTION_MESSAGE };
   const credentials = await currentClickUpCredentials();
   if (!credentials) return { outcome: "unavailable", message: "Connect a ClickUp workspace in Settings → ClickUp to create tasks." };
+  if (input.expectedTenantId && input.expectedTenantId !== credentials.tenantId) {
+    return { outcome: "unavailable", message: "The ClickUp connection changed. Close and reopen the drawer." };
+  }
   const key = await linkKey(item, credentials.tenantId);
   if (!key) return { outcome: "unavailable", message: "Tasks can be created once a helpdesk is connected; sample tickets have no links." };
 
@@ -227,6 +303,8 @@ export async function createTaskFromItem(item: LinkedItem, input: NewTaskInput):
     await assertNotWaiting(credentials.tenantId);
     const invalid = await validate(input, credentials.tenantId, credentials.token);
     if (invalid) return { outcome: "failed", message: invalid };
+    await sameConnection(credentials);
+    if (!useUIStore.getState().isOnline) return { outcome: "unavailable", message: NEEDS_CONNECTION_MESSAGE };
   } catch (err) {
     if (!(err instanceof ClickUpError)) throw err;
     return { outcome: "failed", message: await messageOf(credentials.tenantId, err) };
@@ -249,7 +327,7 @@ export async function createTaskFromItem(item: LinkedItem, input: NewTaskInput):
     ...(input.dueDate !== null && { due_date: dueDateMs(input.dueDate), due_date_time: false }),
   };
   await startTaskOperation({ operationId, key, listId: input.listId, taskName: input.name.trim(), request });
-  await setSetting(LAST_LIST_SETTING, input.listId);
+  await setSetting(`${LAST_LIST_SETTING}:${credentials.tenantId}`, input.listId);
 
   let created: ApiTask;
   try {

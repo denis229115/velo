@@ -150,3 +150,43 @@ export async function fetchListMembers(token: string, listId: string): Promise<C
   const { members } = await clickupGet<{ members: ApiUser[] }>(token, `/list/${encodeURIComponent(listId)}/member`);
   return members.map(memberFrom);
 }
+
+/** No server search/page exists for hierarchy endpoints. Bound network work and disclose partial coverage. */
+export async function fetchTaskDestinations(token: string, workspaceId: string): Promise<{ lists: ClickUpList[]; complete: boolean }> {
+  const lists: ClickUpList[] = [];
+  const seen = new Set<string>();
+  let requests = 0;
+  let complete = true;
+  const read = <T>(path: string) => { requests++; return clickupGet<T>(token, path); };
+  const add = (list: ApiList, space: { name: string }, folder: string | null) => {
+    if (list.archived || seen.has(String(list.id))) return;
+    if (lists.length >= 1000) { complete = false; return; }
+    seen.add(String(list.id));
+    lists.push({ listId: String(list.id), name: list.name, spaceName: space.name, folderName: folder, position: lists.length, statuses: statusesFrom(list.statuses ?? []) });
+  };
+  const { spaces } = await read<{ spaces: { id: string; name: string }[] }>(`/team/${encodeURIComponent(workspaceId)}/space?archived=false`);
+  for (const space of spaces) {
+    if (requests >= 198 || lists.length >= 1000) { complete = false; break; }
+    const { folders } = await read<{ folders: { id: string; name: string; hidden?: boolean }[] }>(`/space/${encodeURIComponent(space.id)}/folder?archived=false`);
+    const folderless = await read<{ lists: ApiList[] }>(`/space/${encodeURIComponent(space.id)}/list?archived=false`);
+    // Traverse folders first to retain the hierarchy's ordering.
+    for (const folder of folders) {
+      if (requests >= 200 || lists.length >= 1000) { complete = false; break; }
+      const children = await read<{ lists: ApiList[] }>(`/folder/${encodeURIComponent(folder.id)}/list?archived=false`);
+      for (const list of children.lists) add(list, space, folder.hidden ? null : folder.name);
+    }
+    for (const list of folderless.lists) add(list, space, null);
+  }
+  return { lists, complete };
+}
+
+/** Get List supplies the list's effective statuses, including inherited ones. */
+export async function fetchListStatuses(token: string, listId: string): Promise<ClickUpStatus[]> {
+  const list = await clickupGet<ApiList>(token, `/list/${encodeURIComponent(listId)}`);
+  return statusesFrom(list.statuses ?? []);
+}
+
+export async function fetchListFields(token: string, listId: string): Promise<ClickUpCustomField[]> {
+  const { fields } = await clickupGet<{ fields: { id: string; name: string; type: string }[] }>(token, `/list/${encodeURIComponent(listId)}/field`);
+  return fields.map((f) => ({ listId, fieldId: f.id, name: f.name, type: f.type }));
+}

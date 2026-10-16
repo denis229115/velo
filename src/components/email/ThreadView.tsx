@@ -379,7 +379,7 @@ export function ThreadView({ thread }: ThreadViewProps) {
   const primarySenderName = lastMessage?.from_name ?? null;
 
   return (
-    <div className="flex h-full @container relative">
+    <div data-clickup-reader className="flex h-full @container relative">
       <div className="flex flex-col flex-1 min-w-0">
         {/* Unified action bar */}
         <ActionBar

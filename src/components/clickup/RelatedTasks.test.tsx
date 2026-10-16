@@ -193,6 +193,7 @@ describe("Related tasks on a ticket", () => {
     fireEvent.click(await (await linkedWork()).findByRole("button", { name: "Create task" }));
     const dialog = await screen.findByRole("dialog", { name: "Create a ClickUp task" });
     await waitFor(() => expect(within(dialog).getByLabelText("Title")).toHaveValue("Fixture: export stuck"));
+    await waitFor(() => expect(within(dialog).getByRole("button", { name: "Create task" })).toBeEnabled());
     fireEvent.click(within(dialog).getByRole("button", { name: "Create task" }));
 
     const region = await screen.findByRole("region", { name: "Related tasks" });

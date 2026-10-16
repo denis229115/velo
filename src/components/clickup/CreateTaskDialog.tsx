@@ -1,17 +1,18 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { AlertTriangle, Plus, RefreshCw } from "lucide-react";
-import { Modal } from "@/components/ui/Modal";
+import { TaskDrawer } from "./TaskDrawer";
+import { AssigneePicker, ListPicker } from "./TaskChoicePickers";
 import { Button } from "@/components/ui/Button";
 import { TextField } from "@/components/ui/TextField";
 import { FreshdeskWriteReason } from "@/components/freshdesk/useFreshdeskWritable";
 import { BACKLINK_LABELS } from "@/services/clickup/backlinks";
 import { BACKLINK_STEPS } from "@/services/db/taskLinks";
 import type { LinkedItem } from "@/services/clickup/links";
-import type { ClickUpMember } from "@/services/clickup/metadata";
 import {
   createTaskFromItem,
   getCreateTaskOptions,
-  getListMembers,
+  getTaskListDetails,
+  type TaskListDetails,
   reconcileTaskCreation,
   type CreateTaskOptions,
   type CreateTaskResult,
@@ -33,25 +34,6 @@ const PRIORITIES: { value: TaskPriority; label: string }[] = [
 
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : "Something went wrong.";
-}
-
-/** The list's members, read from ClickUp whenever the destination changes */
-function useListMembers(listId: string) {
-  const [members, setMembers] = useState<ClickUpMember[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    setMembers(null);
-    setError(null);
-    if (!listId) return;
-    getListMembers(listId)
-      .then((m) => !cancelled && setMembers(m))
-      .catch((err) => !cancelled && setError(errorMessage(err)));
-    return () => {
-      cancelled = true;
-    };
-  }, [listId]);
-  return { members, error };
 }
 
 /**
@@ -88,33 +70,102 @@ export function CreateTaskDialog({
     operationId: string;
     message: string;
   } | null>(null);
-  const { members, error: membersError } = useListMembers(listId);
+  const [loadingLists, setLoadingLists] = useState(true);
+  const [discoveryError, setDiscoveryError] = useState<string | null>(null);
+  const [missingDestination, setMissingDestination] = useState<string | null>(null);
+  const [details, setDetails] = useState<(TaskListDetails & { tenantId: string; stamp: number | null }) | null>(null);
+  const [membersError, setMembersError] = useState<string | null>(null);
+  const [detailRetry, setDetailRetry] = useState(0);
+  const refreshGeneration = useRef(0);
+  const selectedList = useRef(listId);
+  selectedList.current = listId;
+  const selectedLabel = useRef("");
+  const selected = options?.lists.find((l) => l.listId === listId);
+  if (selected) selectedLabel.current = `${selected.name} (${selected.location})`;
+
+  const refreshLists = async (initial = false) => {
+    const generation = ++refreshGeneration.current;
+    setLoadingLists(true);
+    setDiscoveryError(null);
+    setDetails(null);
+    try {
+      const o = await getCreateTaskOptions(item, { refresh: true });
+      if (generation !== refreshGeneration.current) return;
+      setOptions(o);
+      const current = selectedList.current;
+      // An explicit choice survives refresh; a removed list stays unselected until reviewed.
+      const found = o.lists.some((l) => l.listId === current);
+      setListId(current ? found ? current : "" : initial ? o.initialListId ?? "" : "");
+      setMissingDestination(current && !found ? selectedLabel.current : null);
+      if (initial && !titleEdited.current) setName(o.suggestedName);
+    } catch (err) {
+      if (generation === refreshGeneration.current) setDiscoveryError(errorMessage(err));
+    } finally {
+      if (generation === refreshGeneration.current) setLoadingLists(false);
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
+    const generation = refreshGeneration.current;
     getCreateTaskOptions(item)
       .then((o) => {
-        if (cancelled) return;
+        if (cancelled || generation !== refreshGeneration.current) return;
         setOptions(o);
         setListId(o.initialListId ?? "");
         if (!titleEdited.current) setName(o.suggestedName);
+        void refreshLists(true);
       })
-      .catch((err) => !cancelled && setError(errorMessage(err)));
-    return () => {
-      cancelled = true;
-    };
-    // The dialog is opened for one item and closed before another
+      .catch((err) => { if (!cancelled) { setDiscoveryError(errorMessage(err)); setLoadingLists(false); } });
+    return () => { cancelled = true; refreshGeneration.current++; };
+    // One item per drawer; refresh never overwrites edited text.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    const changed = () => {
+      refreshGeneration.current++;
+      setOptions(null);
+      setMissingDestination(null);
+      setListId("");
+      setDetails(null);
+      setAssigneeIds([]);
+      setStatus("");
+      setLoadingLists(false);
+      setDiscoveryError("The ClickUp connection changed. Close and reopen the drawer; your text stays here until you close it.");
+    };
+    window.addEventListener("velo-clickup-connection-changed", changed);
+    return () => window.removeEventListener("velo-clickup-connection-changed", changed);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    setDetails(null);
+    setMembersError(null);
+    if (!listId || !options?.tenantId || loadingLists || discoveryError) return;
+    const tenantId = options.tenantId;
+    getTaskListDetails(listId, tenantId).then((d) => {
+      if (cancelled) return;
+      setDetails({ ...d, tenantId, stamp: options.discoveryRefreshedAt });
+      setAssigneeIds((ids) => ids.filter((id) => d.members.some((m) => m.userId === id)));
+      setStatus((current) => d.statuses.includes(current) ? current : "");
+    }).catch((err) => !cancelled && setMembersError(errorMessage(err)));
+    return () => { cancelled = true; };
+  }, [listId, options?.tenantId, options?.discoveryRefreshedAt, loadingLists, discoveryError, detailRetry]);
+
   const list = options?.lists.find((l) => l.listId === listId) ?? null;
-  const fieldGap = item.kind === "ticket" ? (options?.fieldGaps[listId] ?? null) : null;
+  const listReady = !loadingLists && !discoveryError && details?.listId === listId && details?.tenantId === options?.tenantId && details?.stamp === options?.discoveryRefreshedAt;
+  const members = listReady ? details!.members : null;
+  const fieldGap = item.kind === "ticket" && listReady ? details!.fieldGap : null;
 
   const chooseList = (id: string) => {
+    if (id === listId) return;
     setListId(id);
+    setMissingDestination(null);
     // Statuses and members belong to one list
     setStatus("");
-    setAssigneeIds([]);
+    setDetails(null);
+    setMembersError(null);
   };
 
   const settle = (result: CreateTaskResult) => {
@@ -147,9 +198,10 @@ export function CreateTaskDialog({
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
-    if (busy || unconfirmed || !list || !name.trim()) return;
+    if (busy || unconfirmed || !list || !listReady || !name.trim() || writable.controlProps.disabled) return;
     void run(() =>
       createTaskFromItem(item, {
+        expectedTenantId: options?.tenantId ?? undefined,
         listId,
         name: name.trim(),
         description,
@@ -176,12 +228,10 @@ export function CreateTaskDialog({
   };
 
   return (
-    <Modal isOpen onClose={onClose} title="Create a ClickUp task" width="w-[36rem]">
+    <TaskDrawer onClose={onClose} title="Create a ClickUp task">
       <form
-        role="dialog"
-        aria-label="Create a ClickUp task"
         onSubmit={handleSubmit}
-        className="flex flex-col max-h-[75vh]"
+        className="flex flex-col flex-1 min-h-0"
       >
         {/* The fields scroll; the actions below them stay in view */}
         <div className="p-4 space-y-3 overflow-y-auto min-h-0">
@@ -194,26 +244,18 @@ export function CreateTaskDialog({
           )}
           {options && options.lists.length === 0 && (
             <p role="alert" className="text-meta text-danger">
-              Connect a ClickUp workspace in Settings → ClickUp to create tasks.
+              {options.tenantId ? "ClickUp returned no accessible lists. Refresh lists or check your access in ClickUp." : "Connect a ClickUp workspace in Settings → ClickUp to create tasks."}
             </p>
           )}
           <div>
-            <label htmlFor="create-task-list" className={LABEL_CLASS}>
-              List
-            </label>
-            <select
-              id="create-task-list"
-              value={listId}
-              disabled={locked || !options}
-              onChange={(e) => chooseList(e.target.value)}
-              className={FIELD_CLASS}
-            >
-              {options?.lists.map((l) => (
-                <option key={l.listId} value={l.listId}>
-                  {l.name} ({l.location})
-                </option>
-              ))}
-            </select>
+            <ListPicker lists={options?.lists ?? []} value={listId} disabled={locked || loadingLists || !options} onChange={chooseList} />
+            <div className="flex items-center justify-between gap-2 mt-1.5 text-micro text-text-tertiary">
+              <span>{options?.discoveryRefreshedAt ? <>Last refreshed <time dateTime={new Date(options.discoveryRefreshedAt).toISOString()}>{new Date(options.discoveryRefreshedAt).toLocaleString()}</time></> : "Lists have not been refreshed."}{loadingLists && <span role="status" className="block">Refreshing lists from ClickUp…</span>}</span>
+              <button type="button" disabled={locked || loadingLists} onClick={() => void refreshLists()} className="shrink-0 text-link disabled:opacity-50">Refresh lists</button>
+            </div>
+            {options && !options.discoveryComplete && <p role="status" className="mt-1 text-micro text-status-warning">Partial coverage: searching only the discovered lists (up to 1,000 lists and 200 hierarchy requests). Other lists may be missing.</p>}
+            {discoveryError && <div role="alert" className="mt-1 text-meta text-danger"><p>{discoveryError} {options?.lists.length ? "Cached destinations are shown; creation is disabled until refresh succeeds." : "Creation is disabled until the destination is refreshed."}</p><button type="button" disabled={locked || loadingLists} onClick={() => void refreshLists()}>Retry lists</button></div>}
+            {missingDestination && <p role="status" className="mt-1 text-meta text-status-warning">The previous destination “{missingDestination}” was not returned by ClickUp. Choose a destination; your other fields are kept.</p>}
             {fieldGap && (
               <p role="status" className="mt-1.5 flex items-start gap-1.5 text-meta text-status-warning">
                 <AlertTriangle size={13} className="mt-0.5 shrink-0" aria-hidden />
@@ -246,7 +288,7 @@ export function CreateTaskDialog({
               placeholder={item.kind === "ticket" ? "Velo adds the ticket link below what you write." : undefined}
             />
           </div>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 gap-3">
             <div>
               <label htmlFor="create-task-status" className={LABEL_CLASS}>
                 Status
@@ -254,11 +296,11 @@ export function CreateTaskDialog({
               <select
                 id="create-task-status"
                 value={status}
-                disabled={locked || !list}
+                disabled={locked || !listReady}
                 onChange={(e) => setStatus(e.target.value)}
                 className={FIELD_CLASS}
               >
-                {list?.statuses.map((s, i) => (
+                {details && listReady && details.statuses.map((s, i) => (
                   <option key={s} value={i === 0 ? "" : s}>
                     {s}
                   </option>
@@ -301,29 +343,11 @@ export function CreateTaskDialog({
           <fieldset>
             <legend className={LABEL_CLASS}>Assignees</legend>
             {membersError ? (
-              <p className="text-meta text-danger">{membersError}</p>
+              <div role="alert" className="text-meta text-danger"><p>{membersError}</p><button type="button" disabled={locked} onClick={() => setDetailRetry((n) => n + 1)}>Retry list details</button></div>
             ) : members === null ? (
-              <p className="text-meta text-text-tertiary">
-                {listId ? "Reading the list's members…" : "Choose a list first."}
-              </p>
-            ) : members.length === 0 ? (
-              <p className="text-meta text-text-tertiary">Nobody can be assigned in this list.</p>
-            ) : (
-              <div className="flex flex-wrap gap-x-4 gap-y-1.5">
-                {members.map((m) => (
-                  <label key={m.userId} className="inline-flex items-center gap-1.5 text-sm text-text-primary">
-                    <input
-                      type="checkbox"
-                      checked={assigneeIds.includes(m.userId)}
-                      disabled={locked}
-                      onChange={() => toggleAssignee(m.userId)}
-                      className="accent-accent"
-                    />
-                    {m.name}
-                  </label>
-                ))}
-              </div>
-            )}
+              <p role="status" className="text-meta text-text-tertiary">{listId ? "Reading the list's members and statuses…" : "Choose a list first."}</p>
+            ) : <AssigneePicker key={listId} members={members} selected={assigneeIds} meUserId={options?.meUserId ?? null} disabled={locked} onToggle={toggleAssignee} />}
+
           </fieldset>
           {item.kind === "ticket" && (
             <div className="rounded-md border border-border-primary px-3 py-2">
@@ -376,13 +400,13 @@ export function CreateTaskDialog({
             variant="primary"
             size="md"
             {...writable.controlProps}
-            disabled={locked || !list || !name.trim() || writable.controlProps.disabled}
+            disabled={locked || !list || !listReady || !name.trim() || writable.controlProps.disabled}
           >
             <Plus size={14} aria-hidden />
             {busy ? "Creating…" : "Create task"}
           </Button>
         </div>
       </form>
-    </Modal>
+    </TaskDrawer>
   );
 }

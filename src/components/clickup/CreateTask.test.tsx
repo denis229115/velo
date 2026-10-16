@@ -5,7 +5,7 @@ import { createFreshdeskFetchStub } from "@/test/freshdeskFetchStub";
 import { createClickUpFetchStub } from "@/test/clickupFetchStub";
 import { ALPHA_HOST } from "@/services/freshdesk/__fixtures__/freshdeskFixtures";
 import { FIXTURE_NOW, alphaTenantWithTickets } from "@/services/freshdesk/__fixtures__/freshdeskTicketFixtures";
-import { ALPHA_TOKEN, ALPHA_BACKLOG_LIST_ID, clickupTokens } from "@/services/clickup/__fixtures__/clickupFixtures";
+import { ALPHA_TOKEN, BETA_TOKEN, ALPHA_BACKLOG_LIST_ID, clickupTokens } from "@/services/clickup/__fixtures__/clickupFixtures";
 
 const ai = vi.hoisted(() => ({ requests: [] as { userContent: string }[], response: "" }));
 vi.mock("@/services/ai/providers/claudeProvider", () => ({
@@ -72,7 +72,20 @@ const panel = () => screen.findByRole("region", { name: "Related tasks" });
 async function openCreate(item: LinkedItem) {
   render(<RelatedTasksPanel item={item} />);
   fireEvent.click(await within(await panel()).findByRole("button", { name: "Create task" }));
-  return screen.findByRole("dialog", { name: "Create a ClickUp task" });
+  const dialog = await screen.findByRole("dialog", { name: "Create a ClickUp task" });
+  await waitFor(() => expect(within(dialog).getByRole("button", { name: "Refresh lists" })).not.toBeDisabled());
+  return dialog;
+}
+
+async function chooseDestination(dialog: HTMLElement, id: string) {
+  const names: Record<string, string> = {
+    li_a_follow: "Fixture follow-ups (Fixture space)",
+    li_a_bugs: "Fixture bugs (Fixture space / Fixture folder)",
+    li_a_backlog: "Fixture backlog (Fixture space)",
+  };
+  fireEvent.click(within(dialog).getByRole("combobox", { name: "List" }));
+  fireEvent.click(await within(dialog).findByRole("option", { name: names[id] }));
+  await within(dialog).findByRole("button", { name: "Choose assignees" });
 }
 
 beforeEach(async () => {
@@ -99,6 +112,154 @@ afterEach(() => {
   db.close();
 });
 
+describe("live task drawer choices", () => {
+  it("does not substitute another destination when a refreshed hierarchy omits the chosen list", async () => {
+    const dialog = await openCreate(TICKET);
+    await chooseDestination(dialog, FOLLOW_UPS);
+    fireEvent.change(within(dialog).getByLabelText("Title"), { target: { value: "Keep this title" } });
+    clickup.respondOnce("/space/sp_a_1/list", { body: { lists: [] } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Refresh lists" }));
+    await waitFor(() => expect(within(dialog).getByRole("button", { name: "Refresh lists" })).toBeEnabled());
+    expect(within(dialog).getByRole("combobox", { name: "List" })).toHaveValue("");
+    expect(within(dialog).getByRole("button", { name: "Create task" })).toBeDisabled();
+    expect(within(dialog).getByLabelText("Title")).toHaveValue("Keep this title");
+    expect(within(dialog).getByText(/previous destination.*Fixture follow-ups.*not returned/)).toBeInTheDocument();
+  });
+
+  it("waits for debounced results before Enter can select a destination", async () => {
+    const dialog = await openCreate(TICKET);
+    const list = within(dialog).getByRole("combobox", { name: "List" });
+    fireEvent.change(list, { target: { value: "follow-ups" } });
+    fireEvent.keyDown(list, { key: "ArrowDown" });
+    fireEvent.keyDown(list, { key: "Enter" });
+    expect(within(dialog).getByText("Destination: Fixture bugs (Fixture space / Fixture folder)")).toBeInTheDocument();
+    expect(list).toHaveValue("follow-ups");
+    const choice = await within(dialog).findByRole("option", { name: "Fixture follow-ups (Fixture space)" });
+    expect(choice).toBeVisible();
+    fireEvent.keyDown(list, { key: "ArrowDown" });
+    fireEvent.keyDown(list, { key: "Enter" });
+    expect(list).toHaveValue("Fixture follow-ups (Fixture space)");
+    expect(writes()).toEqual([]);
+    fireEvent.click(list);
+    fireEvent.keyDown(list, { key: "Escape" });
+    expect(dialog).toBeInTheDocument();
+    expect(within(dialog).queryByRole("listbox", { name: "Lists" })).not.toBeInTheDocument();
+  });
+
+  it("removes old workspace choices after reconnecting while keeping the operator's text", async () => {
+    const dialog = await openCreate(EMAIL);
+    await chooseDestination(dialog, "li_a_bugs");
+    fireEvent.change(within(dialog).getByLabelText("Title"), { target: { value: "Keep my draft" } });
+    const { act } = await import("@testing-library/react");
+    await act(async () => { await connectWorkspace({ token: BETA_TOKEN }); });
+    expect(within(dialog).getByRole("combobox", { name: "List" })).toHaveValue("");
+    expect(within(dialog).getByRole("button", { name: "Create task" })).toBeDisabled();
+    expect(within(dialog).getByLabelText("Title")).toHaveValue("Keep my draft");
+    expect(within(dialog).queryByText(/Destination: Fixture bugs/)).not.toBeInTheDocument();
+    expect(within(dialog).getByText(/connection changed/)).toBeInTheDocument();
+  });
+
+  it.each([
+    { status: 500, body: {}, message: /HTTP 500/ },
+    { status: 429, body: {}, headers: { "retry-after": "60" }, message: /slow down.*Try again after/ },
+    { status: 401, body: { ECODE: "OAUTH_025" }, message: /expired or been revoked.*Reconnect/ },
+  ])("shows an honest discovery failure for HTTP $status and blocks creation", async (failure) => {
+    clickup.respondOnce("/team/9010000001/space", failure);
+    const dialog = await openCreate(TICKET);
+    expect(await within(dialog).findByText(failure.message)).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Create task" })).toBeDisabled();
+    expect(within(dialog).getByRole("combobox", { name: "List" })).toHaveValue("Fixture bugs (Fixture space / Fixture folder)");
+    expect(within(dialog).getByRole("button", { name: "Retry lists" })).toBeEnabled();
+    expect(writes()).toEqual([]);
+    if (failure.status === 500) {
+      vi.setSystemTime(FIXTURE_NOW + 120_000);
+      fireEvent.click(within(dialog).getByRole("button", { name: "Retry lists" }));
+      await waitFor(() => expect(within(dialog).getByRole("button", { name: "Create task" })).toBeEnabled());
+      expect(within(dialog).queryByText(/Cached destinations/)).not.toBeInTheDocument();
+    }
+  });
+
+  it("pages a large discovered hierarchy and debounces search across every page", async () => {
+    clickup.respondOnce("/folder/fo_a_1/list", { body: { lists: Array.from({ length: 65 }, (_, i) => ({ id: `many_${i}`, name: `Remote list ${String(i).padStart(2, "0")}` })) } });
+    const dialog = await openCreate(EMAIL);
+    const list = within(dialog).getByRole("combobox", { name: "List" });
+    fireEvent.click(list);
+    expect(within(within(dialog).getByRole("listbox", { name: "Lists" })).getAllByRole("option")).toHaveLength(30);
+    expect(within(dialog).getByText("67 results · Page 1 of 3")).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Next lists" }));
+    expect(within(dialog).getByRole("option", { name: "Remote list 30 (Fixture space / Fixture folder)" })).toBeInTheDocument();
+    fireEvent.change(list, { target: { value: "Remote list 64" } });
+    expect(within(dialog).queryByRole("option", { name: "Remote list 64 (Fixture space / Fixture folder)" })).not.toBeInTheDocument();
+    expect(await within(dialog).findByRole("option", { name: "Remote list 64 (Fixture space / Fixture folder)" })).toBeInTheDocument();
+    expect(within(within(dialog).getByRole("listbox", { name: "Lists" })).getAllByRole("option")).toHaveLength(1);
+    expect(within(dialog).getByText("1 results · Page 1 of 1")).toBeInTheDocument();
+  });
+
+  it("shows list-detail failures with retry and preserves edited text", async () => {
+    clickup.respondOnce("/list/li_a_bugs/member", { status: 500, body: {} });
+    const dialog = await openCreate(TICKET);
+    await within(dialog).findByRole("button", { name: "Retry list details" });
+    expect(within(dialog).getByRole("button", { name: "Create task" })).toBeDisabled();
+    fireEvent.change(within(dialog).getByLabelText("Title"), { target: { value: "My edit" } });
+    vi.setSystemTime(FIXTURE_NOW + 120_000);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Retry list details" }));
+    await waitFor(() => expect(within(dialog).getByRole("button", { name: "Create task" })).toBeEnabled());
+    expect(within(dialog).getByLabelText("Title")).toHaveValue("My edit");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Choose assignees" }));
+    const search = within(dialog).getByRole("textbox", { name: "Search assignees" });
+    fireEvent.change(search, { target: { value: "Me" } });
+    await waitFor(() => expect(within(dialog).queryByRole("checkbox", { name: "Fixture Colleague" })).not.toBeInTheDocument());
+    expect(within(dialog).getByRole("checkbox", { name: "Fixture Operator (Me)" })).toBeInTheDocument();
+  });
+
+  it("blocks stale submission during list changes, retains eligible members and ignores late responses", async () => {
+    const dialog = await openCreate(TICKET);
+    await chooseDestination(dialog, "li_a_bugs");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Choose assignees" }));
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: "Fixture Operator (Me)" }));
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: "Fixture Colleague" }));
+    const held = clickup.holdNext("/list/li_a_follow/member");
+    fireEvent.click(within(dialog).getByRole("combobox", { name: "List" }));
+    fireEvent.click(await within(dialog).findByRole("option", { name: "Fixture follow-ups (Fixture space)" }));
+    await held.started;
+    expect(within(dialog).getByRole("button", { name: "Create task" })).toBeDisabled();
+    fireEvent.submit(within(dialog).getByLabelText("Title").closest("form")!);
+    expect(writes()).toEqual([]);
+    await chooseDestination(dialog, "li_a_bugs");
+    held.release();
+    await waitFor(() => expect(within(dialog).getByRole("button", { name: "Choose assignees" })).toHaveTextContent("Fixture Colleague"));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Choose assignees" }));
+    expect(within(dialog).getByRole("checkbox", { name: "Fixture Colleague" })).toBeChecked();
+    await chooseDestination(dialog, FOLLOW_UPS);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Choose assignees" }));
+    expect(within(dialog).queryByRole("checkbox", { name: "Fixture Colleague" })).not.toBeInTheDocument();
+    expect(within(dialog).getByRole("checkbox", { name: "Fixture Operator (Me)" })).toBeChecked();
+    expect(within(dialog).getByLabelText("Status")).toHaveTextContent("fixture waiting on vendor");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Create task" }));
+    await waitFor(() => expect(writes()).toContain(`POST /list/${FOLLOW_UPS}/task`));
+    expect(clickup.requests.find((r) => r.method === "POST" && r.path === `/list/${FOLLOW_UPS}/task`)!.body!.assignees).toEqual([701]);
+  });
+
+  it("shows the remembered destination, refresh time, and searches hierarchical lists with the keyboard", async () => {
+    const { setDefaultList } = await import("@/services/clickup/connection");
+    await setDefaultList(FOLLOW_UPS);
+    const dialog = await openCreate(EMAIL);
+    await within(dialog).findByText(/Last refreshed/);
+    const list = within(dialog).getByRole("combobox", { name: "List" });
+    await waitFor(() => expect(list).toHaveValue("Fixture follow-ups (Fixture space)"));
+    fireEvent.change(list, { target: { value: "bugs" } });
+    await within(dialog).findByRole("option", { name: "Fixture bugs (Fixture space / Fixture folder)" });
+    fireEvent.keyDown(list, { key: "ArrowDown" });
+    fireEvent.keyDown(list, { key: "Enter" });
+    expect(list).toHaveValue("Fixture bugs (Fixture space / Fixture folder)");
+    fireEvent.change(within(dialog).getByLabelText("Title"), { target: { value: "Keep this edit" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Refresh lists" }));
+    await waitFor(() => expect(within(dialog).getByRole("button", { name: "Refresh lists" })).not.toBeDisabled());
+    expect(within(dialog).getByLabelText("Title")).toHaveValue("Keep this edit");
+    expect(list).toHaveValue("Fixture bugs (Fixture space / Fixture folder)");
+  });
+});
+
 describe("creating a task from a ticket", () => {
   it("prefills the ticket, shows the destination and the three backlinks, and creates the task with the chosen fields (A13)", async () => {
     const dialog = await openCreate(TICKET);
@@ -116,7 +277,7 @@ describe("creating a task from a ticket", () => {
         .map((li) => li.textContent),
     ).toEqual(["Ticket link in the task description", "Ticket-ID field", "Internal note on the ticket"]);
 
-    fireEvent.change(list, { target: { value: FOLLOW_UPS } });
+    await chooseDestination(dialog, FOLLOW_UPS);
     const status = within(dialog).getByLabelText("Status");
     await waitFor(() =>
       expect(
@@ -128,7 +289,8 @@ describe("creating a task from a ticket", () => {
     fireEvent.change(status, {
       target: { value: "fixture waiting on vendor" },
     });
-    fireEvent.click(await within(dialog).findByRole("checkbox", { name: "Fixture Operator" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Choose assignees" }));
+    fireEvent.click(await within(dialog).findByRole("checkbox", { name: "Fixture Operator (Me)" }));
     fireEvent.change(within(dialog).getByLabelText("Priority"), {
       target: { value: "2" },
     });
@@ -159,9 +321,7 @@ describe("what the dialog warns about and settles", () => {
   it("warns when the chosen list lacks the Ticket-ID field, without blocking the task", async () => {
     const dialog = await openCreate(TICKET);
     await waitFor(() => expect(within(dialog).getByLabelText("List")).not.toBeDisabled());
-    fireEvent.change(within(dialog).getByLabelText("List"), {
-      target: { value: ALPHA_BACKLOG_LIST_ID },
-    });
+    await chooseDestination(dialog, ALPHA_BACKLOG_LIST_ID);
     expect(await within(dialog).findByText(/ticket link and the internal note are still written/)).toBeInTheDocument();
     expect(within(dialog).getByRole("button", { name: "Create task" })).toBeEnabled();
   });
@@ -174,9 +334,7 @@ describe("what the dialog warns about and settles", () => {
     });
     const dialog = await openCreate(TICKET);
     await waitFor(() => expect(within(dialog).getByLabelText("List")).not.toBeDisabled());
-    fireEvent.change(within(dialog).getByLabelText("List"), {
-      target: { value: FOLLOW_UPS },
-    });
+    await chooseDestination(dialog, FOLLOW_UPS);
     fireEvent.click(within(dialog).getByRole("button", { name: "Create task" }));
 
     const row = await within(await panel()).findByRole("listitem", {
@@ -191,6 +349,9 @@ describe("what the dialog warns about and settles", () => {
     clickup.requests.length = 0;
     freshdesk.requests.length = 0;
     fireEvent.click(within(row).getByRole("button", { name: "Retry missing backlink" }));
+    const details = await screen.findByRole("dialog", { name: "ClickUp operation details" });
+    expect(writes()).toEqual([]);
+    fireEvent.click(within(details).getByRole("button", { name: "Retry missing backlink" }));
     await waitFor(() =>
       expect(within(row).queryByRole("button", { name: "Retry missing backlink" })).not.toBeInTheDocument(),
     );
@@ -206,9 +367,7 @@ describe("what the dialog warns about and settles", () => {
     });
     const dialog = await openCreate(TICKET);
     await waitFor(() => expect(within(dialog).getByLabelText("List")).not.toBeDisabled());
-    fireEvent.change(within(dialog).getByLabelText("List"), {
-      target: { value: FOLLOW_UPS },
-    });
+    await chooseDestination(dialog, FOLLOW_UPS);
     fireEvent.click(within(dialog).getByRole("button", { name: "Create task" }));
 
     expect(await within(dialog).findByText(/can't tell yet whether the task was created/)).toBeInTheDocument();
@@ -220,6 +379,8 @@ describe("what the dialog warns about and settles", () => {
       name: "Fixture: export stuck",
     });
     fireEvent.click(within(pendingRow).getByRole("button", { name: "Check ClickUp" }));
+    const details = await screen.findByRole("dialog", { name: "ClickUp operation details" });
+    fireEvent.click(within(details).getByRole("button", { name: "Check ClickUp" }));
 
     const linked = await within(await within(region).findByRole("list", { name: "Linked tasks" })).findByRole(
       "listitem",
@@ -242,9 +403,7 @@ describe("creating and linking from an email thread", () => {
     expect(within(dialog).getByLabelText("Title")).toHaveValue("");
     expect(within(dialog).queryByRole("list", { name: "Backlinks Velo writes" })).not.toBeInTheDocument();
     await waitFor(() => expect(within(dialog).getByLabelText("List")).not.toBeDisabled());
-    fireEvent.change(within(dialog).getByLabelText("List"), {
-      target: { value: FOLLOW_UPS },
-    });
+    await chooseDestination(dialog, FOLLOW_UPS);
     fireEvent.change(within(dialog).getByLabelText("Title"), {
       target: { value: "Fixture: call the customer" },
     });

@@ -145,6 +145,7 @@ export function createClickUpFetchStub(tokens: Record<string, ClickUpFixtureToke
     return null;
   }
 
+  const holds = new Map<string, { ready: () => void; wait: Promise<void> }[]>();
   async function fetch(input: string | URL | Request, init?: RequestInit): Promise<Response> {
     const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
     const headers = new Headers(init?.headers);
@@ -153,6 +154,9 @@ export function createClickUpFetchStub(tokens: Record<string, ClickUpFixtureToke
     const method = init?.method ?? "GET";
     const body = typeof init?.body === "string" ? (JSON.parse(init.body) as Record<string, unknown>) : undefined;
     requests.push({ url: url.href, path, method, authorization, ...(body !== undefined && { body }) });
+
+    const hold = holds.get(path)?.shift();
+    if (hold) { hold.ready(); await hold.wait; }
 
     if (url.host !== "api.clickup.com") throw new TypeError(`fixture: unexpected host ${url.host}`);
 
@@ -219,6 +223,22 @@ export function createClickUpFetchStub(tokens: Record<string, ClickUpFixtureToke
       }
       return json(200, { lists: space.folderlessLists.map((l) => listShape(l, spaceRef)) });
     }
+    m = path.match(/^\/folder\/([^/]+)\/list$/);
+    if (m) {
+      for (const ws of owner.workspaces) for (const space of ws.spaces) {
+        const folder = space.folders.find((f) => f.id === m![1]);
+        if (folder) return json(200, { lists: folder.lists.map((l) => listShape(l, { id: space.id, name: space.name })) });
+      }
+      return notAuthorized();
+    }
+    m = path.match(/^\/list\/([^/]+)$/);
+    if (m) {
+      const found = findList(m[1]!);
+      if (!found) return json(404, { err: "List not found", ECODE: "ITEM_015" });
+      if (!own(found.ws.id)) return notAuthorized();
+      const space = found.ws.spaces.find((s) => s.folders.some((f) => f.lists.some((l) => l.id === m![1])) || s.folderlessLists.some((l) => l.id === m![1]))!;
+      return json(200, { ...listShape(found.list, { id: space.id, name: space.name }), statuses: found.list.statuses ?? space.statuses });
+    }
     m = path.match(/^\/list\/([^/]+)\/field$/);
     if (m) {
       const ws = owner.workspaces.find((w) => m![1]! in w.fields);
@@ -273,6 +293,15 @@ export function createClickUpFetchStub(tokens: Record<string, ClickUpFixtureToke
   return {
     fetch,
     requests,
+    /** Delay one fixture response at the HTTP boundary to exercise user-visible races. */
+    holdNext(path: string) {
+      let release!: () => void;
+      let ready!: () => void;
+      const wait = new Promise<void>((resolve) => { release = resolve; });
+      const started = new Promise<void>((resolve) => { ready = resolve; });
+      holds.set(path, [...(holds.get(path) ?? []), { ready, wait }]);
+      return { started, release };
+    },
     /** Answer the next request to `path` (without /api/v2) with this response instead. */
     respondOnce(path: string, response: CannedResponse) {
       queued.set(path, [...(queued.get(path) ?? []), response]);

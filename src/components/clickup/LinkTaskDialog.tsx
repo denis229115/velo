@@ -1,6 +1,6 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { CircleCheck, Link2, Search } from "lucide-react";
-import { Modal } from "@/components/ui/Modal";
+import { TaskDrawer } from "./TaskDrawer";
 import { Button } from "@/components/ui/Button";
 import { TextField } from "@/components/ui/TextField";
 import { FreshdeskWriteReason } from "@/components/freshdesk/useFreshdeskWritable";
@@ -77,6 +77,8 @@ export function LinkTaskDialog({
   onClose: () => void;
   onLinked: () => void;
 }) {
+  const generation = useRef(0);
+  const [connectionChanged, setConnectionChanged] = useState(false);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<TaskSearchResult[] | null>(null);
   const [busy, setBusy] = useState(false);
@@ -84,53 +86,72 @@ export function LinkTaskDialog({
   const [confirming, setConfirming] = useState<TaskChoice | null>(null);
   const writable = useClickUpWritable(item);
 
+  useEffect(() => {
+    const changed = () => {
+      generation.current++;
+      setConnectionChanged(true);
+      setConfirming(null);
+      setResults(null);
+      setBusy(false);
+      setError("The ClickUp connection changed. Close and reopen the drawer.");
+    };
+    window.addEventListener("velo-clickup-connection-changed", changed);
+    return () => { generation.current++; window.removeEventListener("velo-clickup-connection-changed", changed); };
+  }, []);
+
   const choose = (choice: TaskChoice) => {
+    if (connectionChanged || busy || writable.controlProps.disabled) return;
     setError(null);
     if (item.kind === "ticket") setConfirming(choice);
     else void link(choice.reference);
   };
 
   const link = async (reference: string | { taskId: string }) => {
+    if (connectionChanged || busy || writable.controlProps.disabled) return;
+    const mine = ++generation.current;
     setBusy(true);
     setError(null);
     try {
       await linkTask(item, reference);
-      onLinked();
+      if (mine === generation.current) onLinked();
     } catch (err) {
-      setError(errorMessage(err));
+      if (mine === generation.current) setError(errorMessage(err));
     } finally {
-      setBusy(false);
+      if (mine === generation.current) setBusy(false);
     }
   };
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     const text = query.trim();
-    if (!text || busy) return;
+    if (!text || busy || connectionChanged || writable.controlProps.disabled) return;
     if (parseTaskReference(text)) {
       choose({ reference: text, label: text });
       return;
     }
+    const mine = ++generation.current;
     setBusy(true);
     setError(null);
     try {
-      setResults(await searchTasksToLink(item, text));
+      const results = await searchTasksToLink(item, text);
+      if (mine === generation.current) setResults(results);
     } catch (err) {
-      setError(errorMessage(err));
+      if (mine === generation.current) setError(errorMessage(err));
     } finally {
-      setBusy(false);
+      if (mine === generation.current) setBusy(false);
     }
   };
 
   return (
-    <Modal isOpen onClose={onClose} title="Link a ClickUp task" width="w-[32rem]">
-      <div role="dialog" aria-label="Link a ClickUp task" className="p-4 space-y-3">
+    <TaskDrawer onClose={onClose} title="Link a ClickUp task">
+      <div className="p-4 space-y-3">
         <form onSubmit={(e) => void handleSubmit(e)} className="flex items-end gap-2">
           <div className="flex-1">
             <TextField
               label="Search tasks or paste a task URL or ID"
               size="md"
               value={query}
+              disabled={busy || confirming !== null || connectionChanged}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Task name, https://app.clickup.com/t/… or a task ID"
               autoComplete="off"
@@ -142,7 +163,7 @@ export function LinkTaskDialog({
             variant="primary"
             size="md"
             {...writable.controlProps}
-            disabled={busy || !query.trim() || writable.controlProps.disabled || confirming !== null}
+            disabled={busy || connectionChanged || !query.trim() || writable.controlProps.disabled || confirming !== null}
           >
             <Search size={14} aria-hidden />
             {busy ? "Checking…" : "Find"}
@@ -158,7 +179,7 @@ export function LinkTaskDialog({
           <ConfirmLink
             choice={confirming}
             busy={busy}
-            disabled={writable.controlProps.disabled}
+            disabled={connectionChanged || writable.controlProps.disabled}
             onBack={() => setConfirming(null)}
             onConfirm={() => void link(confirming.reference)}
           />
@@ -198,7 +219,7 @@ export function LinkTaskDialog({
                   <Button
                     size="sm"
                     variant="secondary"
-                    disabled={busy || r.alreadyLinked || writable.controlProps.disabled}
+                    disabled={busy || connectionChanged || r.alreadyLinked || writable.controlProps.disabled}
                     onClick={() => choose({ reference: { taskId: r.taskId }, label: r.name })}
                   >
                     {r.alreadyLinked ? "Linked" : "Link"}
@@ -208,6 +229,6 @@ export function LinkTaskDialog({
             </ul>
           ))}
       </div>
-    </Modal>
+    </TaskDrawer>
   );
 }
