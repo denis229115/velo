@@ -16,6 +16,7 @@ export interface IntegrationAccount {
   tenantHost: string;
   me: HelpdeskAgent | null;
   connectedAt: number;
+  generation: string;
   metadataRefreshedAt: number | null;
 }
 
@@ -28,6 +29,7 @@ interface IntegrationAccountRow {
   me_email: string | null;
   me_signature: string | null;
   connected_at: number;
+  connection_generation: string;
   metadata_refreshed_at: number | null;
 }
 
@@ -65,6 +67,7 @@ export async function getIntegrationAccount(kind: IntegrationKind): Promise<Inte
       ? { agentId: row.me_agent_id, name: row.me_name ?? "", email: row.me_email, signature: row.me_signature }
       : null,
     connectedAt: row.connected_at,
+    generation: row.connection_generation,
     metadataRefreshedAt: row.metadata_refreshed_at,
   };
 }
@@ -77,10 +80,10 @@ export async function saveIntegrationAccount(account: {
 }): Promise<void> {
   const db = await getDb();
   await db.execute(
-    `INSERT INTO integration_accounts (kind, tenant_id, tenant_host, me_agent_id, me_name, me_email, me_signature, connected_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, unixepoch())
+    `INSERT INTO integration_accounts (kind, tenant_id, tenant_host, me_agent_id, me_name, me_email, me_signature, connected_at, connection_generation)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, unixepoch(), $8)
      ON CONFLICT(kind) DO UPDATE SET tenant_id = $2, tenant_host = $3, me_agent_id = $4, me_name = $5,
-       me_email = $6, me_signature = $7, connected_at = unixepoch(), metadata_refreshed_at = NULL`,
+       me_email = $6, me_signature = $7, connected_at = unixepoch(), metadata_refreshed_at = NULL, connection_generation = $8`,
     [
       account.kind,
       account.tenantId,
@@ -89,15 +92,8 @@ export async function saveIntegrationAccount(account: {
       account.me.name,
       account.me.email,
       account.me.signature ?? null,
+      crypto.randomUUID(),
     ],
-  );
-}
-
-export async function updateIntegrationIdentity(kind: IntegrationKind, me: HelpdeskAgent): Promise<void> {
-  const db = await getDb();
-  await db.execute(
-    "UPDATE integration_accounts SET me_agent_id = $2, me_name = $3, me_email = $4, me_signature = $5 WHERE kind = $1",
-    [kind, me.agentId, me.name, me.email, me.signature ?? null],
   );
 }
 
@@ -127,8 +123,23 @@ export async function deleteFreshdeskDataExcept(keepTenantId: string): Promise<v
  * Replaces the tenant's metadata with a fresh read. Status classes live in
  * their own table keyed by status ID, so renames keep them.
  */
-export async function replaceHelpdeskMetadata(tenantId: string, metadata: HelpdeskMetadata): Promise<void> {
+export async function replaceHelpdeskMetadata(
+  tenantId: string,
+  metadata: HelpdeskMetadata,
+  expected?: { generation: string; me: HelpdeskAgent },
+): Promise<boolean> {
+  let applied = false;
   await withTransaction(async (db) => {
+    if (expected) {
+      const { me, generation } = expected;
+      const result = await db.execute(
+        `UPDATE integration_accounts SET me_agent_id = $3, me_name = $4, me_email = $5, me_signature = $6
+         WHERE kind = 'freshdesk' AND tenant_id = $1 AND connection_generation = $2`,
+        [tenantId, generation, me.agentId, me.name, me.email, me.signature ?? null],
+      );
+      if (result.rowsAffected === 0) return;
+    }
+    applied = true;
     for (const table of ["freshdesk_field_choices", "freshdesk_ticket_fields", "freshdesk_agents", "freshdesk_groups"]) {
       await db.execute(`DELETE FROM ${table} WHERE tenant_id = $1`, [tenantId]);
     }
@@ -165,6 +176,7 @@ export async function replaceHelpdeskMetadata(tenantId: string, metadata: Helpde
       [tenantId],
     );
   });
+  return applied;
 }
 
 export async function getFieldChoices(tenantId: string, fieldName: string): Promise<FieldChoice[]> {

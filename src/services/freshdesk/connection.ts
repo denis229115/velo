@@ -13,7 +13,6 @@ import {
   replaceHelpdeskMetadata,
   saveIntegrationAccount,
   setStatusClass,
-  updateIntegrationIdentity,
   type StatusClass,
 } from "@/services/db/freshdesk";
 import { clearTicketSyncAuthBlock } from "@/services/db/freshdeskTickets";
@@ -120,12 +119,12 @@ export async function disconnectHelpdesk(): Promise<void> {
 }
 
 /** The connected helpdesk and its API key; null in sample mode. Never log the result. */
-export async function currentCredentials(): Promise<{ tenantId: string; credentials: HelpdeskCredentials } | null> {
+export async function currentCredentials(): Promise<{ tenantId: string; generation: string; credentials: HelpdeskCredentials } | null> {
   const account = await getIntegrationAccount("freshdesk");
   if (!account) return null;
   const apiKey = await getSecureSetting(API_KEY_SETTING);
   if (!apiKey) return null;
-  return { tenantId: account.tenantId, credentials: { host: account.tenantHost, apiKey } };
+  return { tenantId: account.tenantId, generation: account.generation, credentials: { host: account.tenantHost, apiKey } };
 }
 
 /** Re-reads identity and metadata. IDs stay stable; labels follow Freshdesk. */
@@ -134,9 +133,7 @@ export async function refreshHelpdeskMetadata(): Promise<boolean> {
   if (!current) return false;
   const me = await fetchCurrentAgent(current.credentials);
   const metadata = await fetchHelpdeskMetadata(current.credentials);
-  await updateIntegrationIdentity("freshdesk", me);
-  await replaceHelpdeskMetadata(current.tenantId, metadata);
-  return true;
+  return replaceHelpdeskMetadata(current.tenantId, metadata, { generation: current.generation, me });
 }
 
 /**

@@ -1200,6 +1200,11 @@ const MIGRATIONS = [
     // no longer reads this key (#37).
     sql: `DELETE FROM settings WHERE key = 'ai_auto_summarize';`,
   },
+  {
+    version: 39,
+    description: "Freshdesk connection generations",
+    sql: `ALTER TABLE integration_accounts ADD COLUMN connection_generation TEXT NOT NULL DEFAULT '';`,
+  },
 ];
 
 /**
