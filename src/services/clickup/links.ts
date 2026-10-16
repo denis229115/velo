@@ -223,7 +223,7 @@ export async function backlinkTarget(
   key: LinkKey,
   credentials: { tenantId: string; token: string },
   task: { taskId: string; url: string; name: string },
-  expectedGeneration?: string,
+  expectedGeneration?: string | null,
 ): Promise<BacklinkTarget | null> {
   if (item.kind !== "ticket") return null;
   const helpdesk = await currentCredentials();
@@ -244,7 +244,7 @@ export async function linkTask(item: LinkedItem, reference: string | { taskId: s
   if (!ref) throw new ClickUpError("not_found", "That is not a ClickUp task URL or ID.");
   if (!useUIStore.getState().isOnline) throw new Error(NEEDS_CONNECTION_MESSAGE);
   const { credentials, key } = await requireLinkContext(item);
-  const generation = item.kind === "ticket" ? (await getIntegrationAccount("freshdesk"))?.generation : undefined;
+  const generation = item.kind === "ticket" ? (await getIntegrationAccount("freshdesk"))?.generation ?? null : undefined;
   await assertNotWaiting(credentials.tenantId);
 
   let verified;

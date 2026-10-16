@@ -111,12 +111,13 @@ async function writeTicketIdField(t: BacklinkTarget, task: RemoteTask): Promise<
   return { state: "done", message: null };
 }
 
-/** Reads the ticket back to learn whether an unconfirmed note landed; null when Freshdesk can't be read */
+/** A reconnect invalidates captured credentials, including reconnects to the same host. */
 async function sameHelpdesk(t: BacklinkTarget): Promise<boolean> {
   const current = await currentCredentials();
   return current?.tenantId === t.key.scopeId && current.generation === t.helpdesk.generation;
 }
 
+/** Reads the original helpdesk; null when absence cannot be established safely. */
 async function noteLanded(t: BacklinkTarget, entryId: number): Promise<boolean | null> {
   if (!(await sameHelpdesk(t))) return null;
   const current = t.helpdesk;
@@ -124,6 +125,7 @@ async function noteLanded(t: BacklinkTarget, entryId: number): Promise<boolean |
   if (entry?.outcome === "confirmed") return true;
   try {
     const fresh = await refreshTicketHistory(current.tenantId, current.credentials, t.ticketId);
+    if (!(await sameHelpdesk(t))) return null;
     const landed = fresh.conversations.some((c) => c.kind === "internal_note" && (c.bodyText ?? "").includes(t.taskUrl));
     if (!landed && !fresh.complete) return null;
     await finishJournalEntry(entryId, landed ? "confirmed" : "failed", landed ? null : "Freshdesk has no record of this note.");

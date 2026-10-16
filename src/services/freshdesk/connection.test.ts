@@ -267,4 +267,5 @@ it.each([ALPHA_HOST, BETA_HOST])("ignores a delayed metadata refresh after recon
   expect(await refresh).toBe(false);
   expect(await getHelpdeskConnection()).toEqual(expected);
   expect(await getHelpdeskMetadataSummary()).toEqual(metadata);
+  if (host === BETA_HOST) expect(await everyStoredValue()).not.toContain("Fixture Billing");
 });

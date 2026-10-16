@@ -227,6 +227,7 @@ describe("migration v37 (ticket reply attachments)", () => {
 describe("obsolete AI preferences upgrade", () => {
   it.each([true, false])("removes the obsolete auto-summary key from existing v37 history (key present: %s)", async (present) => {
     await runMigrations();
+    await db.execute("ALTER TABLE integration_accounts DROP COLUMN connection_generation");
     await db.execute("DELETE FROM _migrations WHERE version >= 38");
     if (present) await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('ai_auto_summarize', 'true')");
     await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('theme', 'dark')");

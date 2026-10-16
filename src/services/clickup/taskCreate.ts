@@ -248,7 +248,7 @@ function itemOf(key: LinkKey): LinkedItem {
 }
 
 /** Once ClickUp holds the task: store it, link it, then write the ticket's remaining backlinks. */
-async function completeCreation(op: TaskOperation, apiTask: ApiTask, credentials: { tenantId: string; token: string }, helpdeskGeneration?: string): Promise<CreateTaskResult> {
+async function completeCreation(op: TaskOperation, apiTask: ApiTask, credentials: { tenantId: string; token: string }, helpdeskGeneration?: string | null): Promise<CreateTaskResult> {
   await finishTaskOperation(op.operationId, "confirmed", { taskId: String(apiTask.id) });
   const cached = cachedTaskFrom(apiTask, nowS());
   await upsertCachedTask(credentials.tenantId, cached);
@@ -377,7 +377,7 @@ export async function reconcileTaskCreation(operationId: string): Promise<Create
   if (!useUIStore.getState().isOnline) return { outcome: "unconfirmed", operationId, message: STILL_UNCONFIRMED_MESSAGE };
 
   const target = await backlinkTarget(itemOf(op.key), op.key, credentials, { taskId: "", url: "", name: "" });
-  const helpdeskGeneration = target?.helpdesk.generation;
+  const helpdeskGeneration = target?.helpdesk.generation ?? null;
   const marker = markerLine(operationId);
   const since = (op.createdAt - CLOCK_SKEW_S) * 1000;
   let complete = false;

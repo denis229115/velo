@@ -39,6 +39,7 @@ import { getTicketList, syncTickets } from "./ticketSync";
 import { getOperationJournal } from "./ticketEdits";
 import { getTicketHistory } from "./ticketHistory";
 import { captureStalenessBaseline, reconcileTicketSend, sendTicketResponse, type StalenessBaseline } from "./ticketSend";
+import { loadTicketDraft, saveTicketDraft, sendTicketDraft } from "./ticketDrafts";
 import { useUIStore } from "@/stores/uiStore";
 
 vi.spyOn(console, "log").mockImplementation(() => {});
@@ -614,5 +615,18 @@ it("confirms a matching reply even when other history remains unread", async () 
   if (sent.outcome !== "unconfirmed") throw new Error(sent.outcome);
   truncatedHistory(true);
   expect(await reconcileTicketSend("1001", sent.entryId)).toEqual({ outcome: "sent" });
+  expect(posts()).toHaveLength(1);
+});
+
+
+it("keeps the draft unresendable while reconciliation history is incomplete", async () => {
+  await saveTicketDraft("1001", "reply", { bodyHtml: "<p>Unique accepted reply.</p>" });
+  stub.respondOnce(ALPHA_HOST, "/api/v2/tickets/1001/reply", { method: "POST", apply: true, networkError: true });
+  expect(await sendTicketDraft("1001", "reply")).toMatchObject({ outcome: "unconfirmed" });
+  for (let attempt = 0; attempt < 2; attempt++) {
+    truncatedHistory();
+    expect(await sendTicketDraft("1001", "reply")).toMatchObject({ outcome: "unconfirmed" });
+    expect((await loadTicketDraft("1001", "reply"))?.unconfirmedEntryId).toEqual(expect.any(Number));
+  }
   expect(posts()).toHaveLength(1);
 });

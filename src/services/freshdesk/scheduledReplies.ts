@@ -122,19 +122,19 @@ export async function scheduleTicketReply(
   let id = "";
   await withTransaction(async () => {
     id = await insertScheduledReply({
-    tenantId,
-    agentId: account?.me?.agentId ?? "",
-    ticketId,
-    subject: ticket?.subject ?? "",
-    recipient: [ticket?.customerName, ticket?.customerEmail && `<${ticket.customerEmail}>`].filter(Boolean).join(" "),
-    bodyHtml: draft.bodyHtml,
-    ccEmails: draft.ccEmails,
-    sendAt: options.sendAt,
-    thenStatusId: options.thenStatusId ?? null,
-    baselineStartedAt: draft.baseline.startedAt,
-    baselineAssignee: draft.baseline.assigneeId,
-    baselineStatus: ticket?.statusId ?? null,
-  });
+      tenantId,
+      agentId: account?.me?.agentId ?? "",
+      ticketId,
+      subject: ticket?.subject ?? "",
+      recipient: [ticket?.customerName, ticket?.customerEmail && `<${ticket.customerEmail}>`].filter(Boolean).join(" "),
+      bodyHtml: draft.bodyHtml,
+      ccEmails: draft.ccEmails,
+      sendAt: options.sendAt,
+      thenStatusId: options.thenStatusId ?? null,
+      baselineStartedAt: draft.baseline.startedAt,
+      baselineAssignee: draft.baseline.assigneeId,
+      baselineStatus: ticket?.statusId ?? null,
+    });
     const key = { tenantId, agentId: account?.me?.agentId ?? "", ticketId, mode: "reply" as const };
     await moveStoredAttachments(draftAttachmentOwner(key), scheduledOwner(id));
     await deleteStoredDraft(key);
