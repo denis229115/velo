@@ -125,6 +125,7 @@ async function noteLanded(t: BacklinkTarget, entryId: number): Promise<boolean |
   try {
     const fresh = await refreshTicketHistory(current.tenantId, current.credentials, t.ticketId);
     const landed = fresh.conversations.some((c) => c.kind === "internal_note" && (c.bodyText ?? "").includes(t.taskUrl));
+    if (!landed && !fresh.complete) return null;
     await finishJournalEntry(entryId, landed ? "confirmed" : "failed", landed ? null : "Freshdesk has no record of this note.");
     return landed;
   } catch {

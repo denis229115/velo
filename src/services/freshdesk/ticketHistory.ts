@@ -116,16 +116,18 @@ async function readHistory(
     }
     if (batch.length < CONVERSATION_PAGE_SIZE) {
       await save(true, ticket.updatedAt);
-      return { ticket, conversations };
+      return { ticket, conversations, complete: true };
     }
   }
   // Longer than one run may read: incomplete until the ticket changes
   await save(false, ticket.updatedAt);
-  return { ticket, conversations };
+  return { ticket, conversations, complete: false };
 }
 
 /** A ticket and its conversations as Freshdesk has them right now */
 export interface FreshTicket {
+  /** False when bounded discovery left conversations unread. */
+  complete: boolean;
   ticket: CachedTicket;
   conversations: DecodedConversation[];
 }
