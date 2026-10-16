@@ -195,7 +195,7 @@ export function ContextMenu({ items, position, onClose }: ContextMenuProps) {
       <div
         ref={menuRef}
         role="menu"
-        className="fixed z-[100] bg-surface-overlay border border-separator rounded-md overlay-shadow py-1 min-w-[200px]"
+        className="fixed z-[100] bg-surface-overlay border border-separator rounded-[var(--radius-menu)] overlay-shadow py-1 min-w-[200px]"
         style={{ left: adjustedPosition.x, top: adjustedPosition.y }}
       >
         {items.map((item, index) => {
@@ -227,7 +227,7 @@ export function ContextMenu({ items, position, onClose }: ContextMenuProps) {
                 disabled={item.disabled}
                 onClick={() => handleItemClick(item)}
                 onMouseEnter={() => handleMouseEnter(index, item)}
-                className={`flex items-center gap-2 w-full px-3 py-1.5 text-xs text-left transition-colors ${
+                className={`flex items-center gap-2 w-full px-3 py-1.5 text-xs text-left transition-colors rounded-[var(--radius-menu-item)] ${
                   item.disabled
                     ? "text-text-tertiary cursor-default"
                     : item.danger
@@ -321,7 +321,7 @@ function Submenu({
       ref={submenuRef}
       role="menu"
       data-submenu-portal
-      className="fixed z-[101] bg-surface-overlay border border-separator rounded-md overlay-shadow py-1 min-w-[180px]"
+      className="fixed z-[101] bg-surface-overlay border border-separator rounded-[var(--radius-menu)] overlay-shadow py-1 min-w-[180px]"
       style={{ left: position.left, top: position.top }}
       onMouseEnter={onMouseEnter}
     >
@@ -340,7 +340,7 @@ function Submenu({
                 onClose();
               }
             }}
-            className={`flex items-center gap-2 w-full px-3 py-1.5 text-xs text-left transition-colors ${
+            className={`flex items-center gap-2 w-full px-3 py-1.5 text-xs text-left transition-colors rounded-[var(--radius-menu-item)] ${
               item.disabled
                 ? "text-text-tertiary cursor-default"
                 : "text-text-primary hover:bg-bg-hover"

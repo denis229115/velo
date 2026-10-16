@@ -61,16 +61,67 @@
   --text-meta: 0.6875rem; /* 11px: times, breadcrumbs, footer */
   --text-preview: 0.75rem; /* 12px: previews, tabs */
   --text-row: 0.8125rem; /* 13px: list rows */
+  --text-callout: var(--type-15); /* 15px */
+  --text-callout--line-height: 1.45;
+  --text-headline: var(--type-17); /* 17px */
+  --text-headline--line-height: 1.3;
+  --text-headline--letter-spacing: -0.012em;
   --text-title: 1.375rem; /* 22px: page title */
   --text-title--letter-spacing: -0.03em;
   --text-title--line-height: 1.2;
 
-  /* Radii added to Tailwind's defaults */
-  --radius-chip: 4px;
-  --radius-panel: 10px;
+  /* Liquid Glass palette, materials and elevation. Values live in theme.css. */
+  --color-system-label: var(--system-label);
+  --color-system-label-secondary: var(--system-label-secondary);
+  --color-system-label-tertiary: var(--system-label-tertiary);
+  --color-system-separator: var(--system-separator);
+  --color-system-content: var(--system-content);
+  --color-system-list: var(--system-list);
+  --color-system-hover: var(--system-hover);
+  --color-system-press: var(--system-press);
+  --color-system-accent: var(--system-accent);
+  --color-system-accent-soft: var(--system-accent-soft);
+  --color-system-success: var(--system-success);
+  --color-system-warning: var(--system-warning);
+  --color-system-danger: var(--system-danger);
+  --color-system-success-soft: var(--system-success-soft);
+  --color-system-ai: var(--system-ai);
+  --color-system-kbd: var(--system-kbd);
+  --color-system-kbd-edge: var(--system-kbd-edge);
+  --color-glass-bar: var(--glass-bar);
+  --color-glass-pop: var(--glass-pop);
+  --color-glass-side: var(--glass-side);
+  --color-glass-edge: var(--glass-edge);
+  --color-glass-highlight: var(--glass-highlight);
+
+  --shadow-e0: var(--elev-0);
+  --shadow-e1: var(--elev-1);
+  --shadow-e2: var(--elev-2);
+  --shadow-e3: var(--elev-3);
+
+  --ease-glass: var(--motion-ease);
 
   --sidebar-blur: 20px;
   --overlay-shadow: 0 8px 28px rgba(0, 0, 0, 0.12);
+}
+
+/*
+ * Radii share their names with the tokens in theme.css. `inline` keeps those
+ * declarations as the source of truth instead of emitting a second variable.
+ */
+@theme inline {
+  --font-ui: var(--font-ui);
+  --radius-window: var(--radius-window);
+  --radius-shell: var(--radius-shell);
+  --radius-sidebar: var(--radius-sidebar);
+  --radius-panel: var(--radius-panel);
+  --radius-menu: var(--radius-menu);
+  --radius-menu-item: var(--radius-menu-item);
+  --radius-control: var(--radius-control);
+  --radius-control-sm: var(--radius-control-sm);
+  --radius-chip: var(--radius-chip);
+  --radius-modal: var(--radius-modal);
+  --radius-capsule: var(--radius-capsule);
 }
 
 @custom-variant dark (&:where(.dark, .dark *));
@@ -114,10 +165,38 @@ body {
   -webkit-user-select: none;
 }
 
-/* Translucency is reserved for the sidebar; every other surface is solid */
+/* Translucency is reserved for the sidebar until the restyle. The materials
+   below are for the navigation and control layer and are not applied yet. */
 .glass-sidebar {
   backdrop-filter: blur(var(--sidebar-blur)) saturate(1.4);
   -webkit-backdrop-filter: blur(var(--sidebar-blur)) saturate(1.4);
+}
+
+.glass-bar,
+.glass-pop {
+  background-color: var(--glass-bar);
+  border: 1px solid var(--glass-edge);
+  box-shadow: inset 0 1px 0 var(--glass-highlight), var(--elev-1);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+}
+
+.glass-pop {
+  background-color: var(--glass-pop);
+  box-shadow: inset 0 1px 0 var(--glass-highlight), var(--elev-2);
+  -webkit-backdrop-filter: blur(var(--glass-pop-blur)) saturate(var(--glass-saturate));
+  backdrop-filter: blur(var(--glass-pop-blur)) saturate(var(--glass-saturate));
+}
+
+html:not(.platform-mac) .glass-bar,
+html:not(.platform-mac) .glass-pop,
+html.reduce-transparency .glass-bar,
+html.reduce-transparency .glass-pop,
+html.increase-contrast .glass-bar,
+html.increase-contrast .glass-pop,
+html.reduce-transparency .glass-sidebar {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 /*
@@ -128,6 +207,15 @@ body {
 .native-vibrancy .glass-sidebar {
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .glass-sidebar,
+  .glass-bar,
+  .glass-pop {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
 }
 
 /* Elevation for menus, popovers and dialogs (solid surface + shadow) */

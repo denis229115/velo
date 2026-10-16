@@ -4,6 +4,20 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Velo</title>
+    <script>
+      (function () {
+        var root = document.documentElement;
+        if (navigator.userAgent.indexOf("Macintosh") !== -1) root.classList.add("platform-mac");
+        try {
+          if (window.matchMedia("(prefers-reduced-transparency: reduce)").matches) {
+            root.classList.add("reduce-transparency");
+          }
+          if (window.matchMedia("(prefers-contrast: more)").matches) {
+            root.classList.add("increase-contrast");
+          }
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

@@ -3,7 +3,14 @@ import { join, relative, resolve } from "path";
 
 // A18: no gradient backdrop, and glass/blur only on the sidebar. jsdom cannot
 // paint Tailwind classes, so this guards the rendered class vocabulary at source.
+// `--glass-*` custom properties are the Liquid Glass vocabulary and may live in
+// the theme; a glass class or a backdrop filter outside the sidebar may not.
 const SRC = resolve(__dirname, "..");
+
+function appliesGlass(text: string): boolean {
+  const withoutTokens = text.replace(/--[\w-]*glass-[\w-]*/g, "");
+  return /glass-|backdrop-blur|backdrop-filter/.test(withoutTokens);
+}
 
 function sourceFiles(dir: string): string[] {
   return readdirSync(dir).flatMap((name) => {
@@ -33,7 +40,7 @@ describe("theme guard", () => {
     const allowed = ["styles/globals.css", "components/layout/Sidebar.tsx", "components/layout/AppFrame.tsx"];
     const offenders = files
       .filter(({ path }) => !allowed.includes(path))
-      .filter(({ text }) => /glass-|backdrop-blur|backdrop-filter/.test(text))
+      .filter(({ text }) => appliesGlass(text))
       .map(({ path }) => path);
     expect(offenders).toEqual([]);
   });

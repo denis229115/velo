@@ -17,16 +17,26 @@ export function readToken(name: string): string {
 interface MediaState {
   dark: boolean;
   reducedMotion: boolean;
+  reducedTransparency: boolean;
+  moreContrast: boolean;
 }
 
 /** Controllable window.matchMedia that mimics the OS appearance settings. */
 export function mockSystemPreferences(initial: Partial<MediaState> = {}) {
-  const state: MediaState = { dark: false, reducedMotion: false, ...initial };
+  const state: MediaState = {
+    dark: false,
+    reducedMotion: false,
+    reducedTransparency: false,
+    moreContrast: false,
+    ...initial,
+  };
   const listeners = new Map<string, Set<() => void>>();
 
   const matches = (query: string) => {
     if (query.includes("prefers-color-scheme: dark")) return state.dark;
     if (query.includes("prefers-reduced-motion: reduce")) return state.reducedMotion;
+    if (query.includes("prefers-reduced-transparency: reduce")) return state.reducedTransparency;
+    if (query.includes("prefers-contrast: more")) return state.moreContrast;
     return false;
   };
 

@@ -48,6 +48,79 @@
   --panel-radius: 10px;
   --panel-border: rgba(0, 0, 0, 0.1);
   --panel-shadow: 0 1px 6px rgba(0, 0, 0, 0.05);
+
+  /* Liquid Glass palette — macOS system colours. Existing --text-*, --surface-*
+     and --status-* tokens stay in use until the restyle. */
+  --system-label: #1d1d1f;
+  --system-label-secondary: #6e6e73;
+  --system-label-tertiary: #aeaeb2;
+  --system-separator: #e5e5ea;
+  --system-content: #ffffff;
+  --system-list: #fafafc;
+  --system-hover: rgba(0, 0, 0, 0.04);
+  --system-press: rgba(0, 0, 0, 0.08);
+  --system-accent: #007aff;
+  --system-accent-soft: rgba(0, 122, 255, 0.12);
+  --system-success: #34c759;
+  --system-warning: #ff9500;
+  --system-danger: #ff3b30;
+  --system-success-soft: rgba(52, 199, 89, 0.14);
+  --system-ai: #af52de;
+  --system-kbd: rgba(0, 0, 0, 0.05);
+  --system-kbd-edge: rgba(0, 0, 0, 0.12);
+
+  /* Materials. Fills are the translucent macOS values; solids are the
+     stand-ins. Effective colours start solid and opt into the fill on macOS. */
+  --glass-bar-fill: rgba(255, 255, 255, 0.62);
+  --glass-pop-fill: rgba(250, 250, 252, 0.78);
+  --glass-side-fill: rgba(255, 255, 255, 0.34);
+  --glass-bar-solid: #ffffff;
+  --glass-pop-solid: #fafafc;
+  --glass-side-solid: #f5f5f7;
+  --glass-bar: var(--glass-bar-solid);
+  --glass-pop: var(--glass-pop-solid);
+  --glass-side: var(--glass-side-solid);
+  --glass-blur: 0px;
+  --glass-pop-blur: 0px;
+  --glass-saturate: 180%;
+  --glass-edge: rgba(0, 0, 0, 0.08);
+  --glass-highlight: transparent;
+
+  /* Concentric radii. The shell is the window radius minus --frame-gap. */
+  --radius-window: 26px;
+  --radius-shell: 18px;
+  --radius-sidebar: 16px;
+  --radius-panel: 12px;
+  --radius-menu: 12px;
+  --radius-menu-item: 7px;
+  --radius-control: 8px;
+  --radius-control-sm: 6px;
+  --radius-chip: 4px;
+  --radius-modal: 16px;
+  --radius-capsule: 999px;
+
+  /* Elevation. e0 is flat content; e1 controls; e2 menus; e3 dialogs. */
+  --elev-0: none;
+  --elev-1: 0 1px 3px rgba(0, 0, 0, 0.08);
+  --elev-2: 0 8px 24px rgba(0, 0, 0, 0.12);
+  --elev-3: 0 20px 50px rgba(0, 0, 0, 0.2);
+
+  --motion-ease: cubic-bezier(0.32, 0.72, 0, 1);
+  --motion-fast: 160ms;
+  --motion-base: 220ms;
+  --motion-slow: 280ms;
+
+  /* Type. 11/12/13/22 already have app utilities; 15 and 17 are the new steps.
+     --font-ui prefers SF Pro via -apple-system and falls back to Inter. */
+  --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Inter Variable", Inter, system-ui, sans-serif;
+  --type-11: 0.6875rem;
+  --type-12: 0.75rem;
+  --type-13: 0.8125rem;
+  --type-15: 0.9375rem;
+  --type-17: 1.0625rem;
+  --type-22: 1.375rem;
+  --type-tracking: -0.003em;
+  --type-tracking-title: -0.012em;
 }
 
 .dark {
@@ -80,6 +153,37 @@
 
   --panel-border: rgba(255, 255, 255, 0.1);
   --panel-shadow: 0 1px 8px rgba(0, 0, 0, 0.32);
+
+  --system-label: #f5f5f7;
+  --system-label-secondary: #98989d;
+  --system-label-tertiary: #636366;
+  --system-separator: #38383a;
+  --system-content: #1c1c1e;
+  --system-list: #161618;
+  --system-hover: rgba(255, 255, 255, 0.06);
+  --system-press: rgba(255, 255, 255, 0.1);
+  --system-accent: #0a84ff;
+  --system-accent-soft: rgba(10, 132, 255, 0.22);
+  --system-success: #30d158;
+  --system-warning: #ff9f0a;
+  --system-danger: #ff453a;
+  --system-success-soft: rgba(48, 209, 88, 0.18);
+  --system-ai: #bf5af2;
+  --system-kbd: rgba(255, 255, 255, 0.08);
+  --system-kbd-edge: rgba(255, 255, 255, 0.16);
+
+  --glass-bar-fill: rgba(40, 40, 44, 0.55);
+  --glass-pop-fill: rgba(36, 36, 40, 0.72);
+  --glass-side-fill: rgba(30, 30, 34, 0.42);
+  --glass-bar-solid: #2c2c2e;
+  --glass-pop-solid: #242428;
+  --glass-side-solid: #1c1c1e;
+  --glass-edge: rgba(255, 255, 255, 0.1);
+
+  /* About twice the light-theme alpha, so the same offsets still read on black. */
+  --elev-1: 0 1px 3px rgba(0, 0, 0, 0.16);
+  --elev-2: 0 8px 24px rgba(0, 0, 0, 0.24);
+  --elev-3: 0 20px 50px rgba(0, 0, 0, 0.4);
 }
 
 /*
@@ -131,6 +235,70 @@
 }
 
 /*
+ * macOS opts into the translucent materials. Everywhere else the effective
+ * tokens stay on the solid stand-ins, with no blur and no highlight sheen.
+ * Reduced transparency and increased contrast do the same, including on macOS.
+ */
+html.platform-mac {
+  --glass-bar: var(--glass-bar-fill);
+  --glass-pop: var(--glass-pop-fill);
+  --glass-side: var(--glass-side-fill);
+  --glass-blur: 24px;
+  --glass-pop-blur: 32px;
+  --glass-highlight: rgba(255, 255, 255, 0.7);
+}
+
+html.platform-mac.dark {
+  --glass-highlight: rgba(255, 255, 255, 0.12);
+}
+
+html.reduce-transparency,
+html.increase-contrast {
+  --glass-bar: var(--glass-bar-solid);
+  --glass-pop: var(--glass-pop-solid);
+  --glass-side: var(--glass-side-solid);
+  --glass-blur: 0px;
+  --glass-pop-blur: 0px;
+  --glass-highlight: transparent;
+}
+
+/* Opaque sidebar for the current frame, stronger than native vibrancy. */
+html.reduce-transparency,
+:root.reduce-transparency.native-vibrancy,
+:root.reduce-transparency.native-vibrancy.dark {
+  --surface-sidebar: #ececec;
+}
+
+html.reduce-transparency.dark,
+:root.dark.reduce-transparency.native-vibrancy {
+  --surface-sidebar: #202020;
+}
+
+html.increase-contrast {
+  --system-label: #000000;
+  --system-label-secondary: #3a3a3c;
+  --system-label-tertiary: #636366;
+  --system-separator: #48484a;
+  --glass-edge: rgba(0, 0, 0, 0.55);
+}
+
+html.increase-contrast.dark {
+  --system-label: #ffffff;
+  --system-label-secondary: #ebebf0;
+  --system-label-tertiary: #aeaeb2;
+  --system-separator: #8e8e93;
+  --glass-edge: rgba(255, 255, 255, 0.55);
+}
+
+/* System accent when the engine knows it; hex above is the fallback. */
+@supports (color: AccentColor) {
+  :root,
+  .dark {
+    --system-accent: AccentColor;
+  }
+}
+
+/*
  * Keyboard focus ring for every interactive element, in both themes.
  * Programmatic-only focus targets (tabindex="-1") and the rich-text editor,
  * whose caret is its focus indicator, are left alone.
@@ -171,5 +339,51 @@
     animation: none !important;
     transition-duration: 0s !important;
     scroll-behavior: auto !important;
+  }
+}
+
+/* First paint, before the appearance classes are set. */
+@media (prefers-reduced-transparency: reduce) {
+  :root,
+  html.platform-mac,
+  :root.native-vibrancy,
+  :root.native-vibrancy.dark {
+    --glass-bar: var(--glass-bar-solid);
+    --glass-pop: var(--glass-pop-solid);
+    --glass-side: var(--glass-side-solid);
+    --glass-blur: 0px;
+    --glass-pop-blur: 0px;
+    --glass-highlight: transparent;
+    --surface-sidebar: #ececec;
+  }
+
+  :root.dark,
+  :root.native-vibrancy.dark {
+    --surface-sidebar: #202020;
+  }
+}
+
+@media (prefers-contrast: more) {
+  :root,
+  html.platform-mac {
+    --system-label: #000000;
+    --system-label-secondary: #3a3a3c;
+    --system-label-tertiary: #636366;
+    --system-separator: #48484a;
+    --glass-edge: rgba(0, 0, 0, 0.55);
+    --glass-bar: var(--glass-bar-solid);
+    --glass-pop: var(--glass-pop-solid);
+    --glass-side: var(--glass-side-solid);
+    --glass-blur: 0px;
+    --glass-pop-blur: 0px;
+    --glass-highlight: transparent;
+  }
+
+  .dark {
+    --system-label: #ffffff;
+    --system-label-secondary: #ebebf0;
+    --system-label-tertiary: #aeaeb2;
+    --system-separator: #8e8e93;
+    --glass-edge: rgba(255, 255, 255, 0.55);
   }
 }
