@@ -24,7 +24,13 @@ import { notifyScheduledReplyFailed, notifyScheduledReplyHeld } from "@/services
 import { finishJournalEntry, getJournalEntries } from "@/services/db/freshdeskJournal";
 import { createBackgroundChecker } from "@/services/backgroundCheckers";
 import { currentCredentials, currentTenantId } from "./connection";
-import { discardTicketDraft, loadTicketDraft, saveTicketDraft } from "./ticketDrafts";
+import { discardTicketDraft, draftAttachmentOwner, loadTicketDraft, saveTicketDraft } from "./ticketDrafts";
+import {
+  deleteStoredAttachments,
+  getStoredAttachments,
+  getStoredAttachmentsWithData,
+  moveStoredAttachments,
+} from "@/services/db/freshdeskReplyAttachments";
 import {
   OFFLINE_MESSAGE,
   SAMPLE_MESSAGE,
@@ -59,11 +65,22 @@ export interface ScheduledReply {
   error: string | null;
   /** The reply went out but the chosen status was not set: why */
   statusProblem: string | null;
+  /** Files kept with the schedule, sent with the reply */
+  attachments: { name: string; size: number }[];
+}
+
+/** Where a Scheduled reply's files are kept */
+const scheduledOwner = (replyId: string): string => `scheduled:${replyId}`;
+
+/** The files to send with a Scheduled reply, when it has any */
+async function filesOf(reply: StoredScheduledReply) {
+  const files = await getStoredAttachmentsWithData(scheduledOwner(reply.replyId));
+  return files.length > 0 ? { attachments: files } : {};
 }
 
 const nowS = () => Math.floor(Date.now() / 1000);
 
-function toScheduledReply(stored: StoredScheduledReply): ScheduledReply {
+function toScheduledReply(stored: StoredScheduledReply, attachments: { name: string; size: number }[]): ScheduledReply {
   return {
     id: stored.replyId,
     ticketId: stored.ticketId,
@@ -77,6 +94,7 @@ function toScheduledReply(stored: StoredScheduledReply): ScheduledReply {
     holdReasons: stored.holdReasons,
     error: stored.lastError,
     statusProblem: stored.statusProblem,
+    attachments,
   };
 }
 
@@ -114,13 +132,21 @@ export async function scheduleTicketReply(
     baselineAssignee: draft.baseline.assigneeId,
     baselineStatus: ticket?.statusId ?? null,
   });
+  // The files go with the text: moved before the draft (and its files) is discarded
+  const draftOwner = draftAttachmentOwner({ tenantId, agentId: account?.me?.agentId ?? "", ticketId, mode: "reply" });
+  await moveStoredAttachments(draftOwner, scheduledOwner(id));
   await discardTicketDraft(ticketId, "reply");
   announceScheduledRepliesChanged();
   return { ok: true, id };
 }
 
 export async function listScheduledReplies(): Promise<ScheduledReply[]> {
-  return (await getScheduledReplies(await currentTenantId())).map(toScheduledReply);
+  const stored = await getScheduledReplies(await currentTenantId());
+  return Promise.all(
+    stored.map(async (r) =>
+      toScheduledReply(r, (await getStoredAttachments(scheduledOwner(r.replyId))).map((a) => ({ name: a.name, size: a.size }))),
+    ),
+  );
 }
 
 function baselineOf(reply: StoredScheduledReply): StalenessBaseline {
@@ -155,12 +181,15 @@ async function failFinally(reply: StoredScheduledReply, from: ScheduledReplyStat
 }
 
 /** A send that did not happen: tried again later with backoff, until the bound */
-async function failedAttempt(reply: StoredScheduledReply, attemptsMade: number, message: string): Promise<void> {
+async function failedAttempt(reply: StoredScheduledReply, attemptsMade: number, message: string, retryAfterSeconds = 0): Promise<void> {
   const backoff = BACKOFF_S[attemptsMade - 1];
   if (attemptsMade >= MAX_ATTEMPTS || backoff === undefined) {
     await failFinally(reply, ["sending"], message);
   } else {
-    await moveScheduledReply(reply.replyId, ["sending"], "pending", { lastError: message, nextAttemptAt: nowS() + backoff });
+    await moveScheduledReply(reply.replyId, ["sending"], "pending", {
+      lastError: message,
+      nextAttemptAt: nowS() + Math.max(backoff, retryAfterSeconds),
+    });
   }
 }
 
@@ -173,6 +202,8 @@ async function settle(reply: StoredScheduledReply, from: ScheduledReplyState, at
         lastError: null,
         nextAttemptAt: null,
       });
+      // Freshdesk has the files now
+      await deleteStoredAttachments(scheduledOwner(reply.replyId));
       return;
     case "stale":
       // Held with the fresh baseline, so "Send anyway" acknowledges exactly these changes
@@ -202,9 +233,9 @@ async function settle(reply: StoredScheduledReply, from: ScheduledReplyState, at
       return;
     }
     case "failed":
-      // Reconciliation found no such reply: the operator decides whether to send it again
-      if (from === "unconfirmed") await failFinally(reply, ["unconfirmed"], result.message);
-      else await failedAttempt(reply, attemptsMade, result.message);
+      // A rejected request needs correction; an absent unconfirmed reply needs the operator's decision.
+      if (from === "unconfirmed" || result.rejected) await failFinally(reply, [from], result.message);
+      else await failedAttempt(reply, attemptsMade, result.message, result.retryAfterSeconds);
       return;
     case "unavailable":
       if (result.message === OFFLINE_MESSAGE) {
@@ -227,6 +258,7 @@ async function sendDue(reply: StoredScheduledReply): Promise<void> {
     ccEmails: reply.ccEmails,
     baseline: baselineOf(reply),
     ...(reply.thenStatusId !== null && { thenStatusId: reply.thenStatusId }),
+    ...(await filesOf(reply)),
   });
   await settle(reply, "sending", attemptsMade, result);
 }
@@ -263,7 +295,10 @@ const CHANGEABLE: ScheduledReplyState[] = ["pending", "held", "failed"];
 /** Cancels a Scheduled reply that is not on its way; true when it was removed */
 export async function cancelScheduledReply(id: string): Promise<boolean> {
   const removed = await deleteScheduledReply(id, CHANGEABLE);
-  if (removed) announceScheduledRepliesChanged();
+  if (removed) {
+    await deleteStoredAttachments(scheduledOwner(id));
+    announceScheduledRepliesChanged();
+  }
   return removed;
 }
 
@@ -287,8 +322,11 @@ export async function editScheduledReply(id: string): Promise<EditResult> {
     { bodyHtml: reply.bodyHtml, ccEmails: reply.ccEmails },
     { startedAt: reply.baselineStartedAt, assigneeId: reply.baselineAssignee },
   );
+  const draftOwner = draftAttachmentOwner({ tenantId: reply.tenantId, agentId: reply.agentId, ticketId: reply.ticketId, mode: "reply" });
+  await moveStoredAttachments(scheduledOwner(id), draftOwner);
   // Only one copy may be sendable: the draft goes again if the reply left meanwhile
   if (!(await deleteScheduledReply(id, CHANGEABLE))) {
+    await moveStoredAttachments(draftOwner, scheduledOwner(id));
     await discardTicketDraft(reply.ticketId, "reply");
     return { ok: false, message: "This reply is already on its way or done, so it can no longer be edited." };
   }
@@ -319,6 +357,7 @@ export async function sendScheduledReplyNow(id: string): Promise<string | null> 
     ccEmails: reply.ccEmails,
     baseline: baselineOf(reply),
     ...(reply.thenStatusId !== null && { thenStatusId: reply.thenStatusId }),
+    ...(await filesOf(reply)),
   });
   announceScheduledRepliesChanged();
   switch (result.outcome) {
