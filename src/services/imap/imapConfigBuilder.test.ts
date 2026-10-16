@@ -67,6 +67,14 @@ describe("buildImapConfig", () => {
     expect(config.password).toBe("secret123");
   });
 
+  it("lowercases the IMAP host", () => {
+    const account = createMockDbAccount({
+      imap_host: "Plesk.winning-solutions.de",
+      smtp_host: "Plesk.winning-solutions.de",
+    });
+    expect(buildImapConfig(account).host).toBe("plesk.winning-solutions.de");
+  });
+
   it("throws when imap_host is missing", () => {
     const account = createMockDbAccount({ imap_host: null });
     expect(() => buildImapConfig(account)).toThrow("no IMAP host configured");
@@ -99,6 +107,14 @@ describe("buildSmtpConfig", () => {
     const account = createMockDbAccount({ smtp_port: null });
     const config = buildSmtpConfig(account);
     expect(config.port).toBe(587);
+  });
+
+  it("lowercases the SMTP host", () => {
+    const account = createMockDbAccount({
+      imap_host: "Plesk.winning-solutions.de",
+      smtp_host: "Plesk.winning-solutions.de",
+    });
+    expect(buildSmtpConfig(account).host).toBe("plesk.winning-solutions.de");
   });
 
   it("throws when smtp_host is missing", () => {

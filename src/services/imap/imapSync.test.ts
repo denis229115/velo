@@ -64,7 +64,7 @@ vi.mock("../db/pendingOperations", () => ({
   getPendingOpsForResource: vi.fn(() => []),
 }));
 
-import { imapMessageToParsedMessage, imapInitialSync, formatImapDate, computeSinceDate, isConnectionError } from "./imapSync";
+import { imapMessageToParsedMessage, imapInitialSync, imapDeltaSync, formatImapDate, computeSinceDate, isConnectionError } from "./imapSync";
 import {
   createMockImapMessage,
   createMockImapAccount,
@@ -73,12 +73,13 @@ import {
   createMockImapFetchResult,
 } from "@/test/mocks";
 import { imapListFolders, imapSearchFolder, imapFetchMessages } from "./tauriCommands";
-import { getAccount } from "../db/accounts";
+import { getAccount, updateAccountSyncState } from "../db/accounts";
 import { withTransaction } from "../db/connection";
 import { upsertMessage, updateMessageThreadIds } from "../db/messages";
-import { upsertThread, deleteThread } from "../db/threads";
+import { upsertThread, setThreadLabels, deleteThread } from "../db/threads";
 import { upsertAttachment } from "../db/attachments";
 import { getPendingOpsForResource } from "../db/pendingOperations";
+import { getAllFolderSyncStates } from "../db/folderSyncState";
 
 describe("imapMessageToParsedMessage", () => {
   it("converts basic IMAP message to ParsedMessage format", () => {
@@ -254,7 +255,9 @@ describe("imapInitialSync", () => {
   const mockUpsertMessage = vi.mocked(upsertMessage);
   const mockUpdateMessageThreadIds = vi.mocked(updateMessageThreadIds);
   const mockUpsertThread = vi.mocked(upsertThread);
+  const mockSetThreadLabels = vi.mocked(setThreadLabels);
   const mockUpsertAttachment = vi.mocked(upsertAttachment);
+  const mockUpdateAccountSyncState = vi.mocked(updateAccountSyncState);
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -336,6 +339,28 @@ describe("imapInitialSync", () => {
     expect(firstThreadCall.id).toBe(firstMsgCall.threadId);
   });
 
+  it("labels the placeholder thread in phase 2 so inbox can show the message", async () => {
+    const msg = createMockImapMessage({
+      uid: 42,
+      folder: "INBOX",
+      message_id: "<m1@test>",
+      subject: "Hello",
+      date: Math.floor(Date.now() / 1000),
+    });
+    setupFolderWithMessages("INBOX", [msg]);
+
+    await imapInitialSync("acc-1");
+
+    const placeholderId = "imap-acc-1-INBOX-42";
+    const phase2Call = mockSetThreadLabels.mock.calls.find((call) => call[1] === placeholderId);
+    expect(phase2Call).toEqual(["acc-1", placeholderId, expect.arrayContaining(["INBOX"])]);
+
+    const phase2Order = mockSetThreadLabels.mock.invocationCallOrder[
+      mockSetThreadLabels.mock.calls.findIndex((call) => call[1] === placeholderId)
+    ];
+    expect(phase2Order).toBeLessThan(mockUpdateMessageThreadIds.mock.invocationCallOrder[0]!);
+  });
+
   it("updates thread IDs after threading phase", async () => {
     const msg1 = createMockImapMessage({ uid: 1, message_id: "<m1@test>", subject: "Hello", date: Math.floor(Date.now() / 1000) });
     setupFolderWithMessages("INBOX", [msg1]);
@@ -393,7 +418,7 @@ describe("imapInitialSync", () => {
     );
   });
 
-  it("filters messages by date cutoff", async () => {
+  it("stores messages older than the sync window", async () => {
     const recentDate = Math.floor(Date.now() / 1000) - 10; // 10 seconds ago
     const oldDate = Math.floor(Date.now() / 1000) - 400 * 86400; // 400 days ago
 
@@ -404,9 +429,8 @@ describe("imapInitialSync", () => {
 
     await imapInitialSync("acc-1", 365);
 
-    // Only recent message should be stored (old one is beyond 365 days)
-    expect(mockUpsertMessage).toHaveBeenCalledTimes(1);
-    expect(mockUpsertMessage.mock.calls[0]![0].id).toContain("1"); // uid=1
+    const storedIds = mockUpsertMessage.mock.calls.map((call) => call[0].id);
+    expect(storedIds).toEqual(["imap-acc-1-INBOX-1", "imap-acc-1-INBOX-2"]);
   });
 
   it("handles empty folders gracefully", async () => {
@@ -443,12 +467,12 @@ describe("imapInitialSync", () => {
 
     await imapInitialSync("acc-1");
 
-    // Should use imapSearchFolder (lightweight search) with SINCE date filter
+    // SEARCH ALL — sinceDate null — so old mail is not dropped before fetch
     expect(mockImapSearchFolder).toHaveBeenCalledTimes(1);
     expect(mockImapSearchFolder).toHaveBeenCalledWith(
       expect.objectContaining({ host: "imap.example.com" }),
       "INBOX",
-      expect.stringMatching(/^\d{1,2}-[A-Z][a-z]{2}-\d{4}$/), // sinceDate in DD-Mon-YYYY format
+      null,
     );
 
     // Then fetch the messages by UID
@@ -458,6 +482,46 @@ describe("imapInitialSync", () => {
       "INBOX",
       [1], // UIDs from search
     );
+  });
+
+  it("syncs INBOX before other folders and marks the account synced after INBOX", async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const inboxMsg = createMockImapMessage({
+      uid: 7,
+      folder: "INBOX",
+      message_id: "<in@test>",
+      date: now,
+    });
+    const archiveMsg = createMockImapMessage({
+      uid: 8,
+      folder: "Archive",
+      message_id: "<ar@test>",
+      date: now,
+    });
+
+    mockImapListFolders.mockResolvedValue([
+      createMockImapFolder({ path: "Archive", raw_path: "Archive", name: "Archive", exists: 1 }),
+      createMockImapFolder({ path: "INBOX", raw_path: "INBOX", name: "INBOX", exists: 1 }),
+    ]);
+    mockImapSearchFolder.mockImplementation(async (_config, folder: string) => ({
+      uids: [folder === "INBOX" ? inboxMsg.uid : archiveMsg.uid],
+      folder_status: createMockImapFolderStatus({ exists: 1 }),
+    }));
+    mockImapFetchMessages.mockImplementation(async (_config, folder: string) =>
+      createMockImapFetchResult([folder === "INBOX" ? inboxMsg : archiveMsg]),
+    );
+
+    const syncPromise = imapInitialSync("acc-1");
+    await vi.runAllTimersAsync();
+    await syncPromise;
+
+    expect(mockImapSearchFolder.mock.calls.map((call) => call[1])).toEqual(["INBOX", "Archive"]);
+
+    const archiveFetchIndex = mockImapFetchMessages.mock.calls.findIndex((call) => call[1] === "Archive");
+    expect(archiveFetchIndex).toBeGreaterThanOrEqual(0);
+    const historyOrder = mockUpdateAccountSyncState.mock.invocationCallOrder[0];
+    const archiveFetchOrder = mockImapFetchMessages.mock.invocationCallOrder[archiveFetchIndex]!;
+    expect(historyOrder).toBeLessThan(archiveFetchOrder);
   });
 
   it("wraps chunk DB writes in a transaction", async () => {
@@ -744,5 +808,41 @@ describe("imapInitialSync — placeholder cleanup", () => {
     // Threading should merge the two messages into one thread,
     // so at least one placeholder thread (the one not chosen as thread ID) should be deleted
     expect(mockDeleteThread).toHaveBeenCalled();
+  });
+});
+
+describe("imapDeltaSync", () => {
+  const mockGetAccount = vi.mocked(getAccount);
+  const mockImapListFolders = vi.mocked(imapListFolders);
+  const mockImapSearchFolder = vi.mocked(imapSearchFolder);
+  const mockGetAllFolderSyncStates = vi.mocked(getAllFolderSyncStates);
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetAccount.mockResolvedValue(createMockImapAccount({ id: "acc-1" }));
+    mockGetAllFolderSyncStates.mockResolvedValue([]);
+  });
+
+  it("searches the whole folder when it has no saved sync state", async () => {
+    mockImapListFolders.mockResolvedValue([
+      createMockImapFolder({
+        path: "Archive",
+        raw_path: "Archive",
+        name: "Archive",
+        exists: 1,
+      }),
+    ]);
+    mockImapSearchFolder.mockResolvedValue({
+      uids: [],
+      folder_status: createMockImapFolderStatus({ exists: 1 }),
+    });
+
+    await imapDeltaSync("acc-1", 365);
+
+    expect(mockImapSearchFolder).toHaveBeenCalledWith(
+      expect.objectContaining({ host: "imap.example.com" }),
+      "Archive",
+      null,
+    );
   });
 });
