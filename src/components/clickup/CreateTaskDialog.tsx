@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { AlertTriangle, Plus, RefreshCw } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
@@ -17,6 +17,7 @@ import {
   type CreateTaskResult,
   type TaskPriority,
 } from "@/services/clickup/taskCreate";
+import { TaskProposalPanel, type TaskProposalControls } from "./TaskProposalPanel";
 import { useClickUpWritable } from "./useClickUpWritable";
 
 const FIELD_CLASS =
@@ -68,12 +69,13 @@ export function CreateTaskDialog({
   onClose: () => void;
   onCreated: () => void;
   /** Where AI-proposed task text is offered (#16); the dialog works without it */
-  proposalSlot?: ReactNode;
+  proposalSlot?: ReactNode | ((controls: TaskProposalControls) => ReactNode);
 }) {
   const writable = useClickUpWritable(item);
   const [options, setOptions] = useState<CreateTaskOptions | null>(null);
   const [listId, setListId] = useState("");
   const [name, setName] = useState("");
+  const titleEdited = useRef(false);
   const [description, setDescription] = useState("");
   const [assigneeIds, setAssigneeIds] = useState<string[]>([]);
   const [priority, setPriority] = useState<TaskPriority | null>(null);
@@ -95,7 +97,7 @@ export function CreateTaskDialog({
         if (cancelled) return;
         setOptions(o);
         setListId(o.initialListId ?? "");
-        setName(o.suggestedName);
+        if (!titleEdited.current) setName(o.suggestedName);
       })
       .catch((err) => !cancelled && setError(errorMessage(err)));
     return () => {
@@ -163,6 +165,15 @@ export function CreateTaskDialog({
     setAssigneeIds((ids) => (ids.includes(userId) ? ids.filter((id) => id !== userId) : [...ids, userId]));
 
   const locked = busy || unconfirmed !== null;
+  const proposalControls: TaskProposalControls = {
+    locked,
+    onApply: (text, how) => {
+      if (locked) return;
+      titleEdited.current = true;
+      setName((current) => how === "replace" ? text.title : [current, text.title].filter(Boolean).join(" — "));
+      setDescription((current) => how === "replace" ? text.description : [current, text.description].filter(Boolean).join("\n\n"));
+    },
+  };
 
   return (
     <Modal isOpen onClose={onClose} title="Create a ClickUp task" width="w-[36rem]">
@@ -178,7 +189,7 @@ export function CreateTaskDialog({
             <p className="text-meta text-text-secondary">From ticket #{item.ticketId}</p>
           ) : (
             <p className="text-meta text-text-secondary">
-              Nothing from this email is sent to ClickUp; the link is kept only in Velo.
+              Nothing from this email is sent to ClickUp automatically. Only the title and description you choose are sent; the link is kept only in Velo.
             </p>
           )}
           {options && options.lists.length === 0 && (
@@ -210,14 +221,14 @@ export function CreateTaskDialog({
               </p>
             )}
           </div>
-          {proposalSlot}
+          {typeof proposalSlot === "function" ? proposalSlot(proposalControls) : proposalSlot === undefined ? <TaskProposalPanel item={item} {...proposalControls} /> : proposalSlot}
           <TextField
             id="create-task-title"
             label="Title"
             size="md"
             value={name}
             disabled={locked}
-            onChange={(e) => setName(e.target.value)}
+            onChange={(e) => { titleEdited.current = true; setName(e.target.value); }}
             autoComplete="off"
             autoFocus
           />

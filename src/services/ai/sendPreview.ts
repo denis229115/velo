@@ -16,6 +16,10 @@ export type AiDataKind =
   | "priority"
   | "sender_domain"
   | "operator_request"
+  | "task_name"
+  | "task_status"
+  | "task_description"
+  | "task_comments"
   | SensitiveKind;
 
 export interface SendPreview {

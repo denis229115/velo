@@ -79,6 +79,15 @@ export interface FixtureTask {
   space: { id: string };
   team_id: string;
   custom_fields: { id: string; value?: unknown }[];
+  /** Served by GET /task/{id}/comment, oldest first here (ClickUp answers newest first) */
+  comments?: FixtureComment[];
+}
+
+export interface FixtureComment {
+  id: string;
+  comment_text: string;
+  user: Omit<FixtureUser, "initials">;
+  date: string;
 }
 
 export interface ClickUpFixtureWorkspace {
@@ -192,6 +201,34 @@ export const alphaExportBug = task({
   list: alphaBugsList,
   team_id: ALPHA_WORKSPACE_ID,
 });
+
+/**
+ * `alphaExportBug` with a description and comments carrying fake personal data,
+ * a secret and the lines Velo itself writes (operation marker, ticket link).
+ */
+export const alphaExportBugWithNotes: FixtureTask = {
+  ...alphaExportBug,
+  description: [
+    "Export of accounts over 50k rows times out after 30 s.",
+    "Reporter: mia.fake@example.test, phone +41 79 555 01 23.",
+    "Velo reference: velo-op-00000000-0000-4000-8000-000000000001",
+    "Freshdesk ticket #1001: https://fixture-alpha.freshdesk.com/a/tickets/1001",
+  ].join("\n"),
+  comments: [
+    {
+      id: "c1",
+      comment_text: "Reproduced on staging with the fixture account.",
+      user: { id: 702, username: "Fixture Colleague", email: "colleague@fixture.invalid", color: "#00aaff", profilePicture: null },
+      date: "1760000100000",
+    },
+    {
+      id: "c2",
+      comment_text: "Fix is in review, not deployed yet. Test login token sk-ant-api03-FAKEFAKEFAKEFAKEFAKEFAKE",
+      user: { id: 701, username: "Fixture Operator", email: "operator@fixture.invalid", color: "#7b68ee", profilePicture: null },
+      date: "1760000200000",
+    },
+  ],
+};
 
 export const alphaExportBugDone: FixtureTask = {
   ...alphaExportBug,

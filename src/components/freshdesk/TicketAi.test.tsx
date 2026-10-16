@@ -13,6 +13,10 @@ import { createFreshdeskFetchStub } from "@/test/freshdeskFetchStub";
 import { ALPHA_HOST } from "@/services/freshdesk/__fixtures__/freshdeskFixtures";
 import { FIXTURE_NOW } from "@/services/freshdesk/__fixtures__/freshdeskTicketFixtures";
 import { alphaTenantWithHistory } from "@/services/freshdesk/__fixtures__/freshdeskConversationFixtures";
+import { createClickUpFetchStub } from "@/test/clickupFetchStub";
+import { ALPHA_TOKEN, clickupTokens, alphaExportBugWithNotes } from "@/services/clickup/__fixtures__/clickupFixtures";
+import { connectWorkspace } from "@/services/clickup/connection";
+import { linkTask } from "@/services/clickup/links";
 import type { AiCompletionRequest } from "@/services/ai/types";
 
 // ── A fake Claude client at the provider-client interface: nothing leaves the machine ──
@@ -47,13 +51,14 @@ vi.mock("@/utils/crypto", () => ({
 }));
 const ALPHA_KEY = "fixture-key-alpha-0001";
 let stub: ReturnType<typeof createFreshdeskFetchStub>;
+let clickup: ReturnType<typeof createClickUpFetchStub>;
 // Reads can be made to fail while a test plays a helpdesk that stopped answering
 const net = vi.hoisted(() => ({ failReads: false }));
 vi.mock("@tauri-apps/plugin-http", () => ({
   fetch: (input: string, init?: RequestInit) =>
     net.failReads && (init?.method ?? "GET") === "GET"
       ? Promise.reject(new TypeError("fixture: no answer"))
-      : stub.fetch(input, init),
+      : String(input).startsWith("https://api.clickup.com/") ? clickup.fetch(input, init) : stub.fetch(input, init),
 }));
 vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn() }));
 
@@ -138,6 +143,7 @@ beforeEach(async () => {
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(FIXTURE_NOW);
   db = createSqliteTestDb();
+  clickup = createClickUpFetchStub(clickupTokens);
   stub = createFreshdeskFetchStub({ [ALPHA_HOST]: { apiKey: ALPHA_KEY, tenant: alphaTenantWithHistory } });
   await runMigrations();
   useTicketStore.setState(useTicketStore.getInitialState(), true);
@@ -372,4 +378,30 @@ describe("AI drafts in the composer", () => {
     const note = await openComposer("Internal note");
     expect(note.queryByRole("button", { name: "Draft reply" })).not.toBeInTheDocument();
   });
+});
+
+
+it("drafts a ticket reply from a linked non-done task and keeps sending manual", async () => {
+  await approveClaude();
+  await connectWorkspace({ token: ALPHA_TOKEN });
+  await openTicket();
+  await linkTask({ kind: "ticket", ticketId: "1001" }, alphaExportBugWithNotes.id);
+  clickup.replaceTask(alphaExportBugWithNotes);
+  stub.requests.length = 0;
+  await draft("reply", "<p>My progress update.</p>");
+  const reply = await openComposer("Reply");
+  await reply.findByText("My progress update.");
+  ai.respond = async () => "<p>The export fix is in review; it is not deployed yet.</p>";
+  fireEvent.click(await reply.findByRole("button", { name: "Draft from task" }));
+  await confirmPreview();
+  const proposal = within(await reply.findByRole("region", { name: "Task reply draft" }));
+  expect(ai.captured[0]!.userContent).toContain("Task status: fixture in progress (not done)");
+  expect(ai.captured[0]!.userContent).toContain("Fix is in review, not deployed yet");
+  expect(replyText(reply)).toBe("My progress update.");
+  expect(posts()).toHaveLength(0);
+  fireEvent.click(proposal.getByRole("button", { name: "Insert" }));
+  expect(replyText(reply)).toContain("My progress update.");
+  expect(replyText(reply)).toContain("not deployed yet");
+  await waitFor(async () => expect((await loadTicketDraft("1001", "reply"))?.bodyHtml).toContain("not deployed yet"));
+  expect(posts()).toHaveLength(0);
 });
