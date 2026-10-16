@@ -87,3 +87,28 @@ describe("Shortcuts settings labels", () => {
     expect(within(row("Send later")).getByRole("button")).toHaveTextContent("Ctrl+Shift+L");
   });
 });
+
+
+it("warns when a ticket shortcut duplicates an email shortcut, then clears on reset", () => {
+  render(<ShortcutsTab />);
+  rebind("Ticket: Internal note", { key: "r" });
+  expect(within(row("Ticket: Internal note")).getByRole("alert")).toHaveTextContent("Also used by Reply");
+  expect(within(row("Reply")).getByRole("alert")).toHaveTextContent("Also used by Ticket: Internal note");
+  fireEvent.click(within(row("Ticket: Internal note")).getByTitle("Reset to n"));
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+});
+
+
+it("lists ticket and shared defaults without assigning t to a Velo to-do", () => {
+  render(<ShortcutsTab />);
+  for (const [desc, key] of [
+    ["Next thread / ticket", "j"], ["Previous thread / ticket", "k"], ["Open thread / ticket", "Enter"],
+    ["Reply", "r"], ["Ticket: Internal note", "n"], ["Ticket: Summarize", "z"], ["Ticket: AI draft reply", "d"],
+    ["Create / link ClickUp task", "t"], ["Create Velo to-do from email (AI)", "Shift+T"],
+    ["Ticket: Change status", "Shift+S"], ["Ticket: Change priority", "Shift+P"],
+    ["Ticket: Change assignee", "Shift+A"], ["Ticket: Switch list / board", "b"],
+  ]) {
+    expect(within(row(desc!)).getByRole("button", { name: key })).toBeVisible();
+  }
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+});

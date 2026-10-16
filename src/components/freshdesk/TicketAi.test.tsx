@@ -76,6 +76,8 @@ import { clearProviderClients } from "@/services/ai/providerManager";
 import { AiSendPreviewHost } from "@/components/ai/AiSendPreview";
 import { useTicketStore } from "@/stores/ticketStore";
 import { useUIStore } from "@/stores/uiStore";
+import { useShortcutStore } from "@/stores/shortcutStore";
+import { getDefaultKeyMap } from "@/constants/shortcuts";
 import { FreshdeskPage } from "./FreshdeskPage";
 import { FreshdeskViewNav } from "./FreshdeskViewNav";
 
@@ -135,6 +137,7 @@ export async function draft(mode: "reply" | "note", bodyHtml: string, ticketId =
 }
 
 beforeEach(async () => {
+  useShortcutStore.setState({ keyMap: getDefaultKeyMap() });
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(FIXTURE_NOW);
   db = createSqliteTestDb();
@@ -372,4 +375,32 @@ describe("AI drafts in the composer", () => {
     const note = await openComposer("Internal note");
     expect(note.queryByRole("button", { name: "Draft reply" })).not.toBeInTheDocument();
   });
+});
+
+
+it("summarizes the selected ticket with z through the existing send preview", async () => {
+  await approveClaude();
+  await openTicket();
+  const card = within(await reader().findByRole("region", { name: "AI summary" }));
+  await card.findByRole("button", { name: "Summarize" });
+  fireEvent.keyDown(window, { key: "z" });
+  await confirmPreview();
+  expect(await card.findByText("The customer cannot sign in.")).toBeVisible();
+  expect(writes()).toEqual([]);
+});
+
+
+it("opens a reply and proposes an AI draft with d without changing the operator's text", async () => {
+  await approveClaude();
+  ai.respond = () => Promise.resolve(AI_DRAFT);
+  await openTicket();
+  await draft("reply", "<p>My own words</p>");
+  fireEvent.keyDown(window, { key: "d" });
+  const reply = within(await screen.findByRole("region", { name: "Reply to customer" }));
+  await confirmPreview();
+  const proposal = within(await reply.findByRole("region", { name: "AI draft" }));
+  expect(proposal.getByText("Thanks for trying again. Which error message do you see?")).toBeVisible();
+  expect(replyText(reply)).toBe("My own words");
+  expect(proposal.getByRole("button", { name: "Replace" })).toBeVisible();
+  expect(writes()).toEqual([]);
 });

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ChevronDown } from "lucide-react";
 import { useTicketStore } from "@/stores/ticketStore";
 import {
@@ -46,7 +46,9 @@ function EditSelect({
   options,
   writable,
   onChange,
+  controlRef,
 }: {
+  controlRef: (element: HTMLSelectElement | null) => void;
   labelledBy: string;
   value: string;
   options: Option[];
@@ -56,6 +58,7 @@ function EditSelect({
   return (
     <span className="relative inline-flex max-w-full">
       <select
+        ref={controlRef}
         aria-labelledby={labelledBy}
         value={value}
         {...writable.controlProps}
@@ -93,6 +96,7 @@ type FieldName = "Status" | "Priority" | "Assignee";
  * reason (see useFreshdeskWritable); `writable` lets the host show that reason.
  */
 export function useTicketEditControls(ticket: TicketListItem | null, editor: Editor) {
+  const controls = useRef<Partial<Record<FieldName, HTMLSelectElement | null>>>({});
   const options = useEditOptions();
   const writable = useFreshdeskWritable({ isSample: ticket?.isSample });
 
@@ -107,6 +111,7 @@ export function useTicketEditControls(ticket: TicketListItem | null, editor: Edi
       return (
         <EditSelect
           labelledBy={labelledBy}
+          controlRef={(element) => { controls.current[field] = element; }}
           value={ticket.status.id}
           options={opts}
           writable={writable}
@@ -135,6 +140,7 @@ export function useTicketEditControls(ticket: TicketListItem | null, editor: Edi
       return (
         <EditSelect
           labelledBy={labelledBy}
+          controlRef={(element) => { controls.current[field] = element; }}
           value={current?.id ?? ""}
           options={opts}
           writable={writable}
@@ -159,6 +165,7 @@ export function useTicketEditControls(ticket: TicketListItem | null, editor: Edi
     return (
       <EditSelect
         labelledBy={labelledBy}
+        controlRef={(element) => { controls.current[field] = element; }}
         value={ticket.assigneeId ?? ""}
         options={opts}
         writable={writable}
@@ -176,5 +183,6 @@ export function useTicketEditControls(ticket: TicketListItem | null, editor: Edi
     );
   };
 
-  return { render, writable, blocked: writable.reason };
+  const focus = (field: FieldName) => controls.current[field]?.focus();
+  return { render, focus, writable, blocked: writable.reason };
 }

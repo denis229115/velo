@@ -59,7 +59,11 @@ import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { saveTicketDraft, loadTicketDraft } from "@/services/freshdesk/ticketDrafts";
 import { useTicketStore } from "@/stores/ticketStore";
 import { useUIStore } from "@/stores/uiStore";
+import { useShortcutStore } from "@/stores/shortcutStore";
+import { getDefaultKeyMap } from "@/constants/shortcuts";
 import { listScheduledReplies } from "@/services/freshdesk/scheduledReplies";
+import { useComposerStore } from "@/stores/composerStore";
+import { Composer } from "@/components/composer/Composer";
 import { FreshdeskPage } from "./FreshdeskPage";
 import { FreshdeskViewNav } from "./FreshdeskViewNav";
 
@@ -119,6 +123,8 @@ async function draft(mode: "reply" | "note", bodyHtml: string, ticketId = "1001"
 }
 
 beforeEach(async () => {
+  useShortcutStore.setState({ keyMap: getDefaultKeyMap() });
+  useComposerStore.setState(useComposerStore.getInitialState(), true);
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(FIXTURE_NOW);
   db = createSqliteTestDb();
@@ -438,4 +444,58 @@ describe("scheduling a reply", () => {
     expect(screen.queryByRole("group", { name: "Schedule reply" })).not.toBeInTheDocument();
     expect(await listScheduledReplies()).toEqual([]);
   });
+});
+
+
+describe("ticket send shortcut", () => {
+  it.each([
+    ["reply", "Reply", "Reply text", "Reply sent."],
+    ["note", "Internal note", "Note text", "Internal note added."],
+  ] as const)("sends a %s with the rebound composer key while typing", async (mode, button, textbox, result) => {
+    await openTicket();
+    await draft(mode, "<p>Keyboard message</p>");
+    const composer = await openComposer(button);
+    await composer.findByText("Keyboard message");
+    const editor = composer.getByRole("textbox", { name: textbox });
+    act(() => useShortcutStore.getState().setKey("app.send", "Ctrl+J"));
+    fireEvent.keyDown(editor, { key: "Enter", metaKey: true });
+    expect(posts()).toEqual([]);
+    fireEvent.keyDown(editor, { key: "j", metaKey: true });
+    expect(await screen.findByText(result)).toBeVisible();
+    expect(posts()).toHaveLength(1);
+  });
+});
+
+
+it("uses a rebound send-later shortcut from the ticket reply editor", async () => {
+  await openTicket();
+  await draft("reply", "<p>Send this later</p>");
+  const reply = await openComposer("Reply");
+  await reply.findByText("Send this later");
+  act(() => useShortcutStore.getState().setKey("app.sendLater", "Alt+K"));
+  const editor = reply.getByRole("textbox", { name: "Reply text" });
+  fireEvent.keyDown(editor, { key: "L", metaKey: true, shiftKey: true });
+  expect(screen.queryByRole("group", { name: "Schedule reply" })).not.toBeInTheDocument();
+  fireEvent.keyDown(editor, { key: "k", altKey: true });
+  expect(await screen.findByRole("group", { name: "Schedule reply" })).toBeVisible();
+  expect(writes()).toEqual([]);
+});
+
+
+it("gives the full email composer precedence over a ticket reply for send keys", async () => {
+  await openTicket();
+  await draft("reply", "<p>Ticket reply stays here</p>");
+  const reply = await openComposer("Reply");
+  await reply.findByText("Ticket reply stays here");
+  act(() => useComposerStore.getState().openComposer());
+  render(<Composer />);
+  expect(await screen.findByText("New Message")).toBeVisible();
+  await act(async () => {
+    fireEvent.keyDown(window, { key: "Enter", metaKey: true });
+    fireEvent.keyDown(window, { key: "L", metaKey: true, shiftKey: true });
+  });
+  expect(writes()).toEqual([]);
+  expect(screen.queryByRole("group", { name: "Schedule reply" })).not.toBeInTheDocument();
+  expect(reply.getByText("Ticket reply stays here")).toBeVisible();
+  act(() => useComposerStore.getState().closeComposer());
 });

@@ -117,7 +117,7 @@ Custom window events: `velo-sync-done`, `velo-toggle-command-palette`, `velo-tog
 | Key | Action |
 |-----|--------|
 | `j` / `k` | Navigate threads down/up |
-| `o` / `Enter` | Open thread |
+| `Enter` (also `o` at default) | Open thread or ticket |
 | `e` | Archive |
 | `s` | Star/unstar |
 | `p` | Pin/unpin |
@@ -127,7 +127,8 @@ Custom window events: `velo-sync-done`, `velo-toggle-command-palette`, `velo-tog
 | `a` | Reply all |
 | `f` | Forward |
 | `u` | Unsubscribe |
-| `t` | Create task from email (AI) |
+| `t` | Create / link ClickUp task for the selected email or ticket |
+| `Shift+T` | Create Velo to-do from email (AI) |
 | `v` | Move to folder/label |
 | `#` / `Delete` / `Backspace` | Trash (permanent delete if already in trash) |
 | `!` | Report spam / Not spam (context-aware) |
@@ -151,6 +152,8 @@ Custom window events: `velo-sync-done`, `velo-toggle-command-palette`, `velo-tog
 | `g` then `k` | Go to Tasks |
 | `g` then `a` | Go to Attachments |
 | `g` then `l` | Go to Scheduled emails |
+
+Ticket-only defaults in the same registry: `n` Internal note, `z` Summarize, `d` AI draft reply, `Shift+S` Status, `Shift+P` Priority, `Shift+A` Assignee, `b` list/board. Shared reply/send/send-later/search actions keep their email meanings. Ticket actions adapt to visible handlers through `useShortcutAction`; skip them in inputs/selects/editable text, even after a modified rebind.
 
 Multi-select: click to toggle, Shift+click for range. All keyboard actions work on multi-selected threads.
 

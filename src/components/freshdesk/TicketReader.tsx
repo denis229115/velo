@@ -1,3 +1,4 @@
+import { useShortcutAction } from "@/hooks/useShortcutAction";
 import { useEffect, useState } from "react";
 import { Lock, Paperclip } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -149,9 +150,28 @@ export function TicketReader({ ticket, ticketId }: { ticket: TicketListItem | nu
   const editor = useTicketEditor();
   const edit = useTicketEditControls(ticket, editor);
   const editError = editor.error && editor.error.ticketId === ticket?.id ? editor.error : null;
-  const [composing, setComposing] = useState<{ ticketId: string; mode: ComposerMode } | null>(null);
+  const [composing, setComposing] = useState<{ ticketId: string; mode: ComposerMode; aiDraftRequest?: number } | null>(null);
   const composerMode = composing && composing.ticketId === ticket?.id ? composing.mode : null;
   const compose = (mode: ComposerMode) => ticket && setComposing({ ticketId: ticket.id, mode });
+  useShortcutAction("action.reply", ({ ticketId }) => {
+    if (ticketId === ticket?.id) compose("reply");
+  });
+  useShortcutAction("ticket.note", ({ ticketId }) => {
+    if (ticketId === ticket?.id) compose("note");
+  });
+  useShortcutAction("ticket.aiDraft", ({ ticketId }) => {
+    if (!ticketId || ticketId !== ticket?.id) return;
+    setComposing((previous) => ({ ticketId, mode: "reply", aiDraftRequest: (previous?.aiDraftRequest ?? 0) + 1 }));
+  });
+  useShortcutAction("ticket.status", ({ ticketId }) => {
+    if (ticketId === ticket?.id) edit.focus("Status");
+  });
+  useShortcutAction("ticket.priority", ({ ticketId }) => {
+    if (ticketId === ticket?.id) edit.focus("Priority");
+  });
+  useShortcutAction("ticket.assignee", ({ ticketId }) => {
+    if (ticketId === ticket?.id) edit.focus("Assignee");
+  });
   return (
     <section aria-label="Ticket reader" className="flex-1 min-w-0 flex flex-col bg-surface-reader">
       {!ticket || !a ? (
@@ -180,7 +200,7 @@ export function TicketReader({ ticket, ticketId }: { ticket: TicketListItem | nu
           {editor.element}
           <TicketSummaryCard key={ticket.id} ticket={ticket} view={view} />
           {composerMode && (
-            <TicketComposer ticket={ticket} history={view} mode={composerMode} onModeChange={compose} onClose={() => setComposing(null)} />
+            <TicketComposer ticket={ticket} history={view} aiDraftRequest={composing?.aiDraftRequest ?? 0} mode={composerMode} onModeChange={compose} onClose={() => setComposing(null)} />
           )}
           <HistoryNotice view={view} />
           {view && view.entries.length > 0 && <History key={view.ticketId} entries={view.entries} />}

@@ -19,7 +19,7 @@ describe("StatusBar", () => {
     render(<StatusBar />);
     const hints = screen.getByRole("list", { name: "Keyboard hints" });
     expect(hints).toHaveTextContent("JKNavigate");
-    expect(hints).toHaveTextContent("OOpen");
+    expect(hints).toHaveTextContent("↵Open");
     expect(hints).toHaveTextContent("?Shortcuts");
   });
 
