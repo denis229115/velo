@@ -114,7 +114,7 @@ describe("ticket drafts", () => {
 
   it("are kept after a failed send", async () => {
     await saveTicketDraft("1001", "reply", { bodyHtml: "<p>Important</p>" });
-    stub.respondOnce(ALPHA_HOST, "/api/v2/tickets/1001/reply", { method: "POST", status: 500, body: {} });
+    stub.respondOnce(ALPHA_HOST, "/api/v2/tickets/1001/reply", { method: "POST", status: 429, body: {}, headers: { "Retry-After": "60" } });
 
     expect(await sendTicketDraft("1001", "reply")).toMatchObject({ outcome: "failed" });
     expect((await loadTicketDraft("1001", "reply"))?.bodyHtml).toBe("<p>Important</p>");
@@ -132,6 +132,19 @@ describe("ticket drafts", () => {
     expect(await sendTicketDraft("1001", "reply")).toMatchObject({ outcome: "sent" });
     expect(posts()).toHaveLength(1);
     expect(await loadTicketDraft("1001", "reply")).toBeNull();
+  });
+
+  it("stay Unconfirmed after a server error, and the next send reconciles instead of posting again", async () => {
+    await saveTicketDraft("1001", "reply", { bodyHtml: "<p>Important</p>" });
+    stub.respondOnce(ALPHA_HOST, "/api/v2/tickets/1001/reply", { method: "POST", status: 503, body: {} });
+
+    const sent = await sendTicketDraft("1001", "reply");
+    expect(sent).toMatchObject({ outcome: "unconfirmed" });
+    expect((await loadTicketDraft("1001", "reply"))?.unconfirmedEntryId).toBe((sent as { entryId: number }).entryId);
+
+    expect(await sendTicketDraft("1001", "reply")).toMatchObject({ outcome: "failed" });
+    expect(posts()).toHaveLength(1);
+    expect((await loadTicketDraft("1001", "reply"))?.bodyHtml).toBe("<p>Important</p>");
   });
 
   it("can be discarded", async () => {
@@ -163,7 +176,7 @@ describe("ticket draft attachments (#34)", () => {
   it("are kept after a failed send", async () => {
     await saveTicketDraft("1001", "reply", { bodyHtml: "<p>Logs.</p>" });
     await attachToTicketDraft("1001", "reply", file("server.log", "hello"));
-    stub.respondOnce(ALPHA_HOST, "/api/v2/tickets/1001/reply", { method: "POST", status: 500, body: {} });
+    stub.respondOnce(ALPHA_HOST, "/api/v2/tickets/1001/reply", { method: "POST", status: 429, body: {}, headers: { "Retry-After": "60" } });
 
     expect(await sendTicketDraft("1001", "reply")).toMatchObject({ outcome: "failed" });
     expect(await names()).toEqual([["server.log", 5]]);

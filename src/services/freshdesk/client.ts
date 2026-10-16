@@ -121,6 +121,7 @@ async function freshdeskRequest<T>(
       "Freshdesk is rate limiting requests. Velo will try again later.",
       status,
       Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : undefined,
+      detail,
     );
   }
   if (status === 400 && detail.fieldErrors.some((e) => e.code === "invalid_value")) {

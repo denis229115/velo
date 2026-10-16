@@ -1,7 +1,7 @@
 import { useRef } from "react";
 import { Paperclip, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
-import { MAX_ATTACHMENT_TOTAL_BYTES, formatAttachmentSize } from "@/services/freshdesk/replyAttachments";
+import { LOWER_PLAN_ATTACHMENT_LIMIT, MAX_ATTACHMENT_TOTAL_BYTES, formatAttachmentSize } from "@/services/freshdesk/replyAttachments";
 import type { DraftAttachment } from "@/services/freshdesk/ticketDrafts";
 
 /**
@@ -45,7 +45,7 @@ export function TicketAttachments({
           Attach
         </Button>
         <span className="text-micro text-text-tertiary">
-          Files go to Freshdesk only, up to {formatAttachmentSize(MAX_ATTACHMENT_TOTAL_BYTES)} in total
+          Files go to Freshdesk only, up to {formatAttachmentSize(MAX_ATTACHMENT_TOTAL_BYTES)} in total. {LOWER_PLAN_ATTACHMENT_LIMIT}
           {attachments.length > 0 && ` · ${formatAttachmentSize(total)} used`}
         </span>
       </div>

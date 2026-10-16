@@ -17,6 +17,7 @@ export interface ReplyAttachment {
  * (Sprout and trial plans allow 15 MB). Freshdesk documents no count limit.
  */
 export const MAX_ATTACHMENT_TOTAL_BYTES = 20 * 1024 * 1024;
+export const LOWER_PLAN_ATTACHMENT_LIMIT = "Sprout and trial plans allow 15 MB in total.";
 
 const MAX_NAME_LENGTH = 200;
 const FALLBACK_TYPE = "application/octet-stream";
@@ -51,14 +52,14 @@ export function formatAttachmentSize(bytes: number): string {
 export function attachmentLimitProblem(files: readonly { size: number }[]): string | null {
   const total = files.reduce((sum, f) => sum + f.size, 0);
   if (total <= MAX_ATTACHMENT_TOTAL_BYTES) return null;
-  return `The attachments add up to ${formatAttachmentSize(total)}. Freshdesk accepts at most ${formatAttachmentSize(MAX_ATTACHMENT_TOTAL_BYTES)} per reply or note. Remove files to send.`;
+  return `The attachments add up to ${formatAttachmentSize(total)}. Freshdesk's API limit is at most ${formatAttachmentSize(MAX_ATTACHMENT_TOTAL_BYTES)} per reply or note. ${LOWER_PLAN_ATTACHMENT_LIMIT} Remove files to send.`;
 }
 
 /** Why a file can't join the files already attached, or null when it can */
 export function attachRefusal(name: string, attached: readonly { size: number }[], size: number): string | null {
   const total = attached.reduce((sum, f) => sum + f.size, size);
   if (total <= MAX_ATTACHMENT_TOTAL_BYTES) return null;
-  return `${cleanAttachmentName(name)} was not attached. With it, the attachments would add up to ${formatAttachmentSize(total)}; Freshdesk accepts at most ${formatAttachmentSize(MAX_ATTACHMENT_TOTAL_BYTES)} per reply or note.`;
+  return `${cleanAttachmentName(name)} was not attached. With it, the attachments would add up to ${formatAttachmentSize(total)}; Freshdesk's API limit is at most ${formatAttachmentSize(MAX_ATTACHMENT_TOTAL_BYTES)} per reply or note. ${LOWER_PLAN_ATTACHMENT_LIMIT}`;
 }
 
 function blobOf(file: ReplyAttachment): Blob {

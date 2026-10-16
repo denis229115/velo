@@ -368,11 +368,11 @@ describe("changing a pending scheduled reply", () => {
   });
 });
 
-describe("a scheduled reply Freshdesk keeps refusing", () => {
+describe("a scheduled reply Freshdesk keeps rate limiting", () => {
   it("is tried a bounded number of times with backoff, then fails visibly and is not tried again", async () => {
     const id = await scheduleReply();
     for (let i = 0; i < MAX_ATTEMPTS + 2; i++) {
-      stub.respondOnce(ALPHA_HOST, "/api/v2/tickets/1001/reply", { method: "POST", status: 500, body: {} });
+      stub.respondOnce(ALPHA_HOST, "/api/v2/tickets/1001/reply", { method: "POST", status: 429, body: {} });
     }
     later(HOUR_S * 1000);
 
@@ -387,6 +387,95 @@ describe("a scheduled reply Freshdesk keeps refusing", () => {
     expect(posts()).toHaveLength(MAX_ATTEMPTS);
     expect((await listScheduledReplies()).find((r) => r.id === id)).toMatchObject({ state: "failed" });
     expect(notified.map((n) => n.title)).toEqual(["failed"]);
+  });
+});
+
+describe.each([false, true])("scheduled send errors (with files: %s)", (withFiles) => {
+  async function dueReply() {
+    await saveTicketDraft("1001", "reply", { bodyHtml: "<p>We fixed your sign-in.</p>" });
+    if (withFiles) {
+      await attachToTicketDraft("1001", "reply", { name: "report.csv", contentType: "text/csv", dataBase64: btoa("a,b") });
+    }
+    const scheduled = await scheduleTicketReply("1001", { sendAt: nowS() + HOUR_S });
+    if (!scheduled.ok) throw new Error(scheduled.message);
+    stub.requests.length = 0;
+    later(HOUR_S * 1000);
+    return scheduled.id;
+  }
+
+  it.each([500, 502, 503, "dropped"] as const)("reconciles an accepted send after %s without a second POST", async (status) => {
+    const id = await dueReply();
+    stub.respondOnce(ALPHA_HOST, "/api/v2/tickets/1001/reply", {
+      method: "POST", apply: true,
+      ...(status === "dropped" ? { networkError: true } : { status, body: {} }),
+    });
+
+    await processDueScheduledReplies();
+
+    expect((await listScheduledReplies()).find((r) => r.id === id)).toMatchObject({
+      state: "unconfirmed", attachments: withFiles ? [{ name: "report.csv", size: 3 }] : [],
+    });
+    later(60_000);
+    await processDueScheduledReplies();
+    expect((await listScheduledReplies()).find((r) => r.id === id)).toMatchObject({ state: "sent", attachments: [] });
+    expect(posts()).toHaveLength(1);
+  });
+
+  it.each([500, 502, 503])("requires operator action after HTTP %i when reconciliation finds no stored reply", async (status) => {
+    const id = await dueReply();
+    stub.respondOnce(ALPHA_HOST, "/api/v2/tickets/1001/reply", { method: "POST", status, body: {} });
+
+    await processDueScheduledReplies();
+    expect((await listScheduledReplies()).find((r) => r.id === id)?.state).toBe("unconfirmed");
+    later(60_000);
+    await processDueScheduledReplies();
+    expect((await listScheduledReplies()).find((r) => r.id === id)).toMatchObject({
+      state: "failed", error: expect.stringContaining("no record of this reply"),
+      attachments: withFiles ? [{ name: "report.csv", size: 3 }] : [],
+    });
+    later(2 * HOUR_S * 1000);
+    await processDueScheduledReplies();
+    expect(posts()).toHaveLength(1);
+  });
+
+  it("keeps a rate-limited reply and waits at least Retry-After before trying again", async () => {
+    const id = await dueReply();
+    stub.respondOnce(ALPHA_HOST, "/api/v2/tickets/1001/reply", {
+      method: "POST", status: 429, body: { message: "Too many requests" }, headers: { "Retry-After": "7200" },
+    });
+
+    await processDueScheduledReplies();
+
+    expect((await listScheduledReplies()).find((r) => r.id === id)).toMatchObject({
+      state: "pending", error: expect.stringMatching(/Too many requests.*120 minutes/),
+      attachments: withFiles ? [{ name: "report.csv", size: 3 }] : [],
+    });
+    later(7_199_000);
+    await processDueScheduledReplies();
+    expect(posts()).toHaveLength(1);
+    later(1_000);
+    await processDueScheduledReplies();
+    expect(posts()).toHaveLength(2);
+    expect((await listScheduledReplies()).find((r) => r.id === id)?.state).toBe("sent");
+  });
+
+  it("keeps a rejected 400 reply for correction, with field errors, without automatically trying it again", async () => {
+    const id = await dueReply();
+    stub.respondOnce(ALPHA_HOST, "/api/v2/tickets/1001/reply", {
+      method: "POST", status: 400,
+      body: { description: "Validation failed", errors: [{ field: "cc_emails", message: "It should be a valid email", code: "invalid_value" }] },
+    });
+
+    await processDueScheduledReplies();
+
+    expect((await listScheduledReplies()).find((r) => r.id === id)).toMatchObject({
+      state: "failed", error: expect.stringContaining("cc_emails: It should be a valid email"),
+      bodyHtml: "<p>We fixed your sign-in.</p>",
+      attachments: withFiles ? [{ name: "report.csv", size: 3 }] : [],
+    });
+    later(2 * HOUR_S * 1000);
+    await processDueScheduledReplies();
+    expect(posts()).toHaveLength(1);
   });
 });
 

@@ -300,7 +300,11 @@ describe("reply and set status", () => {
 
   it("does not set the status when the reply itself failed", async () => {
     const baseline = await captureStalenessBaseline("1001");
-    stub.respondOnce(ALPHA_HOST, "/api/v2/tickets/1001/reply", { method: "POST", status: 500, body: {} });
+    stub.respondOnce(ALPHA_HOST, "/api/v2/tickets/1001/reply", {
+      method: "POST",
+      status: 400,
+      body: { description: "Validation failed", errors: [{ field: "body", message: "It should not be blank", code: "missing_field" }] },
+    });
 
     const result = await sendTicketResponse({ ticketId: "1001", mode: "reply", bodyHtml: "<p>Done.</p>", baseline, thenStatusId: "4" });
 
@@ -405,7 +409,7 @@ describe("a reply or note with attachments (#34)", () => {
 
     const result = await sendTicketResponse({ ticketId: "1001", mode: "reply", bodyHtml: "<p>Big.</p>", attachments: [file("a.zip", "z", "application/zip")], baseline });
 
-    expect(result).toEqual({ outcome: "failed", message: expect.stringContaining("too large") });
+    expect(result).toEqual({ outcome: "failed", message: expect.stringContaining("too large"), rejected: true });
   });
 
   it("is Unconfirmed when the answer is lost, and reconciliation finds it by its text and file names without posting again", async () => {
@@ -447,5 +451,92 @@ describe("a reply or note with attachments (#34)", () => {
     expect((posts()[0]!.body as { attachments: unknown }).attachments).toEqual([
       { name: "exe.txt", content_type: "application/octet-stream", size: 1 },
     ]);
+  });
+});
+
+describe("a send Freshdesk answers with an error", () => {
+  const withFiles = [{ name: "server.log", contentType: "text/plain", size: 5, dataBase64: btoa("hello") }];
+  const cases = [
+    ["a plain reply", "reply", undefined],
+    ["a reply with files", "reply", withFiles],
+    ["a plain note", "note", undefined],
+    ["a note with files", "note", withFiles],
+  ] as const;
+
+  describe.each(cases)("for %s", (_label, mode, attachments) => {
+    const path = `/api/v2/tickets/1001/${mode === "reply" ? "reply" : "notes"}`;
+    const send = async () =>
+      sendTicketResponse({
+        ticketId: "1001",
+        mode,
+        bodyHtml: "<p>Fixed it.</p>",
+        ...(attachments && { attachments: [...attachments] }),
+        baseline: await captureStalenessBaseline("1001"),
+      });
+
+    it.each([true, false])("reconciles a dropped POST answer (stored: %s) without another POST", async (apply) => {
+      stub.respondOnce(ALPHA_HOST, path, { method: "POST", networkError: true, apply });
+
+      const sent = await send();
+      expect(sent).toMatchObject({ outcome: "unconfirmed" });
+      const reconciled = await reconcileTicketSend("1001", (sent as { entryId: number }).entryId);
+      expect(reconciled.outcome).toBe(apply ? "sent" : "failed");
+      expect(posts()).toHaveLength(1);
+    });
+
+    it.each([500, 502, 503])("is Unconfirmed on HTTP %i, and reconciliation finds what Freshdesk stored without posting again", async (status) => {
+      later(60_000);
+      stub.respondOnce(ALPHA_HOST, path, { method: "POST", status, body: {}, apply: true });
+
+      const sent = await send();
+      expect(sent).toMatchObject({ outcome: "unconfirmed", message: expect.stringContaining(`HTTP ${status}`) });
+      expect((await getOperationJournal("1001")).map((e) => e.outcome)).toEqual(["unconfirmed"]);
+
+      expect(await reconcileTicketSend("1001", (sent as { entryId: number }).entryId)).toEqual({ outcome: "sent" });
+      expect(posts()).toHaveLength(1);
+    });
+
+    it.each([500, 502, 503])("is Unconfirmed on HTTP %i, and failed only once reconciliation shows nothing was stored", async (status) => {
+      later(60_000);
+      stub.respondOnce(ALPHA_HOST, path, { method: "POST", status, body: {} });
+
+      const sent = await send();
+      expect(sent).toMatchObject({ outcome: "unconfirmed" });
+
+      expect(await reconcileTicketSend("1001", (sent as { entryId: number }).entryId)).toMatchObject({ outcome: "failed" });
+      expect(posts()).toHaveLength(1);
+    });
+
+    it("is failed on a 429 with Freshdesk's message and when to try again", async () => {
+      stub.respondOnce(ALPHA_HOST, path, {
+        method: "POST",
+        status: 429,
+        body: { message: "You have exceeded the limit of requests per minute" },
+        headers: { "Retry-After": "120" },
+      });
+
+      const result = await send();
+
+      expect(result).toEqual({
+        outcome: "failed",
+        message: expect.stringMatching(/You have exceeded the limit of requests per minute.*2 minutes.*Nothing was sent/),
+        retryAfterSeconds: 120,
+      });
+      expect((await getOperationJournal("1001")).map((e) => e.outcome)).toEqual(["failed"]);
+      expect(posts()).toHaveLength(1);
+    });
+
+    it("is failed on a 400 with Freshdesk's reason, as a rejection", async () => {
+      stub.respondOnce(ALPHA_HOST, path, {
+        method: "POST",
+        status: 400,
+        body: { description: "Validation failed", errors: [{ field: "cc_emails", message: "It should be a valid email", code: "invalid_value" }] },
+      });
+
+      const result = await send();
+
+      expect(result).toEqual({ outcome: "failed", message: expect.stringContaining("It should be a valid email"), rejected: true });
+      expect((await getOperationJournal("1001")).map((e) => e.outcome)).toEqual(["failed"]);
+    });
   });
 });

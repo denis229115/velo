@@ -181,12 +181,15 @@ async function failFinally(reply: StoredScheduledReply, from: ScheduledReplyStat
 }
 
 /** A send that did not happen: tried again later with backoff, until the bound */
-async function failedAttempt(reply: StoredScheduledReply, attemptsMade: number, message: string): Promise<void> {
+async function failedAttempt(reply: StoredScheduledReply, attemptsMade: number, message: string, retryAfterSeconds = 0): Promise<void> {
   const backoff = BACKOFF_S[attemptsMade - 1];
   if (attemptsMade >= MAX_ATTEMPTS || backoff === undefined) {
     await failFinally(reply, ["sending"], message);
   } else {
-    await moveScheduledReply(reply.replyId, ["sending"], "pending", { lastError: message, nextAttemptAt: nowS() + backoff });
+    await moveScheduledReply(reply.replyId, ["sending"], "pending", {
+      lastError: message,
+      nextAttemptAt: nowS() + Math.max(backoff, retryAfterSeconds),
+    });
   }
 }
 
@@ -230,9 +233,9 @@ async function settle(reply: StoredScheduledReply, from: ScheduledReplyState, at
       return;
     }
     case "failed":
-      // Reconciliation found no such reply: the operator decides whether to send it again
-      if (from === "unconfirmed") await failFinally(reply, ["unconfirmed"], result.message);
-      else await failedAttempt(reply, attemptsMade, result.message);
+      // A rejected request needs correction; an absent unconfirmed reply needs the operator's decision.
+      if (from === "unconfirmed" || result.rejected) await failFinally(reply, [from], result.message);
+      else await failedAttempt(reply, attemptsMade, result.message, result.retryAfterSeconds);
       return;
     case "unavailable":
       if (result.message === OFFLINE_MESSAGE) {
