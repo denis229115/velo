@@ -609,3 +609,27 @@ describe("switching helpdesks", () => {
     expect((await loadTicketDraft("1001", "note"))?.attachments).toEqual([]);
   });
 });
+
+
+it.each(["move", "delete", "commit"])("rolls back the entire draft transfer if scheduling fails at %s", async (phase) => {
+  await saveTicketDraft("1001", "reply", { bodyHtml: "<p>Keep this draft.</p>" });
+  await attachToTicketDraft("1001", "reply", { name: "report.csv", contentType: "text/csv", dataBase64: btoa("a,b") });
+  const draft = await loadTicketDraft("1001", "reply");
+  if (phase !== "commit") {
+    await db.execute(phase === "move"
+      ? "CREATE TEMP TRIGGER fail_schedule BEFORE UPDATE OF owner ON freshdesk_reply_attachments BEGIN SELECT RAISE(ABORT, 'fixture transfer fault'); END"
+      : "CREATE TEMP TRIGGER fail_schedule BEFORE DELETE ON freshdesk_ticket_drafts BEGIN SELECT RAISE(ABORT, 'fixture transfer fault'); END");
+  }
+  const execute = db.execute.bind(db);
+  const fault = vi.spyOn(db, "execute").mockImplementation(async (sql, params) => {
+    if (phase === "commit" && sql === "COMMIT") throw new Error("fixture commit fault");
+    return execute(sql, params);
+  });
+  try {
+    await expect(scheduleTicketReply("1001", { sendAt: nowS() })).rejects.toThrow(/fixture/);
+  } finally { fault.mockRestore(); }
+  expect(await listScheduledReplies()).toEqual([]);
+  expect(await loadTicketDraft("1001", "reply")).toEqual(draft);
+  await processDueScheduledReplies();
+  expect(posts()).toEqual([]);
+});
