@@ -222,7 +222,8 @@ const EMPTY_TEXT: Record<Exclude<RelatedTasksView["state"], "ready">, string> = 
 };
 
 /** The Related tasks panel: the tasks linked to a ticket or email thread, read from ClickUp. */
-export function RelatedTasksPanel({ item }: { item: LinkedItem }) {
+export function RelatedTasksPanel({ item, actionFocusRequest = 0 }: { item: LinkedItem; actionFocusRequest?: number }) {
+  const createButton = useRef<HTMLButtonElement>(null);
   const [view, setView] = useState<RelatedTasksView | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -279,6 +280,9 @@ export function RelatedTasksPanel({ item }: { item: LinkedItem }) {
   };
 
   const ready = view?.state === "ready";
+  useEffect(() => {
+    if (ready && actionFocusRequest) createButton.current?.focus();
+  }, [ready, actionFocusRequest]);
   const linksChanged = () => window.dispatchEvent(new Event("velo-task-links-changed"));
 
   return (
@@ -301,6 +305,7 @@ export function RelatedTasksPanel({ item }: { item: LinkedItem }) {
             )}
             <button
               type="button"
+              ref={createButton}
               onClick={() => setCreating(true)}
               {...writable.controlProps}
               className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-meta text-text-secondary hover:text-text-primary hover:bg-bg-hover disabled:opacity-50 disabled:hover:bg-transparent"

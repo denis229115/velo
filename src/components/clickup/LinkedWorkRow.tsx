@@ -1,3 +1,6 @@
+import { useShortcutAction } from "@/hooks/useShortcutAction";
+import { useShortcutStore } from "@/stores/shortcutStore";
+import { shortcutTooltip } from "@/utils/shortcutTooltip";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { AlertTriangle, ChevronDown, ChevronRight, CircleCheck, Link2, ListChecks, Plus } from "lucide-react";
 import { navigateToSettings } from "@/router/navigate";
@@ -20,6 +23,8 @@ const ACTION =
  */
 export function LinkedWorkRow({ item }: { item: LinkedItem }) {
   const [view, setView] = useState<RelatedTasksView | null>(null);
+  const taskKey = useShortcutStore((s) => s.keyMap["action.clickupTask"]);
+  const [actionFocusRequest, setActionFocusRequest] = useState(0);
   const [expanded, setExpanded] = useState(false);
   const [linking, setLinking] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -53,6 +58,15 @@ export function LinkedWorkRow({ item }: { item: LinkedItem }) {
       window.removeEventListener("velo-task-links-changed", onChange);
     };
   }, [key]);
+
+  useShortcutAction("action.clickupTask", (detail) => {
+    const selected = item.kind === "ticket"
+      ? detail.ticketId === item.ticketId
+      : detail.threadId === item.threadId && detail.accountId === item.accountId;
+    if (!selected || view?.state !== "ready") return;
+    setExpanded(true);
+    setActionFocusRequest((request) => request + 1);
+  });
 
   if (!view) return item.kind === "ticket" ? <section aria-label="Linked work" className="h-8" /> : null;
 
@@ -136,6 +150,7 @@ export function LinkedWorkRow({ item }: { item: LinkedItem }) {
             type="button"
             aria-expanded={expanded}
             aria-controls={panelId}
+            title={shortcutTooltip("Create / link ClickUp task", taskKey)}
             onClick={() => setExpanded((e) => !e)}
             className={ACTION}
           >
@@ -146,7 +161,7 @@ export function LinkedWorkRow({ item }: { item: LinkedItem }) {
       </div>
       {expanded && (
         <div id={panelId} className="mt-2 [&>section]:mb-0">
-          <RelatedTasksPanel item={item} />
+          <RelatedTasksPanel item={item} actionFocusRequest={actionFocusRequest} />
         </div>
       )}
       {linking && (

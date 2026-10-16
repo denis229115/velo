@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { Outlet, RouterProvider, createMemoryHistory, createRootRoute, createRoute, createRouter } from "@tanstack/react-router";
 import { createSqliteTestDb, type SqliteTestDb } from "@/test/sqliteTestDb";
 import { createFreshdeskFetchStub } from "@/test/freshdeskFetchStub";
 import { createClickUpFetchStub } from "@/test/clickupFetchStub";
@@ -12,6 +13,9 @@ vi.mock("@/services/ai/providers/claudeProvider", () => ({
   createClaudeProvider: () => ({ complete: async (request: { userContent: string }) => { ai.requests.push(request); return ai.response; }, testConnection: async () => true }),
   clearClaudeProvider: vi.fn(),
 }));
+const testRouter = vi.hoisted(() => ({ current: null as unknown }));
+vi.mock("@/router", () => ({ get router() { return testRouter.current; } }));
+
 let db: SqliteTestDb;
 vi.mock("@tauri-apps/plugin-sql", () => ({
   default: {
@@ -47,6 +51,10 @@ import { syncTickets } from "@/services/freshdesk/ticketSync";
 import { connectWorkspace, setTicketIdField } from "@/services/clickup/connection";
 import { linkTask, type LinkedItem } from "@/services/clickup/links";
 import { useUIStore } from "@/stores/uiStore";
+import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
+import { useShortcutStore } from "@/stores/shortcutStore";
+import { useAccountStore } from "@/stores/accountStore";
+import { getDefaultKeyMap } from "@/constants/shortcuts";
 import { RelatedTasksPanel } from "./RelatedTasksPanel";
 import { LinkedWorkRow } from "./LinkedWorkRow";
 import { disconnectWorkspace } from "@/services/clickup/connection";
@@ -89,6 +97,8 @@ async function chooseDestination(dialog: HTMLElement, id: string) {
 }
 
 beforeEach(async () => {
+  useShortcutStore.setState({ keyMap: getDefaultKeyMap() });
+  useAccountStore.setState({ activeAccountId: "acct-1" });
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(FIXTURE_NOW);
   db = createSqliteTestDb();
@@ -582,4 +592,52 @@ it("lets an email's AI proposal be edited and explicitly replace the chosen task
   fireEvent.click(within(dialog).getByRole("button", { name: "Create task" }));
   await waitFor(() => expect(writes()).toEqual(["POST /list/li_a_bugs/task"]));
   expect(clickup.requests.find((r) => r.method === "POST")!.body).toMatchObject({ name: "Investigate export", markdown_content: expect.stringContaining("My edited proposal") });
+});
+
+
+function ShortcutShell() {
+  useKeyboardShortcuts();
+  return <Outlet />;
+}
+function renderLinkedWork(path: string) {
+  const root = createRootRoute({ component: ShortcutShell });
+  const freshdesk = createRoute({ getParentRoute: () => root, path: "freshdesk", component: () => <LinkedWorkRow item={TICKET} /> });
+  const ticket = createRoute({ getParentRoute: () => freshdesk, path: "ticket/$ticketId" });
+  const mail = createRoute({ getParentRoute: () => root, path: "mail/$label", component: () => <LinkedWorkRow item={EMAIL} /> });
+  const thread = createRoute({ getParentRoute: () => mail, path: "thread/$threadId" });
+  const router = createRouter({ routeTree: root.addChildren([freshdesk.addChildren([ticket]), mail.addChildren([thread])]), history: createMemoryHistory({ initialEntries: [path] }) });
+  testRouter.current = router;
+  render(<RouterProvider router={router} />);
+}
+
+it.each([
+  ["ticket", "/freshdesk/ticket/1002"],
+  ["email", "/mail/inbox/thread/thread-secret-77"],
+])("t opens existing ClickUp create/link controls from the %s", async (_kind, path) => {
+  renderLinkedWork(path);
+  const row = within(await screen.findByRole("region", { name: "Linked work" }));
+  await row.findByRole("button", { name: "Create task" });
+  fireEvent.keyDown(window, { key: "t" });
+  const actions = within(await screen.findByRole("region", { name: "Related tasks" }));
+  const create = await actions.findByRole("button", { name: "Create task" });
+  expect(create).toHaveFocus();
+  expect(actions.getByRole("button", { name: "Link task" })).toBeEnabled();
+  fireEvent.click(create);
+  expect(await screen.findByRole("dialog", { name: "Create a ClickUp task" })).toBeVisible();
+  expect(writes()).toEqual([]);
+});
+
+
+it("rebinds the shared ClickUp shortcut and keeps the link dialog available", async () => {
+  useShortcutStore.setState({ keyMap: { ...getDefaultKeyMap(), "action.clickupTask": "Alt+T" } });
+  renderLinkedWork("/freshdesk/ticket/1002");
+  const row = within(await screen.findByRole("region", { name: "Linked work" }));
+  await row.findByRole("button", { name: "Create task" });
+  fireEvent.keyDown(window, { key: "t" });
+  expect(screen.queryByRole("region", { name: "Related tasks" })).not.toBeInTheDocument();
+  fireEvent.keyDown(window, { key: "t", altKey: true });
+  const actions = within(await screen.findByRole("region", { name: "Related tasks" }));
+  fireEvent.click(await actions.findByRole("button", { name: "Link task" }));
+  expect(await screen.findByRole("dialog", { name: "Link a ClickUp task" })).toBeVisible();
+  expect(writes()).toEqual([]);
 });

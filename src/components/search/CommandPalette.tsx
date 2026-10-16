@@ -1,6 +1,8 @@
 import { useState, useRef, useCallback, useEffect, useMemo, type ReactNode } from "react";
 import { CSSTransition } from "react-transition-group";
 import { Search, Mail, ListFilter, Ticket } from "lucide-react";
+import { useShortcutStore } from "@/stores/shortcutStore";
+import { dispatchShortcutAction } from "@/hooks/useShortcutAction";
 import { useUIStore } from "@/stores/uiStore";
 import { useComposerStore } from "@/stores/composerStore";
 import { useThreadStore } from "@/stores/threadStore";
@@ -12,7 +14,7 @@ import { getTemplatesForAccount, type DbTemplate } from "@/services/db/templates
 import { searchMessages, type SearchResult } from "@/services/db/search";
 import { hasSearchOperators } from "@/services/search/searchParser";
 import { useActiveLabel } from "@/hooks/useRouteNavigation";
-import { navigateToLabel, navigateToThread, navigateToTicket, navigateBack, getActiveLabel, getSelectedThreadId } from "@/router/navigate";
+import { navigateToLabel, navigateToThread, navigateToTicket, navigateBack, getActiveLabel, getSelectedThreadId, getSelectedTicketId } from "@/router/navigate";
 import { getTicketList, type TicketListData } from "@/services/freshdesk/ticketSync";
 import { parseTicketIdQuery, searchTickets } from "@/services/freshdesk/ticketSearch";
 import { TicketPriorityBadge, TicketStatusBadge } from "@/components/freshdesk/TicketBadges";
@@ -150,6 +152,7 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
     getTemplatesForAccount(activeAccountId).then(setTemplates);
   }, [isOpen, activeAccountId]);
 
+  const keyMap = useShortcutStore((s) => s.keyMap);
   const commands: Command[] = useMemo(() => [
     // Navigation
     { id: "go-inbox", label: "Go to Inbox", shortcut: "g i", category: "Navigation", action: () => { navigateToLabel("inbox"); onClose(); } },
@@ -176,7 +179,18 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
       onClose();
       useUIStore.getState().setTaskSidebarVisible(true);
     } },
-    { id: "task-extract", label: "Create Task from Email (AI)", shortcut: "t", category: "Tasks", action: () => {
+    { id: "clickup-task", label: "Create / link ClickUp task", shortcut: keyMap["action.clickupTask"], category: "ClickUp", action: () => {
+      onClose();
+      if (activeLabel === "freshdesk") {
+        const ticketId = getSelectedTicketId();
+        if (ticketId) dispatchShortcutAction({ actionId: "action.clickupTask", ticketId });
+      } else {
+        const threadId = getSelectedThreadId();
+        const accountId = useAccountStore.getState().activeAccountId;
+        if (threadId && accountId) dispatchShortcutAction({ actionId: "action.clickupTask", threadId, accountId });
+      }
+    } },
+    { id: "task-extract", label: "Create Velo to-do from email (AI)", shortcut: keyMap["action.createTaskFromEmail"], category: "Tasks", action: () => {
       onClose();
       const threadId = getSelectedThreadId();
       if (threadId) {
@@ -218,7 +232,7 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
         onClose();
       },
     })),
-  ], [onClose, openComposer, activeLabel, toggleSidebar, setTheme, templates, smartFolders]);
+  ], [onClose, openComposer, activeLabel, toggleSidebar, setTheme, templates, smartFolders, keyMap]);
 
   const trimmed = query.trim();
   const threadHits = useThreadSearch(query, activeAccountId, isOpen);
