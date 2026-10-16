@@ -61,13 +61,7 @@ vi.mock("@/router", () => ({
   },
 }));
 
-// Short waits so the debounce and the interval can be played in real time
-vi.mock("@/services/freshdesk/ticketAutoSummary", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@/services/freshdesk/ticketAutoSummary")>()),
-  AUTO_SUMMARY_DEBOUNCE_MS: 60,
-  AUTO_SUMMARY_MIN_INTERVAL_MS: 400,
-}));
-
+import { AUTO_SUMMARY_DEBOUNCE_MS, AUTO_SUMMARY_MIN_INTERVAL_MS } from "@/services/freshdesk/ticketAutoSummary";
 import { runMigrations } from "@/services/db/migrations";
 import { classifyStatus, connectHelpdesk } from "@/services/freshdesk/connection";
 import { syncTickets } from "@/services/freshdesk/ticketSync";
@@ -170,10 +164,13 @@ async function openWithSummary() {
   expect(ai.captured).toHaveLength(1);
 }
 
-const settle = (ms: number) => act(async () => void (await new Promise((r) => setTimeout(r, ms))));
+const settle = (ms: number) => act(async () => { await vi.advanceTimersByTimeAsync(ms); });
 
 beforeEach(async () => {
-  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.useFakeTimers();
+  // Testing Library detects timer control through the Jest-compatible clock API.
+  // Only system time is replaced; the shipped scheduler and intervals run unchanged.
+  vi.stubGlobal("jest", { advanceTimersByTime: vi.advanceTimersByTime.bind(vi) });
   vi.setSystemTime(FIXTURE_NOW);
   db = createSqliteTestDb();
   tenant = {
@@ -198,6 +195,7 @@ afterEach(async () => {
   await useTicketStore.getState().loadViews().catch(() => {});
   resetHydrationState();
   vi.useRealTimers();
+  vi.unstubAllGlobals();
   db.close();
 });
 
@@ -220,6 +218,7 @@ describe("a summary that updates when new activity arrives", () => {
     expect(await card().findByText(/Updating/)).toBeInTheDocument();
     expect(card().getByText(/Summary A/)).toBeInTheDocument();
     expect(card().queryByText(/Out of date/)).not.toBeInTheDocument();
+    await settle(AUTO_SUMMARY_DEBOUNCE_MS);
     await waitFor(() => expect(ai.captured).toHaveLength(2));
     expect(JSON.stringify(ai.captured[1])).toContain("Now it fails with error 500.");
     expect(JSON.stringify(ai.captured[1])).toContain("From: customer");
@@ -237,7 +236,7 @@ describe("a summary that updates when new activity arrives", () => {
     await openWithSummary();
 
     await arrives("note", "Internal: check the SSO logs.");
-    await settle(200);
+    await settle(AUTO_SUMMARY_DEBOUNCE_MS);
 
     expect(ai.captured).toHaveLength(1);
     expect(card().getByText(/Summary A/)).toBeInTheDocument();
@@ -249,8 +248,9 @@ describe("a summary that updates when new activity arrives", () => {
     ai.respond = () => Promise.resolve(SUMMARY_B);
 
     await arrives("customer", "First follow-up.", "Second follow-up.");
-    await card().findByText(/Summary B/);
-    await settle(200);
+    await settle(AUTO_SUMMARY_DEBOUNCE_MS);
+    expect(await card().findByText(/Summary B/)).toBeInTheDocument();
+    await settle(AUTO_SUMMARY_DEBOUNCE_MS);
 
     expect(ai.captured).toHaveLength(2);
     expect(JSON.stringify(ai.captured[1])).toContain("Second follow-up.");
@@ -260,14 +260,16 @@ describe("a summary that updates when new activity arrives", () => {
     await openWithSummary();
     ai.respond = () => Promise.resolve(SUMMARY_B);
     await arrives("customer", "First follow-up.");
-    await card().findByText(/Summary B/);
+    await settle(AUTO_SUMMARY_DEBOUNCE_MS);
+    expect(await card().findByText(/Summary B/)).toBeInTheDocument();
 
     await arrives("customer", "Another follow-up.");
-    await settle(150);
+    await settle(AUTO_SUMMARY_DEBOUNCE_MS);
     expect(ai.captured).toHaveLength(2);
-    expect(card().getByText(/Out of date/)).toBeInTheDocument();
+    expect(await card().findByText(/Out of date/)).toBeInTheDocument();
 
-    await waitFor(() => expect(ai.captured).toHaveLength(3), { timeout: 1500 });
+    await settle(AUTO_SUMMARY_MIN_INTERVAL_MS - AUTO_SUMMARY_DEBOUNCE_MS);
+    await waitFor(() => expect(ai.captured).toHaveLength(3));
   });
 
   it("does not send offline, marks the summary out of date, and refreshes once back online", async () => {
@@ -275,13 +277,14 @@ describe("a summary that updates when new activity arrives", () => {
     act(() => useUIStore.setState({ isOnline: false }));
 
     await arrives("customer", "Are you there?");
-    await settle(200);
+    await settle(AUTO_SUMMARY_DEBOUNCE_MS);
     expect(ai.captured).toHaveLength(1);
-    expect(card().getByText(/Out of date/)).toBeInTheDocument();
+    expect(await card().findByText(/Out of date/)).toBeInTheDocument();
     expect(card().getByText(/Summary A/)).toBeInTheDocument();
 
     ai.respond = () => Promise.resolve(SUMMARY_B);
     act(() => useUIStore.setState({ isOnline: true }));
+    await settle(AUTO_SUMMARY_DEBOUNCE_MS);
     expect(await card().findByText(/Summary B/)).toBeInTheDocument();
     expect(ai.captured).toHaveLength(2);
   });
@@ -290,12 +293,12 @@ describe("a summary that updates when new activity arrives", () => {
     await openWithSummary();
 
     await arrives("customer", "Please call +44 20 7946 0999 or mail ada.fixture@example.test about card 4111 1111 1111 1111.");
-    await settle(250);
+    await settle(AUTO_SUMMARY_DEBOUNCE_MS);
 
     // No dialog opened, nothing sent, the old summary says it is out of date
     expect(screen.queryByRole("button", { name: "Send to Claude API (Anthropic)" })).not.toBeInTheDocument();
     expect(ai.captured).toHaveLength(1);
-    expect(card().getByText(/Out of date/)).toBeInTheDocument();
+    expect(await card().findByText(/Out of date/)).toBeInTheDocument();
 
     // The operator's own request shows the preview first, then goes out with placeholders
     ai.respond = () => Promise.resolve(SUMMARY_B);
@@ -313,12 +316,13 @@ describe("a summary that updates when new activity arrives", () => {
     ai.respond = () => Promise.reject(new Error("fetch failed"));
 
     await arrives("customer", "Any update?");
+    await settle(AUTO_SUMMARY_DEBOUNCE_MS);
     expect(await card().findByText(/Out of date/)).toBeInTheDocument();
     expect(card().getByText(/Summary A/)).toBeInTheDocument();
     expect(ai.captured).toHaveLength(2);
 
     await arrives("customer", "Hello again?");
-    await settle(600);
+    await settle(AUTO_SUMMARY_MIN_INTERVAL_MS * 2);
     expect(ai.captured).toHaveLength(2);
 
     // The operator can still summarize by hand
@@ -333,9 +337,9 @@ describe("a summary that updates when new activity arrives", () => {
     await openWithSummary();
 
     await arrives("customer", "Any news?");
-    await settle(250);
+    await settle(AUTO_SUMMARY_DEBOUNCE_MS);
     expect(ai.captured).toHaveLength(1);
-    expect(card().getByText(/Out of date/)).toBeInTheDocument();
+    expect(await card().findByText(/Out of date/)).toBeInTheDocument();
 
     ai.respond = () => Promise.resolve(SUMMARY_B);
     fireEvent.click(card().getByRole("button", { name: "Summarize again" }));
