@@ -164,6 +164,7 @@ export async function replaceWorkspaceMetadata(tenantId: string, metadata: Click
         [tenantId, f.listId, f.fieldId, f.name, f.type],
       );
     }
+    await db.execute("DELETE FROM settings WHERE key = $1", [`clickup_discovery:${tenantId}`]);
     await db.execute("UPDATE clickup_workspace SET metadata_refreshed_at = unixepoch() WHERE tenant_id = $1", [tenantId]);
   });
 }
@@ -318,4 +319,30 @@ export async function saveClickUpSyncState(tenantId: string, s: ClickUpSyncState
        retry_after_until = $5, consecutive_failures = $6, error_message = $7`,
     [tenantId, s.state, s.lastSuccessAt, s.lastAttemptAt, s.retryAfterUntil, s.consecutiveFailures, s.errorMessage],
   );
+}
+
+/** Drawer discovery replaces only hierarchy. Members and field caches keep their own scope. */
+export async function replaceTaskDestinations(tenantId: string, lists: ClickUpList[], refreshedAt: number, complete: boolean): Promise<void> {
+  await withTransaction(async (db) => {
+    const current = await db.select<{ tenant_id: string }[]>("SELECT tenant_id FROM clickup_workspace WHERE id = 1");
+    if (current[0]?.tenant_id !== tenantId) return;
+    await db.execute("DELETE FROM clickup_lists WHERE tenant_id = $1", [tenantId]);
+    await db.execute("DELETE FROM clickup_statuses WHERE tenant_id = $1", [tenantId]);
+    for (const l of lists) {
+      await db.execute("INSERT INTO clickup_lists (tenant_id, list_id, name, space_name, folder_name, position) VALUES ($1, $2, $3, $4, $5, $6)", [tenantId, l.listId, l.name, l.spaceName, l.folderName, l.position]);
+      for (const s of l.statuses) await db.execute("INSERT INTO clickup_statuses (tenant_id, list_id, name, type, color, position) VALUES ($1, $2, $3, $4, $5, $6)", [tenantId, l.listId, s.name, s.type, s.color, s.position]);
+    }
+    await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ($1, $2)", [`clickup_discovery:${tenantId}`, JSON.stringify({ refreshedAt, complete })]);
+  });
+}
+
+export async function replaceTaskListDetails(tenantId: string, listId: string, statuses: ClickUpStatus[], fields: ClickUpCustomField[]): Promise<void> {
+  await withTransaction(async (db) => {
+    const current = await db.select<{ tenant_id: string }[]>("SELECT tenant_id FROM clickup_workspace WHERE id = 1");
+    if (current[0]?.tenant_id !== tenantId) return;
+    await db.execute("DELETE FROM clickup_statuses WHERE tenant_id = $1 AND list_id = $2", [tenantId, listId]);
+    await db.execute("DELETE FROM clickup_custom_fields WHERE tenant_id = $1 AND list_id = $2", [tenantId, listId]);
+    for (const s of statuses) await db.execute("INSERT INTO clickup_statuses (tenant_id, list_id, name, type, color, position) VALUES ($1, $2, $3, $4, $5, $6)", [tenantId, listId, s.name, s.type, s.color, s.position]);
+    for (const f of fields) await db.execute("INSERT INTO clickup_custom_fields (tenant_id, list_id, field_id, name, type) VALUES ($1, $2, $3, $4, $5)", [tenantId, listId, f.fieldId, f.name, f.type]);
+  });
 }

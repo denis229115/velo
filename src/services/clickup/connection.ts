@@ -112,6 +112,7 @@ export async function connectWorkspace(input: { token: string; workspaceId?: str
 
   const connection = await getWorkspaceConnection();
   if (!connection) throw new ClickUpError("server", "The workspace connection could not be saved.");
+  window.dispatchEvent(new Event("velo-clickup-connection-changed"));
   return { status: "connected", connection };
 }
 
@@ -126,6 +127,7 @@ async function clearAuthBlock(tenantId: string): Promise<void> {
 export async function disconnectWorkspace(): Promise<void> {
   await deleteSetting(TOKEN_SETTING);
   await deleteClickUpWorkspace();
+  window.dispatchEvent(new Event("velo-clickup-connection-changed"));
 }
 
 /** The connected workspace and its token; null when not connected. Never log the result. */

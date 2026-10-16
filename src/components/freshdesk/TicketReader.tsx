@@ -173,7 +173,7 @@ export function TicketReader({ ticket, ticketId }: { ticket: TicketListItem | nu
     if (ticketId === ticket?.id) edit.focus("Assignee");
   });
   return (
-    <section aria-label="Ticket reader" className="flex-1 min-w-0 flex flex-col bg-surface-reader">
+    <section data-clickup-reader aria-label="Ticket reader" className="flex-1 min-w-0 flex flex-col bg-surface-reader">
       {!ticket || !a ? (
         <EmptyState
           illustration={ReadingPaneIllustration}

@@ -17,6 +17,7 @@ import {
   retryMissingBacklinks,
   type PendingTaskCreation,
 } from "@/services/clickup/taskCreate";
+import { TaskDrawer } from "./TaskDrawer";
 import { CreateTaskDialog } from "./CreateTaskDialog";
 import { LinkTaskDialog } from "./LinkTaskDialog";
 import { useClickUpWritable } from "./useClickUpWritable";
@@ -228,6 +229,8 @@ export function RelatedTasksPanel({ item, actionFocusRequest = 0 }: { item: Link
   const [error, setError] = useState<string | null>(null);
   const [linking, setLinking] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [operationTask, setOperationTask] = useState<RelatedTask | null>(null);
+  const [operationPending, setOperationPending] = useState<PendingTaskCreation | null>(null);
   const [pending, setPending] = useState<PendingTaskCreation[]>([]);
   const writable = useClickUpWritable(item);
   // The item object is rebuilt on every render; its key says when it really changed
@@ -343,13 +346,7 @@ export function RelatedTasksPanel({ item, actionFocusRequest = 0 }: { item: Link
                   <p className="mt-0.5 text-meta text-text-secondary">{p.message}</p>
                   <button
                     type="button"
-                    onClick={() =>
-                      run(async () => {
-                        const result = await reconcileTaskCreation(p.operationId);
-                        if (result.outcome === "created") linksChanged();
-                        else if (result.outcome !== "unconfirmed") throw new Error(result.message);
-                      })
-                    }
+                    onClick={() => setOperationPending(p)}
                     {...writable.controlProps}
                     disabled={busy || writable.controlProps.disabled}
                     className="mt-2 inline-flex items-center gap-1 px-2 py-1 rounded-md border border-border-primary text-meta text-text-primary hover:bg-bg-hover disabled:opacity-50"
@@ -376,7 +373,7 @@ export function RelatedTasksPanel({ item, actionFocusRequest = 0 }: { item: Link
                   item={item}
                   busy={busy}
                   writable={writable}
-                  onRetry={() => run(() => retryMissingBacklinks(item, task.taskId))}
+                  onRetry={() => setOperationTask(task)}
                   onUnlink={() =>
                     run(async () => {
                       await unlinkTask(item, task.taskId);
@@ -393,6 +390,35 @@ export function RelatedTasksPanel({ item, actionFocusRequest = 0 }: { item: Link
         <p role="alert" className="text-meta text-danger mt-2">
           {error}
         </p>
+      )}
+      {(operationTask || operationPending) && (
+        <TaskDrawer title="ClickUp operation details" onClose={() => { setOperationTask(null); setOperationPending(null); }}>
+          <div className="p-4 space-y-3">
+            <FreshdeskWriteReason writable={writable} />
+            {operationTask && <>
+              <p className="text-sm font-medium text-text-primary">{operationTask.name}</p>
+              <Backlinks task={operationTask} writable={writable} busy={busy} onRetry={() => void run(async () => {
+                setOperationTask(await retryMissingBacklinks(item, operationTask.taskId));
+                linksChanged();
+              })} />
+              {operationTask.backlinks.length === 0 && <p className="text-meta text-text-secondary">Task confirmed. The email link stays only in Velo.</p>}
+            </>}
+            {operationPending && <>
+              <p className="text-sm font-medium text-text-primary">{operationPending.taskName}</p>
+              <p className="text-meta text-text-secondary">{operationPending.message}</p>
+              <button type="button" {...writable.controlProps} disabled={busy || writable.controlProps.disabled}
+                className="rounded border border-separator px-3 py-2 text-sm disabled:opacity-50"
+                onClick={() => void run(async () => {
+                  const result = await reconcileTaskCreation(operationPending.operationId);
+                  if (result.outcome === "created") {
+                    setOperationPending(null); setOperationTask(result.task); linksChanged();
+                  } else if (result.outcome === "unconfirmed") setOperationPending({ ...operationPending, message: result.message });
+                  else throw new Error(result.message);
+                })}>Check ClickUp</button>
+            </>}
+            {error && <p role="alert" className="text-meta text-danger">{error}</p>}
+          </div>
+        </TaskDrawer>
       )}
       {linking && (
         <LinkTaskDialog
