@@ -571,6 +571,32 @@ describe("scheduling a reply", () => {
     expect(writes()).toEqual([]);
   });
 
+  it("matches Send later to the email split: a clock half named Send later, the same height as Send", async () => {
+    await openTicket();
+    await draft("reply", "<p>Later then</p>");
+    const reply = await openComposer("Reply");
+    await reply.findByText("Later then");
+
+    const send = reply.getByRole("button", { name: "Send reply" });
+    const later = reply.getByRole("button", { name: "Send later" });
+    expect(later).toHaveAttribute("aria-label", "Send later");
+    expect(later).toHaveAttribute("title", expect.stringMatching(/Send later/));
+    expect(later).not.toHaveTextContent("Send later");
+    expect(later.querySelector("svg")).toBeTruthy();
+    expect(send.className).toContain("py-1.5");
+    expect(later.className).toContain("py-1.5");
+    expect(send.className).toContain("bg-accent");
+    expect(later.className).toContain("bg-accent");
+    expect(send.className).toContain("rounded-l-md");
+    expect(later.className).toContain("rounded-r-md");
+    expect(later.className).toContain("border-l");
+    expect(later.className).toContain("border-white/20");
+    expect(send.parentElement).toBe(later.parentElement);
+
+    fireEvent.click(later);
+    expect(await screen.findByRole("group", { name: "Schedule reply" })).toBeInTheDocument();
+  });
+
   it("offers Send later only for a reply, and not while offline: nothing is queued", async () => {
     await openTicket();
     await draft("reply", "<p>Later then</p>");

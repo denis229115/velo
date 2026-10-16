@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
-import { AlertTriangle, CalendarClock, CheckCircle2, Clock, HelpCircle, Lock, Reply, X } from "lucide-react";
+import { AlertTriangle, CalendarClock, CheckCircle2, Clock, HelpCircle, Lock, Maximize2, Minimize2, Reply, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { EditorToolbar } from "@/components/composer/EditorToolbar";
 import { ScheduleSendDialog } from "@/components/composer/ScheduleSendDialog";
@@ -122,6 +122,7 @@ function ComposerPane({
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const [showSchedule, setShowSchedule] = useState(false);
+  const [fullpage, setFullpage] = useState(false);
   const sendKeys = useShortcutStore((s) => s.keyMap["app.send"]);
   const [attachments, setAttachments] = useState<DraftAttachment[]>([]);
   const [attachError, setAttachError] = useState<string | null>(null);
@@ -320,108 +321,162 @@ function ComposerPane({
 
   const sendLabel = mode === "note" ? "Add internal note" : thenStatus ? `Send and set ${thenStatus.label}` : "Send reply";
   const isNote = mode === "note";
+  const showSend = !unconfirmed && outcome?.kind !== "stale";
+  const sendDisabled = writable.controlProps.disabled || busy || attaching || empty || badCc.length > 0 || tooLarge !== null;
+  const sendTitle = writable.controlProps.title ?? (sendKeys ? `${sendLabel} (${formatShortcut(sendKeys)})` : sendLabel);
+  const laterTitle = writable.controlProps.title ?? (sendLaterKeys ? `Send later (${formatShortcut(sendLaterKeys)})` : "Send later");
+  const describedBy = writable.controlProps["aria-describedby"];
+  const sendClass = "px-4 py-1.5 text-xs font-medium text-white bg-accent hover:bg-accent-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed";
+  const laterClass = "px-2 py-1.5 text-white bg-accent hover:bg-accent-hover border-l border-white/20 rounded-r-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed";
 
   return (
-    <section
-      ref={composerRoot}
-      aria-label={MODE_NAME[mode]}
-      className={`max-w-4xl mb-6 rounded-lg border bg-surface-composer ${isNote ? "border-status-warning/50" : "border-accent/50"}`}
-    >
-      <div className="flex items-center gap-2 px-3 pt-2">
-        <div role="tablist" aria-label="Composer mode" className="flex items-center gap-1">
-          {(["reply", "note"] as const).map((m) => (
-            <button
-              key={m}
-              type="button"
-              role="tab"
-              aria-selected={m === mode}
-              onClick={() => m !== mode && onModeChange(m)}
-              className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-preview font-medium transition-colors ${
-                m === mode
-                  ? m === "note"
-                    ? "bg-status-warning/15 text-text-primary"
-                    : "bg-accent/15 text-text-primary"
-                  : "text-text-tertiary hover:text-text-primary hover:bg-bg-hover"
-              }`}
-            >
-              {m === "note" ? <Lock size={12} aria-hidden /> : <Reply size={12} aria-hidden />}
-              {MODE_NAME[m]}
-            </button>
-          ))}
-        </div>
-        <Button variant="ghost" size="xs" iconOnly aria-label="Close composer" title="Close (the draft is kept)" onClick={onClose} className="ml-auto" icon={<X size={14} aria-hidden />} />
-      </div>
-
-      <p
-        className={`mx-3 mt-2 flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-meta ${
-          isNote ? "border-status-warning/40 bg-status-warning/5 text-text-secondary" : "border-accent/30 bg-accent/5 text-text-secondary"
+    <div className={`fixed inset-0 z-50 flex pointer-events-none ${fullpage ? "items-stretch justify-center p-4" : "items-end justify-center pb-4"}`}>
+      <div className="absolute inset-0 pointer-events-auto backdrop-animate" onClick={onClose} />
+      <section
+        ref={composerRoot}
+        aria-label={MODE_NAME[mode]}
+        className={`relative bg-surface-composer border border-border-primary rounded-lg overlay-shadow pointer-events-auto flex flex-col overflow-hidden ${
+          fullpage ? "w-full h-full max-w-5xl" : "w-full max-w-2xl max-h-[80vh]"
         }`}
       >
-        {isNote ? <Lock size={12} aria-hidden className="shrink-0 text-status-warning" /> : <Reply size={12} aria-hidden className="shrink-0 text-accent" />}
-        {isNote
-          ? "Only agents can see this. The customer is not notified."
-          : "The customer receives this by email."}
-      </p>
-
-      <Summary ticket={ticket} mode={mode} me={me} ccText={ccText} badCc={badCc} attachments={attachments} tooLarge={tooLarge} locked={unconfirmed} onCcChange={(v) => {
-        setCcText(v);
-        ccRef.current = v;
-        scheduleSave();
-      }} />
-
-      {mode === "reply" && <><TicketAiDraft request={aiDraftRequest} ticket={ticket} view={history} editor={editor} empty={empty} /><TaskReplyDraft key={ticket.id} item={{ kind: "ticket", ticketId: ticket.id }} editor={editor} disabled={busy || unconfirmed} /></>}
-
-      <div className="mx-3 mt-2 rounded-md border border-border-primary bg-bg-primary">
-        <EditorToolbar editor={editor} allowImages={false} />
-        <EditorContent editor={editor} />
-      </div>
-
-      <TicketAttachments
-        attachments={attachments}
-        error={attachError}
-        locked={unconfirmed}
-        onAdd={(files) => void addFiles(files)}
-        onRemove={(id) => void removeFile(id)}
-      />
-
-      <div className="px-3 py-2.5 space-y-2">
-        <OutcomeView outcome={outcome} mode={mode} busy={busy} writable={writable.writable} onSendAnyway={(baseline) => void send({ acknowledged: baseline })} onCheck={() => void send()} />
-        <div className="flex flex-wrap items-center gap-2">
-          {!unconfirmed && outcome?.kind !== "stale" && (
-            <Button
-              variant="primary"
-              size="sm"
-              {...writable.controlProps}
-              disabled={writable.controlProps.disabled || busy || attaching || empty || badCc.length > 0 || tooLarge !== null}
-              title={writable.controlProps.title ?? (sendKeys ? `${sendLabel} (${formatShortcut(sendKeys)})` : sendLabel)}
-              onClick={() => void send()}
+        <div className="flex items-center justify-between px-4 py-2.5 border-b border-border-primary bg-bg-secondary rounded-t-lg shrink-0">
+          <span className="text-sm font-medium text-text-primary">{MODE_NAME[mode]}</span>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setFullpage((value) => !value)}
+              className="text-text-tertiary hover:text-text-primary p-1 rounded transition-colors"
+              title={fullpage ? "Collapse" : "Expand"}
+              aria-label={fullpage ? "Collapse" : "Expand"}
             >
-              {busy ? "Sending…" : sendLabel}
-            </Button>
-          )}
-          {mode === "reply" && !unconfirmed && outcome?.kind !== "stale" && (
-            <Button
-              variant="secondary"
-              size="sm"
-              className="border border-border-primary"
-              icon={<Clock size={13} aria-hidden />}
-              {...writable.controlProps}
-              title={writable.controlProps.title ?? (sendLaterKeys ? `Send later (${formatShortcut(sendLaterKeys)})` : "Send later")}
-              disabled={!canSchedule}
-              onClick={() => setShowSchedule(true)}
-            >
-              Send later
-            </Button>
-          )}
-          {mode === "reply" && !unconfirmed && (
-            <label className="inline-flex items-center gap-1.5 text-meta text-text-secondary">
+              {fullpage ? <Minimize2 size={14} aria-hidden /> : <Maximize2 size={14} aria-hidden />}
+            </button>
+            <Button variant="ghost" size="xs" iconOnly aria-label="Close composer" title="Close (the draft is kept)" onClick={onClose} icon={<X size={14} aria-hidden />} />
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 px-3 pt-2 shrink-0">
+          <div role="tablist" aria-label="Composer mode" className="flex items-center gap-1">
+            {(["reply", "note"] as const).map((m) => (
+              <button
+                key={m}
+                type="button"
+                role="tab"
+                aria-selected={m === mode}
+                onClick={() => m !== mode && onModeChange(m)}
+                className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-preview font-medium transition-colors ${
+                  m === mode
+                    ? m === "note"
+                      ? "bg-status-warning/15 text-text-primary"
+                      : "bg-accent/15 text-text-primary"
+                    : "text-text-tertiary hover:text-text-primary hover:bg-bg-hover"
+                }`}
+              >
+                {m === "note" ? <Lock size={12} aria-hidden /> : <Reply size={12} aria-hidden />}
+                {MODE_NAME[m]}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto min-h-0">
+          <p
+            className={`mx-3 mt-2 flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-meta ${
+              isNote ? "border-status-warning/40 bg-status-warning/5 text-text-secondary" : "border-accent/30 bg-accent/5 text-text-secondary"
+            }`}
+          >
+            {isNote ? <Lock size={12} aria-hidden className="shrink-0 text-status-warning" /> : <Reply size={12} aria-hidden className="shrink-0 text-accent" />}
+            {isNote
+              ? "Only agents can see this. The customer is not notified."
+              : "The customer receives this by email."}
+          </p>
+
+          <Summary ticket={ticket} mode={mode} me={me} ccText={ccText} badCc={badCc} attachments={attachments} tooLarge={tooLarge} locked={unconfirmed} onCcChange={(v) => {
+            setCcText(v);
+            ccRef.current = v;
+            scheduleSave();
+          }} />
+
+          {mode === "reply" && <><TicketAiDraft request={aiDraftRequest} ticket={ticket} view={history} editor={editor} empty={empty} /><TaskReplyDraft key={ticket.id} item={{ kind: "ticket", ticketId: ticket.id }} editor={editor} disabled={busy || unconfirmed} /></>}
+
+          <div className="mx-3 mt-2 rounded-md border border-border-primary bg-bg-primary">
+            <EditorToolbar editor={editor} allowImages={false} />
+            <EditorContent editor={editor} />
+          </div>
+
+          <TicketAttachments
+            attachments={attachments}
+            error={attachError}
+            locked={unconfirmed}
+            onAdd={(files) => void addFiles(files)}
+            onRemove={(id) => void removeFile(id)}
+          />
+
+          <div className="px-3 py-2">
+            <OutcomeView outcome={outcome} mode={mode} busy={busy} writable={writable.writable} onSendAnyway={(baseline) => void send({ acknowledged: baseline })} onCheck={() => void send()} />
+          </div>
+        </div>
+
+        <div className="px-4 py-2.5 border-t border-border-primary bg-bg-secondary rounded-b-lg shrink-0 space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {mode === "reply" && !unconfirmed && (
+              <label className="inline-flex items-center gap-1.5 text-meta text-text-secondary">
+                Then set status
+                <select
+                  value={thenStatusId}
+                  onChange={(e) => setThenStatusId(e.target.value)}
+                  {...writable.controlProps}
+                  disabled={writable.controlProps.disabled || outcome?.kind === "stale"}
+                  className="rounded-md border border-border-primary bg-bg-primary px-1.5 py-1 text-meta text-text-primary disabled:opacity-50"
+                >
+                  <option value="">Keep current status</option>
+                  {doneStatuses.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            {!empty && <span className="text-micro text-text-tertiary">Draft kept on this device</span>}
+            {showSend && (
+              <div className="ml-auto flex items-center">
+                <button
+                  type="button"
+                  className={`${sendClass} ${mode === "reply" ? "rounded-l-md" : "rounded-md"}`}
+                  disabled={sendDisabled}
+                  title={sendTitle}
+                  aria-describedby={describedBy}
+                  onClick={() => void send()}
+                >
+                  {busy ? "Sending…" : sendLabel}
+                </button>
+                {mode === "reply" && (
+                  <button
+                    type="button"
+                    className={laterClass}
+                    aria-label="Send later"
+                    title={laterTitle}
+                    aria-describedby={describedBy}
+                    disabled={!canSchedule}
+                    onClick={() => setShowSchedule(true)}
+                  >
+                    <Clock size={12} aria-hidden />
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+          <FreshdeskWriteReason writable={writable} />
+        </div>
+        {showSchedule && (
+          <ScheduleSendDialog title="Schedule reply" note={SCHEDULE_NOTE} onSchedule={(at) => void schedule(at)} onClose={() => setShowSchedule(false)}>
+            <label className="flex items-center justify-between gap-2 text-xs text-text-secondary">
               Then set status
               <select
                 value={thenStatusId}
                 onChange={(e) => setThenStatusId(e.target.value)}
-                {...writable.controlProps}
-                disabled={writable.controlProps.disabled || outcome?.kind === "stale"}
-                className="rounded-md border border-border-primary bg-bg-primary px-1.5 py-1 text-meta text-text-primary disabled:opacity-50"
+                className="rounded-md border border-border-primary bg-bg-primary px-1.5 py-1 text-xs text-text-primary"
               >
                 <option value="">Keep current status</option>
                 {doneStatuses.map((s) => (
@@ -431,32 +486,11 @@ function ComposerPane({
                 ))}
               </select>
             </label>
-          )}
-          {!empty && <span className="ml-auto text-micro text-text-tertiary">Draft kept on this device</span>}
-        </div>
-        <FreshdeskWriteReason writable={writable} />
-      </div>
-      {showSchedule && (
-        <ScheduleSendDialog title="Schedule reply" note={SCHEDULE_NOTE} onSchedule={(at) => void schedule(at)} onClose={() => setShowSchedule(false)}>
-          <label className="flex items-center justify-between gap-2 text-xs text-text-secondary">
-            Then set status
-            <select
-              value={thenStatusId}
-              onChange={(e) => setThenStatusId(e.target.value)}
-              className="rounded-md border border-border-primary bg-bg-primary px-1.5 py-1 text-xs text-text-primary"
-            >
-              <option value="">Keep current status</option>
-              {doneStatuses.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <p className="mt-1.5 text-micro text-text-tertiary">Set only once Freshdesk confirms the reply was sent.</p>
-        </ScheduleSendDialog>
-      )}
-    </section>
+            <p className="mt-1.5 text-micro text-text-tertiary">Set only once Freshdesk confirms the reply was sent.</p>
+          </ScheduleSendDialog>
+        )}
+      </section>
+    </div>
   );
 }
 

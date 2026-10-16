@@ -34,6 +34,15 @@ export function ticketEntryAnchor(entryId: string): string {
   return `ticket-entry-${entryId}`;
 }
 
+/** History listens for this and expands the cited conversation, including one that was collapsed. */
+export const TICKET_ENTRY_REVEAL_EVENT = "velo-reveal-ticket-entry";
+
+/** Scroll a summary citation to its conversation and ask the history to expand it. */
+export function revealTicketEntry(entryId: string) {
+  document.dispatchEvent(new CustomEvent(TICKET_ENTRY_REVEAL_EVENT, { detail: entryId }));
+  document.getElementById(ticketEntryAnchor(entryId))?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+}
+
 export function ticketAiSource(ticket: TicketListItem, view: TicketHistoryView): TicketAiSource {
   return {
     ticketId: ticket.id,
@@ -309,7 +318,7 @@ function SourceRef({ entryId, entries }: { entryId: string; entries: HistoryEntr
       type="button"
       aria-label={`Go to message ${n} by ${entry.author}`}
       title={`Message ${n} by ${entry.author}`}
-      onClick={() => document.getElementById(ticketEntryAnchor(entryId))?.scrollIntoView({ behavior: "smooth", block: "start" })}
+      onClick={() => revealTicketEntry(entryId)}
       className="ml-1 inline-flex items-center rounded border border-border-primary bg-bg-primary px-1 text-micro font-mono text-text-secondary hover:text-text-primary hover:bg-bg-hover align-baseline"
     >
       {n}

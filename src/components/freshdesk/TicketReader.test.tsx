@@ -50,6 +50,7 @@ import { hydrateTicketHistories, resetHydrationState } from "@/services/freshdes
 import { useUIStore } from "@/stores/uiStore";
 import { useTicketStore } from "@/stores/ticketStore";
 import { FreshdeskPage } from "./FreshdeskPage";
+import { revealTicketEntry } from "./TicketSummaryCard";
 
 vi.spyOn(console, "log").mockImplementation(() => {});
 vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -199,6 +200,7 @@ describe("ticket reader", () => {
     renderFreshdesk("/freshdesk/ticket/1001");
 
     await waitFor(() => expect(entries()).toHaveLength(4));
+    fireEvent.click(within(entries()[0]!).getByRole("button", { name: /Fixture Customer Ada/ }));
     const frame = within(entries()[0]!).getByTitle("Email content") as HTMLIFrameElement;
     expect(frame.getAttribute("sandbox")).toBe("allow-same-origin");
     const html = frame.contentDocument!.body.innerHTML;
@@ -208,8 +210,71 @@ describe("ticket reader", () => {
     expect((window as { __pwned?: boolean }).__pwned).toBeUndefined();
 
     // An attachment's hostile name is shown as text, never as markup
+    fireEvent.click(within(entries()[1]!).getByRole("button", { name: /Fixture Operator/ }));
     const attachment = within(entries()[1]!).getByRole("button", { name: /steps\.pdf/ });
     expect(attachment.querySelector("img")).toBeNull();
+  });
+
+  it("opens Reply as an overlay and leaves the conversation in the pane", async () => {
+    await connectAndSync();
+    renderFreshdesk("/freshdesk/ticket/1001");
+    await waitFor(() => expect(entries()).toHaveLength(4));
+
+    fireEvent.click(reader().getByRole("button", { name: "Reply" }));
+    const region = await screen.findByRole("region", { name: "Reply to customer" });
+    const history = reader().getByRole("list", { name: "Conversation history" });
+    const overlay = region.parentElement;
+
+    expect(history).toBeInTheDocument();
+    expect(region.className).toContain("bg-surface-composer");
+    expect(region.className).toContain("overlay-shadow");
+    expect(region.className).toContain("rounded-lg");
+    expect(region.className).toContain("max-w-2xl");
+    expect(region.className).toContain("max-h-[80vh]");
+    expect(overlay?.className).toContain("fixed");
+    expect(overlay?.className).toContain("inset-0");
+    expect(overlay?.className).toContain("z-50");
+    expect(overlay?.querySelector(".backdrop-animate")).toBeTruthy();
+    expect(history.closest(".overflow-y-auto")?.contains(region)).toBe(false);
+  });
+
+  it("collapses older conversations to a snippet and expands the latest and a cited one", async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    await connectAndSync();
+    renderFreshdesk("/freshdesk/ticket/1001");
+    await waitFor(() => expect(entries()).toHaveLength(4));
+
+    const request = entries()[0]!;
+    const reply = entries()[1]!;
+    const note = entries()[2]!;
+    const latest = entries()[3]!;
+
+    expect(within(request).getByRole("button", { expanded: false })).toBeInTheDocument();
+    expect(within(request).getByText(/I cannot sign in since this morning/)).toBeInTheDocument();
+    expect(within(request).queryByTitle("Email content")).not.toBeInTheDocument();
+    expect(within(request).getByText("F")).toBeInTheDocument();
+
+    expect(within(latest).getByRole("button", { expanded: true })).toBeInTheDocument();
+    expect(within(latest).getByTitle("Email content")).toBeInTheDocument();
+    expect(within(latest).queryByText("Still failing, same error.")).not.toBeInTheDocument();
+
+    fireEvent.click(within(latest).getByRole("button", { name: /Fixture Customer Ada/ }));
+    expect(within(latest).queryByTitle("Email content")).not.toBeInTheDocument();
+    expect(within(latest).getByText("Still failing, same error.")).toBeInTheDocument();
+
+    fireEvent.click(within(request).getByRole("button", { name: /Fixture Customer Ada/ }));
+    const frame = within(request).getByTitle("Email content") as HTMLIFrameElement;
+    expect(frame.contentDocument!.body.innerHTML).toContain("I cannot sign in since this morning.");
+
+    expect(note.querySelector(".bg-status-warning")).toBeTruthy();
+    expect(within(note).getByText("Agents only")).toBeInTheDocument();
+    expect(reply.querySelector(".bg-status-warning")).toBeNull();
+
+    const cited = reply.closest("li")!;
+    const entryId = cited.id.replace(/^ticket-entry-/, "");
+    act(() => revealTicketEntry(entryId));
+    expect(within(reply).getByTitle("Email content")).toBeInTheDocument();
+    expect(cited.scrollIntoView).toHaveBeenCalled();
   });
 });
 

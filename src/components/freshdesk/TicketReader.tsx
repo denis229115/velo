@@ -1,5 +1,5 @@
 import { useShortcutAction } from "@/hooks/useShortcutAction";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Lock, Paperclip } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -16,7 +16,7 @@ import { useTicketEditControls } from "./TicketEditControls";
 import { TicketHeader } from "./TicketHeader";
 import { FreshdeskWriteReason } from "./useFreshdeskWritable";
 import { TicketComposer } from "./TicketComposer";
-import { TicketSummaryCard, ticketEntryAnchor } from "./TicketSummaryCard";
+import { TicketSummaryCard, TICKET_ENTRY_REVEAL_EVENT, ticketEntryAnchor } from "./TicketSummaryCard";
 import type { ComposerMode } from "@/services/freshdesk/ticketSend";
 
 function formatSize(bytes: number | null): string | null {
@@ -54,37 +54,71 @@ function Attachments({ attachments }: { attachments: ConversationAttachment[] })
   );
 }
 
+function authorInitial(author: string): string {
+  const letter = author.trim().charAt(0).toUpperCase();
+  return letter || "?";
+}
+
+/** One line of the conversation, shown while its row is collapsed. */
+function entrySnippet(entry: HistoryEntry): string {
+  const text = (entry.bodyText ?? "").replace(/\s+/g, " ").trim();
+  if (text.length <= 160) return text;
+  return `${text.slice(0, 160).trimEnd()}…`;
+}
+
 /** One message of the history; `n` is its number, which summary references cite */
-function Entry({ entry, n }: { entry: HistoryEntry; n: number }) {
+function Entry({ entry, n, expanded, onToggle }: { entry: HistoryEntry; n: number; expanded: boolean; onToggle: () => void }) {
   const internal = entry.visibility === "internal";
+  const accent = internal ? "bg-status-warning" : entry.kind === "reply" ? "bg-accent/40" : null;
+  const snippet = entrySnippet(entry);
   return (
-    <li id={ticketEntryAnchor(entry.id)} className="scroll-mt-4">
+    <li id={ticketEntryAnchor(entry.id)} className="scroll-mt-4 border-b border-border-secondary last:border-b-0">
       <article
         aria-label={`${entry.kind === "request" ? "Original request" : "Conversation"} by ${entry.author}`}
-        className={`rounded-lg border px-4 py-3 ${
-          internal ? "border-status-warning/40 bg-status-warning/5" : "border-border-primary bg-surface-reader"
-        }`}
+        className="relative"
       >
-        <header className="flex items-center gap-2 mb-2 min-w-0">
-          <span className="text-row font-medium text-text-primary truncate">{entry.author}</span>
-          <EntryKindBadge kind={entry.kind} />
-          {internal && (
-            <span className="inline-flex items-center gap-1 text-micro text-text-tertiary">
-              <Lock size={10} aria-hidden />
-              Agents only
-            </span>
-          )}
-          <span className="ml-auto shrink-0 text-meta text-text-tertiary">
+        {accent && <span aria-hidden className={`absolute inset-y-0 left-0 w-0.5 ${accent}`} />}
+        <div className="flex items-start">
+          <button
+            type="button"
+            aria-expanded={expanded}
+            onClick={onToggle}
+            className="flex-1 min-w-0 text-left px-4 py-3 hover:bg-bg-hover transition-colors"
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="w-7 h-7 rounded-full bg-accent/20 text-accent flex items-center justify-center shrink-0 text-micro font-medium">
+                {authorInitial(entry.author)}
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-row font-medium text-text-primary truncate">{entry.author}</span>
+                  <EntryKindBadge kind={entry.kind} />
+                  {internal && (
+                    <span className="inline-flex items-center gap-1 text-micro text-text-tertiary shrink-0">
+                      <Lock size={10} aria-hidden />
+                      Agents only
+                    </span>
+                  )}
+                </div>
+                {!expanded && snippet && <span className="text-meta text-text-tertiary truncate block">{snippet}</span>}
+              </div>
+            </div>
+          </button>
+          <span className="shrink-0 px-4 py-3 text-meta text-text-tertiary">
             <span className="font-mono text-micro mr-2" title={`Message ${n}`}>#{n}</span>
             <Timestamp at={entry.at} />
           </span>
-        </header>
-        {entry.bodyHtml ? (
-          <EmailRenderer html={entry.bodyHtml} text={entry.bodyText} blockImages />
-        ) : (
-          <p className="text-row text-text-primary whitespace-pre-wrap">{entry.bodyText ?? ""}</p>
+        </div>
+        {expanded && (
+          <div className="px-4 pb-4">
+            {entry.bodyHtml ? (
+              <EmailRenderer html={entry.bodyHtml} text={entry.bodyText} blockImages />
+            ) : (
+              <p className="text-row text-text-primary whitespace-pre-wrap">{entry.bodyText ?? ""}</p>
+            )}
+            <Attachments attachments={entry.attachments} />
+          </div>
         )}
-        <Attachments attachments={entry.attachments} />
       </article>
     </li>
   );
@@ -94,25 +128,72 @@ function Entry({ entry, n }: { entry: HistoryEntry; n: number }) {
 const RECENT_ENTRIES = 20;
 
 function History({ entries }: { entries: HistoryEntry[] }) {
-  const [expanded, setExpanded] = useState(false);
+  const [showEarlier, setShowEarlier] = useState(false);
+  const [open, setOpen] = useState<Set<string>>(() => {
+    const last = entries[entries.length - 1];
+    return new Set(last ? [last.id] : []);
+  });
+  const pendingScroll = useRef<string | null>(null);
+  const lastId = entries[entries.length - 1]?.id;
+  const seenLastId = useRef(lastId);
   const [request, ...conversations] = entries;
-  const hidden = expanded ? 0 : Math.max(0, conversations.length - RECENT_ENTRIES);
+  const hidden = showEarlier ? 0 : Math.max(0, conversations.length - RECENT_ENTRIES);
+
+  // A new latest conversation opens itself. Reloading the same history does not reopen one the operator collapsed.
+  useEffect(() => {
+    if (!lastId || seenLastId.current === lastId) return;
+    seenLastId.current = lastId;
+    setOpen((prev) => (prev.has(lastId) ? prev : new Set(prev).add(lastId)));
+  }, [lastId]);
+
+  useEffect(() => {
+    const onReveal = (event: Event) => {
+      const id = (event as CustomEvent<string>).detail;
+      if (typeof id !== "string" || !entries.some((entry) => entry.id === id)) return;
+      if (!document.getElementById(ticketEntryAnchor(id))) {
+        pendingScroll.current = id;
+        setShowEarlier(true);
+      }
+      setOpen((prev) => (prev.has(id) ? prev : new Set(prev).add(id)));
+    };
+    document.addEventListener(TICKET_ENTRY_REVEAL_EVENT, onReveal);
+    return () => document.removeEventListener(TICKET_ENTRY_REVEAL_EVENT, onReveal);
+  }, [entries]);
+
+  useEffect(() => {
+    const id = pendingScroll.current;
+    if (!id) return;
+    const el = document.getElementById(ticketEntryAnchor(id));
+    if (!el) return;
+    el.scrollIntoView?.({ behavior: "smooth", block: "start" });
+    pendingScroll.current = null;
+  }, [showEarlier, open]);
+
+  const toggle = (id: string) => {
+    setOpen((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
   return (
-    <ol aria-label="Conversation history" className="flex flex-col gap-3 max-w-4xl">
-      {request && <Entry entry={request} n={1} />}
+    <ol aria-label="Conversation history" className="max-w-4xl border-t border-border-secondary">
+      {request && <Entry entry={request} n={1} expanded={open.has(request.id)} onToggle={() => toggle(request.id)} />}
       {hidden > 0 && (
-        <li>
+        <li className="border-b border-border-secondary">
           <button
             type="button"
-            onClick={() => setExpanded(true)}
-            className="w-full rounded-lg border border-dashed border-border-primary px-4 py-2 text-meta text-text-secondary hover:bg-bg-hover"
+            onClick={() => setShowEarlier(true)}
+            className="w-full px-4 py-2 text-meta text-text-secondary hover:bg-bg-hover"
           >
             Show {hidden} earlier {hidden === 1 ? "conversation" : "conversations"}
           </button>
         </li>
       )}
       {conversations.slice(hidden).map((entry, i) => (
-        <Entry key={entry.id} entry={entry} n={hidden + i + 2} />
+        <Entry key={entry.id} entry={entry} n={hidden + i + 2} expanded={open.has(entry.id)} onToggle={() => toggle(entry.id)} />
       ))}
     </ol>
   );
@@ -143,7 +224,7 @@ function useTicketHistory(ticketId: string | null): TicketHistoryView | null {
   return view && view.ticketId === ticketId ? view : null;
 }
 
-/** The ticket open on the right of the list. Status, priority and assignee are edited in its header; Reply and Internal note open the composer under it. */
+/** The ticket open on the right of the list. Status, priority and assignee are edited in its header; Reply and Internal note open the composer over the conversation. */
 export function TicketReader({ ticket, ticketId }: { ticket: TicketListItem | null; ticketId: string | null }) {
   const view = useTicketHistory(ticket ? ticketId : null);
   const a = ticket?.activity;
@@ -181,30 +262,32 @@ export function TicketReader({ ticket, ticketId }: { ticket: TicketListItem | nu
           subtitle={ticketId ? `Ticket #${ticketId} is not in the local copy` : "Select a ticket to read"}
         />
       ) : (
-        <div className="overflow-y-auto px-8 py-6">
-          <TicketHeader
-            ticket={ticket}
-            channel={view?.channel ?? null}
-            edit={edit}
-            onReply={() => compose("reply")}
-            onInternalNote={() => compose("note")}
-            notice={
-              (edit.blocked || editError) && (
-                <div className="space-y-1.5">
-                  <FreshdeskWriteReason writable={edit.writable} />
-                  {editError && <TicketEditError text={editError.text} onDismiss={editor.clearError} />}
-                </div>
-              )
-            }
-          />
-          {editor.element}
-          <TicketSummaryCard key={ticket.id} ticket={ticket} view={view} />
+        <>
+          <div className="flex-1 min-h-0 overflow-y-auto px-8 py-6">
+            <TicketHeader
+              ticket={ticket}
+              channel={view?.channel ?? null}
+              edit={edit}
+              onReply={() => compose("reply")}
+              onInternalNote={() => compose("note")}
+              notice={
+                (edit.blocked || editError) && (
+                  <div className="space-y-1.5">
+                    <FreshdeskWriteReason writable={edit.writable} />
+                    {editError && <TicketEditError text={editError.text} onDismiss={editor.clearError} />}
+                  </div>
+                )
+              }
+            />
+            {editor.element}
+            <TicketSummaryCard key={ticket.id} ticket={ticket} view={view} />
+            <HistoryNotice view={view} />
+            {view && view.entries.length > 0 && <History key={view.ticketId} entries={view.entries} />}
+          </div>
           {composerMode && (
             <TicketComposer ticket={ticket} history={view} aiDraftRequest={composing?.aiDraftRequest ?? 0} mode={composerMode} onModeChange={compose} onClose={() => setComposing(null)} />
           )}
-          <HistoryNotice view={view} />
-          {view && view.entries.length > 0 && <History key={view.ticketId} entries={view.entries} />}
-        </div>
+        </>
       )}
     </section>
   );
