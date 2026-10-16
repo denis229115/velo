@@ -13,6 +13,13 @@ export interface CachedTicket {
   groupId: string | null;
   companyId: string | null;
   tags: string[];
+  /**
+   * The ticket's CC, reply-CC and forward lists as Freshdesk gave them (valid
+   * addresses only); null when the copy of the ticket carried no such field
+   */
+  ccEmails: string[] | null;
+  replyCcEmails: string[] | null;
+  fwdEmails: string[] | null;
   /** Resolution due (SLA), unix seconds; null when Freshdesk gives none */
   dueBy: number | null;
   createdAt: number;
@@ -33,6 +40,9 @@ interface TicketRow {
   group_id: string | null;
   company_id: string | null;
   tags_json: string;
+  cc_emails_json: string | null;
+  reply_cc_emails_json: string | null;
+  fwd_emails_json: string | null;
   due_by: number | null;
   created_at: number;
   updated_at: number;
@@ -89,6 +99,12 @@ function parseTags(json: string): string[] {
   }
 }
 
+function parseAddresses(json: string | null): string[] | null {
+  return json === null ? null : parseTags(json);
+}
+
+const jsonOrNull = (list: string[] | null): string | null => (list === null ? null : JSON.stringify(list));
+
 function toTicket(row: TicketRow): CachedTicket {
   return {
     ticketId: row.ticket_id,
@@ -102,6 +118,9 @@ function toTicket(row: TicketRow): CachedTicket {
     groupId: row.group_id,
     companyId: row.company_id,
     tags: parseTags(row.tags_json),
+    ccEmails: parseAddresses(row.cc_emails_json),
+    replyCcEmails: parseAddresses(row.reply_cc_emails_json),
+    fwdEmails: parseAddresses(row.fwd_emails_json),
     dueBy: row.due_by,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -121,8 +140,8 @@ export async function upsertTickets(tenantId: string, tickets: CachedTicket[]): 
       await db.execute(
         `INSERT INTO freshdesk_tickets (tenant_id, ticket_id, subject, status_id, priority_id, requester_id,
            customer_name, customer_email, responder_id, group_id, created_at, updated_at, fetched_on_demand,
-           company_id, tags_json, due_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+           company_id, tags_json, due_by, cc_emails_json, reply_cc_emails_json, fwd_emails_json)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
          ON CONFLICT(tenant_id, ticket_id) DO UPDATE SET
            subject = excluded.subject, status_id = excluded.status_id, priority_id = excluded.priority_id,
            requester_id = excluded.requester_id,
@@ -132,12 +151,16 @@ export async function upsertTickets(tenantId: string, tickets: CachedTicket[]): 
              THEN COALESCE(excluded.customer_email, freshdesk_tickets.customer_email) ELSE excluded.customer_email END,
            responder_id = excluded.responder_id, group_id = excluded.group_id,
            company_id = excluded.company_id, tags_json = excluded.tags_json, due_by = excluded.due_by,
+           cc_emails_json = COALESCE(excluded.cc_emails_json, freshdesk_tickets.cc_emails_json),
+           reply_cc_emails_json = COALESCE(excluded.reply_cc_emails_json, freshdesk_tickets.reply_cc_emails_json),
+           fwd_emails_json = COALESCE(excluded.fwd_emails_json, freshdesk_tickets.fwd_emails_json),
            created_at = excluded.created_at, updated_at = excluded.updated_at,
            fetched_on_demand = MAX(freshdesk_tickets.fetched_on_demand, excluded.fetched_on_demand)`,
         [
           tenantId, t.ticketId, t.subject, t.statusId, t.priorityId, t.requesterId,
           t.customerName, t.customerEmail, t.responderId, t.groupId, t.createdAt, t.updatedAt,
           t.fetchedOnDemand ? 1 : 0, t.companyId, JSON.stringify(t.tags), t.dueBy,
+          jsonOrNull(t.ccEmails), jsonOrNull(t.replyCcEmails), jsonOrNull(t.fwdEmails),
         ],
       );
     }
