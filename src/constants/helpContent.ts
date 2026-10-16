@@ -789,10 +789,10 @@ export const HELP_CATEGORIES: HelpCategory[] = [
         title: "Thread summaries",
         summary: "AI-generated summary of long conversations.",
         description:
-          "For threads with many messages, click the summary button to get a concise AI-generated overview. The summary captures the key points, decisions, and action items from the entire conversation, saving you from reading through dozens of messages. Summaries are cached locally so you only pay for the API call once. Especially useful for threads you were CC'd on or need to catch up on after being away.",
+          "For email threads with two or more messages, choose Summarize to get a concise AI-generated overview. Opening an email never requests a summary or quick replies by itself. The summary captures the key points, decisions, and action items from the entire email thread. Requests go through the AI gateway to the approved Claude API, with a send preview on first use and whenever a new kind of data is included. Summaries are cached locally; Refresh summary requests a new one.",
         tips: [
-          { text: "Click the summary icon in the thread view header." },
-          { text: "Summaries are cached — subsequent views are instant and free." },
+          { text: "Choose Summarize in the AI Summary panel." },
+          { text: "Choose Preview to see exactly what will be sent." },
           { text: "Best for long threads with 5+ messages." },
           { text: "Captures key decisions, action items, and takeaways." },
         ],
@@ -803,7 +803,7 @@ export const HELP_CATEGORIES: HelpCategory[] = [
         title: "Smart replies",
         summary: "AI-suggested quick reply options.",
         description:
-          "When viewing a thread, AI analyzes the latest message and suggests 2-3 short reply options — like \"Sounds good, thanks!\", \"Let me check and get back to you.\", or \"I'm available next Tuesday.\" Click a suggestion to insert it into the reply editor, then edit it before sending. Smart replies save time for quick, routine responses.",
+          "When viewing an email thread, choose Generate replies in Quick Replies to ask AI for 2-3 short reply options — like \"Sounds good, thanks!\", \"Let me check and get back to you.\", or \"I'm available next Tuesday.\" Opening an email never generates suggestions by itself. Requests use the AI gateway and send preview rules. Click a suggestion to insert it into the reply editor, then edit it before sending.",
         tips: [
           { text: "Smart reply suggestions appear below the last message in a thread." },
           { text: "Click a suggestion to insert it into the reply editor." },

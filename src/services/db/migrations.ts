@@ -325,7 +325,6 @@ const MIGRATIONS = [
       INSERT OR IGNORE INTO settings (key, value) VALUES
         ('ai_enabled', 'true'),
         ('ai_auto_categorize', 'true'),
-        ('ai_auto_summarize', 'true'),
         ('contact_sidebar_visible', 'true'),
         ('attachment_cache_max_mb', '500'),
         ('calendar_enabled', 'false');
