@@ -336,10 +336,11 @@ describe("what the dialog warns about and settles", () => {
     expect(within(dialog).getByRole("button", { name: "Create task" })).toBeEnabled();
   });
 
-  it("leaves a failed backlink pending in the panel, and its retry writes only that backlink (A14)", async () => {
+  it.each([[403, false], [500, false], [503, true]] as const)("shows backlink outcome for HTTP %s (stored: %s) and safely resolves only that step", async (status, stored) => {
     freshdesk.respondOnce(ALPHA_HOST, "/api/v2/tickets/1002/notes", {
       method: "POST",
-      status: 500,
+      status,
+      apply: stored,
       body: {},
     });
     const dialog = await openCreate(TICKET);
@@ -353,7 +354,7 @@ describe("what the dialog warns about and settles", () => {
     const note = await within(row).findByRole("listitem", {
       name: "Internal note on the ticket",
     });
-    expect(note).toHaveTextContent("Failed");
+    expect(note).toHaveTextContent(status >= 500 ? "Not confirmed" : "Failed");
     expect(within(row).getByRole("listitem", { name: "Ticket-ID field" })).toHaveTextContent("Written");
 
     clickup.requests.length = 0;
@@ -365,7 +366,8 @@ describe("what the dialog warns about and settles", () => {
     await waitFor(() =>
       expect(within(row).queryByRole("button", { name: "Retry missing backlink" })).not.toBeInTheDocument(),
     );
-    expect(writes()).toEqual(["POST /tickets/1002/notes"]);
+    expect(writes()).toEqual(stored ? [] : ["POST /tickets/1002/notes"]);
+    if (status >= 500) expect(freshdesk.requests.some((r) => r.method === "GET" && r.url.includes("/conversations"))).toBe(true);
     expect(within(row).getByText("Backlinks written")).toBeInTheDocument();
   });
 

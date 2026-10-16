@@ -5,7 +5,8 @@
  * ticket changed is Held for the operator instead of sent.
  */
 import { useUIStore } from "@/stores/uiStore";
-import { withReadSnapshot } from "@/services/db/connection";
+import { withReadSnapshot, withTransaction } from "@/services/db/connection";
+import { deleteStoredDraft } from "@/services/db/freshdeskDrafts";
 import { getIntegrationAccount } from "@/services/db/freshdesk";
 import { getCachedTickets } from "@/services/db/freshdeskTickets";
 import {
@@ -118,24 +119,26 @@ export async function scheduleTicketReply(
     ticket: (await getCachedTickets(tenantId)).find((t) => t.ticketId === ticketId),
   }));
 
-  const id = await insertScheduledReply({
-    tenantId,
-    agentId: account?.me?.agentId ?? "",
-    ticketId,
-    subject: ticket?.subject ?? "",
-    recipient: [ticket?.customerName, ticket?.customerEmail && `<${ticket.customerEmail}>`].filter(Boolean).join(" "),
-    bodyHtml: draft.bodyHtml,
-    ccEmails: draft.ccEmails,
-    sendAt: options.sendAt,
-    thenStatusId: options.thenStatusId ?? null,
-    baselineStartedAt: draft.baseline.startedAt,
-    baselineAssignee: draft.baseline.assigneeId,
-    baselineStatus: ticket?.statusId ?? null,
+  let id = "";
+  await withTransaction(async () => {
+    id = await insertScheduledReply({
+      tenantId,
+      agentId: account?.me?.agentId ?? "",
+      ticketId,
+      subject: ticket?.subject ?? "",
+      recipient: [ticket?.customerName, ticket?.customerEmail && `<${ticket.customerEmail}>`].filter(Boolean).join(" "),
+      bodyHtml: draft.bodyHtml,
+      ccEmails: draft.ccEmails,
+      sendAt: options.sendAt,
+      thenStatusId: options.thenStatusId ?? null,
+      baselineStartedAt: draft.baseline.startedAt,
+      baselineAssignee: draft.baseline.assigneeId,
+      baselineStatus: ticket?.statusId ?? null,
+    });
+    const key = { tenantId, agentId: account?.me?.agentId ?? "", ticketId, mode: "reply" as const };
+    await moveStoredAttachments(draftAttachmentOwner(key), scheduledOwner(id));
+    await deleteStoredDraft(key);
   });
-  // The files go with the text: moved before the draft (and its files) is discarded
-  const draftOwner = draftAttachmentOwner({ tenantId, agentId: account?.me?.agentId ?? "", ticketId, mode: "reply" });
-  await moveStoredAttachments(draftOwner, scheduledOwner(id));
-  await discardTicketDraft(ticketId, "reply");
   announceScheduledRepliesChanged();
   return { ok: true, id };
 }

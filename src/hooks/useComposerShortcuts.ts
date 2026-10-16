@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type RefObject } from "react";
 import { useShortcutStore } from "@/stores/shortcutStore";
 import { hasCommandModifier, matchesKey } from "@/utils/shortcutKeys";
 
@@ -23,7 +23,7 @@ function isTypingTarget(target: EventTarget | null): boolean {
  * Listens in the capture phase so the keys reach the composer before the
  * editor (e.g. TipTap's Mod-Enter hard break) or the global shortcut handler.
  */
-export function useComposerShortcuts(handlers: ComposerShortcutHandlers, enabled = true): void {
+export function useComposerShortcuts(handlers: ComposerShortcutHandlers, enabled: boolean, owner: RefObject<HTMLElement | null>): void {
   const handlersRef = useRef(handlers);
   handlersRef.current = handlers;
 
@@ -31,6 +31,12 @@ export function useComposerShortcuts(handlers: ComposerShortcutHandlers, enabled
     if (!enabled) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      const root = owner.current;
+      const target = e.target instanceof HTMLElement ? e.target : document.activeElement;
+      if (!root || !(target instanceof HTMLElement) || !root.contains(target)) return;
+      // A nested dialog owns its keys even when rendered inside the composer.
+      const dialog = target.closest('[role="dialog"], dialog');
+      if (dialog && !dialog.contains(root)) return;
       const keyMap = useShortcutStore.getState().keyMap;
       const actions: [string | undefined, (() => void) | undefined][] = [
         [keyMap["app.send"], handlersRef.current.onSend],
@@ -49,5 +55,5 @@ export function useComposerShortcuts(handlers: ComposerShortcutHandlers, enabled
 
     window.addEventListener("keydown", handleKeyDown, true);
     return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, [enabled]);
+  }, [enabled, owner]);
 }

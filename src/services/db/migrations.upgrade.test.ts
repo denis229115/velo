@@ -197,7 +197,7 @@ describe("migration v37 (ticket reply attachments)", () => {
       { attachment_id: "draft-file", owner: "draft:freshdesk:fixture.test|me|1001|reply", data_base64: "aGVsbG8=" },
       { attachment_id: "scheduled-file", owner: "scheduled:later", data_base64: "aGVsbG8=" },
     ]);
-    expect(await db.select("SELECT version, description FROM _migrations WHERE version >= 36 ORDER BY version")).toEqual([
+    expect(await db.select("SELECT version, description FROM _migrations WHERE version BETWEEN 36 AND 37 ORDER BY version")).toEqual([
       { version: 36, description: "Freshdesk ticket CC, reply-CC and forward lists (NULL when Freshdesk gave none)" },
       { version: 37, description: "Files attached to Freshdesk ticket drafts and scheduled replies" },
     ]);
@@ -219,6 +219,23 @@ describe("migration v37 (ticket reply attachments)", () => {
     expect(await db.select("SELECT * FROM freshdesk_reply_attachments")).toEqual([]);
     expect(await db.select("SELECT cc_emails_json FROM freshdesk_tickets")).toEqual([{ cc_emails_json: '["copied@example.test"]' }]);
     expect(await db.select("SELECT body_html FROM freshdesk_ticket_drafts")).toEqual([{ body_html: "<p>Keep me</p>" }]);
-    expect(await db.select("SELECT version FROM _migrations WHERE version >= 36 ORDER BY version")).toEqual([{ version: 36 }, { version: 37 }]);
+    expect(await db.select("SELECT version FROM _migrations WHERE version BETWEEN 36 AND 37 ORDER BY version")).toEqual([{ version: 36 }, { version: 37 }]);
+  });
+});
+
+
+describe("obsolete AI preferences upgrade", () => {
+  it.each([true, false])("removes the obsolete auto-summary key from existing v37 history (key present: %s)", async (present) => {
+    await runMigrations();
+    await db.execute("ALTER TABLE integration_accounts DROP COLUMN connection_generation");
+    await db.execute("DELETE FROM _migrations WHERE version >= 38");
+    if (present) await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('ai_auto_summarize', 'true')");
+    await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('theme', 'dark')");
+
+    await runMigrations();
+    await runMigrations();
+
+    expect(await db.select("SELECT value FROM settings WHERE key = 'ai_auto_summarize'")).toEqual([]);
+    expect(await db.select("SELECT value FROM settings WHERE key = 'theme'")).toEqual([{ value: "dark" }]);
   });
 });

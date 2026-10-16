@@ -1,5 +1,5 @@
 import { createBackgroundChecker } from "@/services/backgroundCheckers";
-import { withReadSnapshot } from "@/services/db/connection";
+import { withReadSnapshot, withTransaction } from "@/services/db/connection";
 import { deleteSetting, getSecureSetting, setSecureSetting } from "@/services/db/settings";
 import {
   deleteFreshdeskDataExcept,
@@ -13,7 +13,6 @@ import {
   replaceHelpdeskMetadata,
   saveIntegrationAccount,
   setStatusClass,
-  updateIntegrationIdentity,
   type StatusClass,
 } from "@/services/db/freshdesk";
 import { clearTicketSyncAuthBlock } from "@/services/db/freshdeskTickets";
@@ -103,8 +102,10 @@ export async function connectHelpdesk(input: { host: string; apiKey: string }): 
   const tenantId = tenantIdForHost(host);
   await deleteFreshdeskDataExcept(tenantId);
   await deleteTicketLinksOutsideScope(tenantId);
-  await setSecureSetting(API_KEY_SETTING, apiKey);
-  await saveIntegrationAccount({ kind: "freshdesk", tenantId, tenantHost: host, me });
+  await withTransaction(async () => {
+    await setSecureSetting(API_KEY_SETTING, apiKey);
+    await saveIntegrationAccount({ kind: "freshdesk", tenantId, tenantHost: host, me });
+  });
   await replaceHelpdeskMetadata(tenantId, metadata);
   await clearTicketSyncAuthBlock(tenantId);
 
@@ -115,17 +116,21 @@ export async function connectHelpdesk(input: { host: string; apiKey: string }): 
 
 /** Forgets the credentials and returns to sample data. */
 export async function disconnectHelpdesk(): Promise<void> {
-  await deleteSetting(API_KEY_SETTING);
-  await deleteIntegrationAccount("freshdesk");
+  await withTransaction(async () => {
+    await deleteSetting(API_KEY_SETTING);
+    await deleteIntegrationAccount("freshdesk");
+  });
 }
 
 /** The connected helpdesk and its API key; null in sample mode. Never log the result. */
-export async function currentCredentials(): Promise<{ tenantId: string; credentials: HelpdeskCredentials } | null> {
-  const account = await getIntegrationAccount("freshdesk");
-  if (!account) return null;
-  const apiKey = await getSecureSetting(API_KEY_SETTING);
-  if (!apiKey) return null;
-  return { tenantId: account.tenantId, credentials: { host: account.tenantHost, apiKey } };
+export async function currentCredentials(): Promise<{ tenantId: string; generation: string; credentials: HelpdeskCredentials } | null> {
+  return withReadSnapshot(async () => {
+    const account = await getIntegrationAccount("freshdesk");
+    if (!account) return null;
+    const apiKey = await getSecureSetting(API_KEY_SETTING);
+    if (!apiKey) return null;
+    return { tenantId: account.tenantId, generation: account.generation, credentials: { host: account.tenantHost, apiKey } };
+  });
 }
 
 /** Re-reads identity and metadata. IDs stay stable; labels follow Freshdesk. */
@@ -134,9 +139,7 @@ export async function refreshHelpdeskMetadata(): Promise<boolean> {
   if (!current) return false;
   const me = await fetchCurrentAgent(current.credentials);
   const metadata = await fetchHelpdeskMetadata(current.credentials);
-  await updateIntegrationIdentity("freshdesk", me);
-  await replaceHelpdeskMetadata(current.tenantId, metadata);
-  return true;
+  return replaceHelpdeskMetadata(current.tenantId, metadata, { generation: current.generation, me });
 }
 
 /**

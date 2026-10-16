@@ -151,8 +151,8 @@ describe("ticket edits (remote writes)", () => {
     expect(await getOperationJournal("1001")).toEqual([]);
   });
 
-  it("reconciles a dropped write by reading the ticket back, never by sending again (A10)", async () => {
-    stub.respondOnce(ALPHA_HOST, "/api/v2/tickets/1001", { method: "PUT", networkError: true, apply: true });
+  it.each([0, 500, 502, 503])("reconciles an accepted edit with ambiguous response %s without writing again", async (status) => {
+    stub.respondOnce(ALPHA_HOST, "/api/v2/tickets/1001", { method: "PUT", apply: true, ...(status ? { status, body: {} } : { networkError: true }) });
 
     expect(await updateTicket("1001", { statusId: "3" })).toEqual({ outcome: "confirmed" });
     expect(writes()).toHaveLength(1);
@@ -171,8 +171,8 @@ describe("ticket edits (remote writes)", () => {
     expect((await cached("1001")).status.id).toBe("2");
   });
 
-  it("leaves a write unconfirmed when the read-back fails too", async () => {
-    stub.respondOnce(ALPHA_HOST, "/api/v2/tickets/1001", { method: "PUT", networkError: true });
+  it.each([0, 503])("leaves an ambiguous edit %s unconfirmed when read-back fails too", async (status) => {
+    stub.respondOnce(ALPHA_HOST, "/api/v2/tickets/1001", { method: "PUT", ...(status ? { status, body: {}, apply: true } : { networkError: true }) });
     stub.respondOnce(ALPHA_HOST, "/api/v2/tickets/1001", { method: "GET", networkError: true });
 
     const result = await updateTicket("1001", { statusId: "3" });

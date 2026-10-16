@@ -248,7 +248,7 @@ function itemOf(key: LinkKey): LinkedItem {
 }
 
 /** Once ClickUp holds the task: store it, link it, then write the ticket's remaining backlinks. */
-async function completeCreation(op: TaskOperation, apiTask: ApiTask, credentials: { tenantId: string; token: string }): Promise<CreateTaskResult> {
+async function completeCreation(op: TaskOperation, apiTask: ApiTask, credentials: { tenantId: string; token: string }, helpdeskGeneration?: string | null): Promise<CreateTaskResult> {
   await finishTaskOperation(op.operationId, "confirmed", { taskId: String(apiTask.id) });
   const cached = cachedTaskFrom(apiTask, nowS());
   await upsertCachedTask(credentials.tenantId, cached);
@@ -256,7 +256,7 @@ async function completeCreation(op: TaskOperation, apiTask: ApiTask, credentials
   await insertTaskLink(op.key, { taskId: cached.taskId, createdBy: me?.userId ?? null, origin: "created" });
 
   const item = itemOf(op.key);
-  const target = await backlinkTarget(item, op.key, credentials, cached);
+  const target = await backlinkTarget(item, op.key, credentials, cached, helpdeskGeneration);
   if (target) {
     // The ticket link went out in the description of the create request itself
     await setLinkBacklink(op.key, cached.taskId, "description", { state: "done", message: null });
@@ -293,10 +293,12 @@ export async function createTaskFromItem(item: LinkedItem, input: NewTaskInput):
   }
 
   let ticketUrl: string | null = null;
+  let helpdeskGeneration: string | undefined;
   if (item.kind === "ticket") {
     const target = await backlinkTarget(item, key, credentials, { taskId: "", url: "", name: "" });
     if (!target) return { outcome: "unavailable", message: "Tasks can be created once a helpdesk is connected; sample tickets have no links." };
     ticketUrl = target.ticketUrl;
+    helpdeskGeneration = target.helpdesk.generation;
   }
 
   try {
@@ -334,7 +336,7 @@ export async function createTaskFromItem(item: LinkedItem, input: NewTaskInput):
     created = await clickupWrite<ApiTask>(credentials.token, "POST", `/list/${encodeURIComponent(input.listId)}/task`, request);
   } catch (err) {
     if (!(err instanceof ClickUpError)) throw err;
-    if (err.kind === "network") {
+    if (err.kind === "network" || (err.status ?? 0) >= 500) {
       await finishTaskOperation(operationId, "unconfirmed", { errorMessage: CREATE_UNCONFIRMED_MESSAGE });
       return { outcome: "unconfirmed", operationId, message: CREATE_UNCONFIRMED_MESSAGE };
     }
@@ -342,7 +344,7 @@ export async function createTaskFromItem(item: LinkedItem, input: NewTaskInput):
     await finishTaskOperation(operationId, "failed", { errorMessage: message });
     return { outcome: "failed", message };
   }
-  return completeCreation((await getTaskOperation(operationId))!, created, credentials);
+  return completeCreation((await getTaskOperation(operationId))!, created, credentials, helpdeskGeneration);
 }
 
 async function messageOf(tenantId: string, err: ClickUpError): Promise<string> {
@@ -374,8 +376,11 @@ export async function reconcileTaskCreation(operationId: string): Promise<Create
   }
   if (!useUIStore.getState().isOnline) return { outcome: "unconfirmed", operationId, message: STILL_UNCONFIRMED_MESSAGE };
 
+  const target = await backlinkTarget(itemOf(op.key), op.key, credentials, { taskId: "", url: "", name: "" });
+  const helpdeskGeneration = target?.helpdesk.generation ?? null;
   const marker = markerLine(operationId);
   const since = (op.createdAt - CLOCK_SKEW_S) * 1000;
+  let complete = false;
   try {
     await assertNotWaiting(credentials.tenantId);
     for (let page = 0; page < RECONCILE_PAGES; page++) {
@@ -384,12 +389,16 @@ export async function reconcileTaskCreation(operationId: string): Promise<Create
         `/list/${encodeURIComponent(op.listId)}/task?page=${page}&date_created_gt=${since}&include_closed=true&subtasks=true&include_markdown_description=true`,
       );
       const found = tasks.find((t) => [t.markdown_description, t.description, t.text_content].some((d) => d?.includes(marker)));
-      if (found) return completeCreation(op, found, credentials);
-      if (last_page !== false || tasks.length === 0) break;
+      if (found) return completeCreation(op, found, credentials, helpdeskGeneration);
+      if (last_page === true) {
+        complete = true;
+        break;
+      }
     }
   } catch {
     return { outcome: "unconfirmed", operationId, message: STILL_UNCONFIRMED_MESSAGE };
   }
+  if (!complete) return { outcome: "unconfirmed", operationId, message: STILL_UNCONFIRMED_MESSAGE };
   const message = "ClickUp has no task from that attempt, so none was created. Create it again when ready.";
   await finishTaskOperation(operationId, "failed", { errorMessage: message });
   return { outcome: "failed", message };

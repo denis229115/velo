@@ -291,7 +291,7 @@ export function InlineReply({ thread, messages, accountId, noReply, onSent }: In
   }, []);
 
   // Send now via the shortcut registry; the full composer takes precedence when open
-  useComposerShortcuts({ onSend: handleSend }, !!mode && !composerOpen);
+  useComposerShortcuts({ onSend: handleSend }, !!mode && !composerOpen, containerRef);
 
   // Handle Escape to close
   useEffect(() => {

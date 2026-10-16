@@ -224,6 +224,7 @@ export async function sendTicketResponse(request: TicketSendRequest): Promise<Ti
     if (!(error instanceof FreshdeskError)) throw error;
     return { outcome: "failed", message: `Velo could not re-check the ticket before sending: ${failureMessage(error)} Nothing was sent.` };
   }
+  if (!fresh.complete) return { outcome: "unavailable", message: "The ticket history is incomplete. Velo cannot re-check colleague activity before sending. Nothing was sent." };
   const agentNames = new Map(agents.map((a) => [a.agentId, a.name]));
   const statusLabels = new Map(statuses.map((s) => [s.choiceId, s.label]));
   const changes = changesSince(request.baseline, fresh, meId, agentNames, statusLabels);
@@ -330,6 +331,7 @@ export async function reconcileTicketSend(ticketId: string, entryId: number): Pr
     await finishJournalEntry(entryId, "confirmed", null);
     return sentThen(ticketId, record.thenStatusId);
   }
+  if (!fresh.complete) return { outcome: "unconfirmed", entryId, message: "The ticket history is incomplete. Velo cannot rule out this send and will not send again." };
   const what = record.mode === "note" ? "internal note" : "reply";
   const message = `Freshdesk has no record of this ${what}, so it was not sent. Your draft is kept; send it again when ready.`;
   await finishJournalEntry(entryId, "failed", message);

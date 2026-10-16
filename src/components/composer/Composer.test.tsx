@@ -1,3 +1,7 @@
+import { TaskDrawer } from "@/components/clickup/TaskDrawer";
+import { InlineReply } from "@/components/email/InlineReply";
+import type { Thread } from "@/stores/threadStore";
+import type { DbMessage } from "@/services/db/messages";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createSqliteTestDb, type SqliteTestDb } from "@/test/sqliteTestDb";
 
@@ -177,4 +181,32 @@ describe("Composer scheduling from a send-as alias", () => {
     const rows = await db.select<{ from_email: string | null }[]>("SELECT from_email FROM scheduled_emails");
     expect(rows).toEqual([{ from_email: "support@acme.com" }]);
   });
+});
+
+
+it.each(["standalone", "inline"])("keeps the %s email composer untouched by send keys in the ClickUp drawer", async (kind) => {
+  if (kind === "standalone") await renderComposer();
+  else {
+    act(() => useComposerStore.getState().closeComposer());
+    Element.prototype.scrollIntoView = vi.fn();
+    render(<InlineReply thread={{ id: "t1", subject: "Help" } as Thread}
+      messages={[{ id: "m1", from_address: "customer@example.test", subject: "Help" } as DbMessage]}
+      accountId="gmail-1" onSent={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: "Reply" }));
+    await waitFor(() => editorElement());
+  }
+  const drawer = render(<TaskDrawer title="Create task" onClose={() => {}}><input aria-label="Task name" /></TaskDrawer>);
+  const input = screen.getByRole("textbox", { name: "Task name" });
+  input.focus();
+  fireEvent.keyDown(input, { key: "Enter", metaKey: true });
+  fireEvent.keyDown(input, { key: "L", metaKey: true, shiftKey: true });
+  await act(async () => {});
+  expect(useComposerStore.getState().undoSendVisible).toBe(false);
+  expect(useComposerStore.getState().isOpen).toBe(kind === "standalone");
+  expect(screen.queryByText(PICKER_NOTE)).not.toBeInTheDocument();
+  expect(editorElement()).toBeInTheDocument();
+  drawer.unmount();
+  // Sending while typing in this composer's own editor still works.
+  pressInEditor({ key: "Enter", metaKey: true });
+  await waitFor(() => expect(useComposerStore.getState().undoSendVisible).toBe(true));
 });

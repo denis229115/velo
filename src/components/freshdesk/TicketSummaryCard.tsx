@@ -109,15 +109,17 @@ export function TicketSummaryCard({ ticket, view }: { ticket: TicketListItem; vi
   const run = useRef(0);
   const refresher = useRef<AutoSummaryRefresher | null>(null);
   const ready = readiness?.status === "ready";
-  const latest = useRef({ ticket, view, online, autoOn, ready });
-  latest.current = { ticket, view, online, autoOn, ready };
+  const displayed = state.kind === "done";
+  const latest = useRef({ ticket, view, online, autoOn, ready, displayed });
+  latest.current = { ticket, view, online, autoOn, ready, displayed };
 
   // Leaving the ticket abandons a request in flight and anything planned
   useEffect(() => () => void run.current++, []);
   useEffect(() => {
+    if (!displayed) return;
     async function refresh(): Promise<string> {
       const { ticket, view } = latest.current;
-      if (!view) throw new Error("The conversation is not loaded.");
+      if (!view || !latest.current.displayed) throw new Error("The conversation is not loaded.");
       const source = ticketAiSource(ticket, view);
       const key = publicActivityKey(source);
       const mine = ++run.current;
@@ -132,14 +134,17 @@ export function TicketSummaryCard({ ticket, view }: { ticket: TicketListItem; vi
     }
     const r = createAutoSummaryRefresher({
       run: refresh,
-      canRun: () => latest.current.ready && latest.current.online && latest.current.autoOn === true,
+      canRun: () => latest.current.displayed && latest.current.ready && latest.current.online && latest.current.autoOn === true,
       debounceMs: AUTO_SUMMARY_DEBOUNCE_MS,
       minIntervalMs: AUTO_SUMMARY_MIN_INTERVAL_MS,
       onPhase: setPhase,
     });
     refresher.current = r;
-    return () => r.dispose();
-  }, []);
+    return () => {
+      r.dispose();
+      if (refresher.current === r) refresher.current = null;
+    };
+  }, [displayed]);
 
   // New public activity makes a summary on screen out of date, and plans its update
   const currentKey = useMemo(() => (view ? publicActivityKey(ticketAiSource(ticket, view)) : null), [ticket, view]);
@@ -184,6 +189,14 @@ export function TicketSummaryCard({ ticket, view }: { ticket: TicketListItem; vi
       if (run.current !== mine) return;
       setState((prev) => (prev.kind === "done" ? { ...prev, refreshing: false, notice: failureText(err) } : { kind: "failed", message: failureText(err) }));
     }
+  }
+
+  function hide() {
+    run.current++;
+    refresher.current?.dispose();
+    refresher.current = null;
+    setPhase("idle");
+    setState({ kind: "idle" });
   }
 
   function cancel() {
@@ -252,7 +265,7 @@ export function TicketSummaryCard({ ticket, view }: { ticket: TicketListItem; vi
           <span className="text-micro text-text-tertiary">Kept in Velo only, never written to Freshdesk</span>
         )}
         <Button variant="ghost" size="xs" iconOnly aria-label="Summarize again" title="Summarize again" className="ml-auto" disabled={updating} onClick={() => void summarize(true)} icon={<RefreshCw size={12} aria-hidden />} />
-        <Button variant="ghost" size="xs" iconOnly aria-label="Hide summary" title="Hide summary" onClick={() => setState({ kind: "idle" })} icon={<X size={12} aria-hidden />} />
+        <Button variant="ghost" size="xs" iconOnly aria-label="Hide summary" title="Hide summary" onClick={hide} icon={<X size={12} aria-hidden />} />
       </div>
       {hint && <p className="mb-2 text-meta text-text-secondary">{hint}</p>}
       <dl className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2.5">

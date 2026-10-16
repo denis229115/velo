@@ -237,3 +237,35 @@ describe("Freshdesk errors", () => {
     expect(await getHelpdeskConnection()).toBeNull();
   });
 });
+
+
+it.each([ALPHA_HOST, BETA_HOST])("ignores a delayed metadata refresh after reconnecting to %s", async (host) => {
+  await connectHelpdesk({ host: ALPHA_HOST, apiKey: ALPHA_KEY });
+  const original = stub.fetch;
+  let release!: () => void;
+  let started!: () => void;
+  const waiting = new Promise<void>((resolve) => { started = resolve; });
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  let delay = true;
+  stub.fetch = async (...args: Parameters<typeof original>) => {
+    const response = await original(...args);
+    if (delay && String(args[0]).includes("/agents/me")) {
+      delay = false;
+      started();
+      await gate;
+    }
+    return response;
+  };
+  const refresh = refreshHelpdeskMetadata();
+  await waiting;
+  // Same host reconnects within the same second with a different agent/signature.
+  if (host === ALPHA_HOST) alpha.me = { ...betaTenant.me };
+  await connectHelpdesk({ host, apiKey: host === ALPHA_HOST ? ALPHA_KEY : BETA_KEY });
+  const expected = await getHelpdeskConnection();
+  const metadata = await getHelpdeskMetadataSummary();
+  release();
+  expect(await refresh).toBe(false);
+  expect(await getHelpdeskConnection()).toEqual(expected);
+  expect(await getHelpdeskMetadataSummary()).toEqual(metadata);
+  if (host === BETA_HOST) expect(await everyStoredValue()).not.toContain("Fixture Billing");
+});

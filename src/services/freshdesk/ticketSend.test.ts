@@ -39,6 +39,7 @@ import { getTicketList, syncTickets } from "./ticketSync";
 import { getOperationJournal } from "./ticketEdits";
 import { getTicketHistory } from "./ticketHistory";
 import { captureStalenessBaseline, reconcileTicketSend, sendTicketResponse, type StalenessBaseline } from "./ticketSend";
+import { loadTicketDraft, saveTicketDraft, sendTicketDraft } from "./ticketDrafts";
 import { useUIStore } from "@/stores/uiStore";
 
 vi.spyOn(console, "log").mockImplementation(() => {});
@@ -567,4 +568,65 @@ describe("a send Freshdesk answers with an error", () => {
       expect((await getOperationJournal("1001")).map((e) => e.outcome)).toEqual(["failed"]);
     });
   });
+});
+
+
+function truncatedHistory(match = false) {
+  const example = alphaTenantWithHistory.conversations![1001]![0]!;
+  for (let page = 1; page <= 10; page++) {
+    stub.respondOnce(ALPHA_HOST, "/api/v2/tickets/1001/conversations", {
+      page, body: Array.from({ length: 100 }, (_, index) => ({
+        ...example, id: 8_100_000_000 + page * 100 + index,
+        ...(match && page === 1 && index === 0 ? {
+          body: "<p>Unique accepted reply.</p>", body_text: "Unique accepted reply.",
+          created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+        } : {}),
+      })),
+    });
+  }
+}
+
+it("keeps an absent reply Unconfirmed when reconciliation reaches the history limit", async () => {
+  const baseline = await captureStalenessBaseline("1001");
+  stub.respondOnce(ALPHA_HOST, "/api/v2/tickets/1001/reply", { method: "POST", networkError: true, apply: true });
+  const sent = await sendTicketResponse({ ticketId: "1001", mode: "reply", bodyHtml: "<p>Unique accepted reply.</p>", baseline });
+  if (sent.outcome !== "unconfirmed") throw new Error(sent.outcome);
+  truncatedHistory();
+  expect(await reconcileTicketSend("1001", sent.entryId)).toMatchObject({ outcome: "unconfirmed" });
+  expect((await getOperationJournal("1001")).at(-1)?.outcome).toBe("unconfirmed");
+  expect(posts()).toHaveLength(1);
+});
+
+
+it("does not certify the Staleness check from truncated history", async () => {
+  const baseline = await captureStalenessBaseline("1001");
+  truncatedHistory();
+  expect(await sendTicketResponse({ ticketId: "1001", mode: "reply", bodyHtml: "<p>Hi</p>", baseline })).toMatchObject({
+    outcome: "unavailable", message: expect.stringMatching(/incomplete/i),
+  });
+  expect(posts()).toEqual([]);
+});
+
+
+it("confirms a matching reply even when other history remains unread", async () => {
+  const baseline = await captureStalenessBaseline("1001");
+  stub.respondOnce(ALPHA_HOST, "/api/v2/tickets/1001/reply", { method: "POST", networkError: true, apply: true });
+  const sent = await sendTicketResponse({ ticketId: "1001", mode: "reply", bodyHtml: "<p>Unique accepted reply.</p>", baseline });
+  if (sent.outcome !== "unconfirmed") throw new Error(sent.outcome);
+  truncatedHistory(true);
+  expect(await reconcileTicketSend("1001", sent.entryId)).toEqual({ outcome: "sent" });
+  expect(posts()).toHaveLength(1);
+});
+
+
+it("keeps the draft unresendable while reconciliation history is incomplete", async () => {
+  await saveTicketDraft("1001", "reply", { bodyHtml: "<p>Unique accepted reply.</p>" });
+  stub.respondOnce(ALPHA_HOST, "/api/v2/tickets/1001/reply", { method: "POST", apply: true, networkError: true });
+  expect(await sendTicketDraft("1001", "reply")).toMatchObject({ outcome: "unconfirmed" });
+  for (let attempt = 0; attempt < 2; attempt++) {
+    truncatedHistory();
+    expect(await sendTicketDraft("1001", "reply")).toMatchObject({ outcome: "unconfirmed" });
+    expect((await loadTicketDraft("1001", "reply"))?.unconfirmedEntryId).toEqual(expect.any(Number));
+  }
+  expect(posts()).toHaveLength(1);
 });

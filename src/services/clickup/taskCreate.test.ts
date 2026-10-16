@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { createSqliteTestDb, type SqliteTestDb } from "@/test/sqliteTestDb";
 import { createClickUpFetchStub } from "@/test/clickupFetchStub";
 import { createFreshdeskFetchStub } from "@/test/freshdeskFetchStub";
-import { ALPHA_HOST } from "@/services/freshdesk/__fixtures__/freshdeskFixtures";
+import { ALPHA_HOST, BETA_HOST, betaTenant } from "@/services/freshdesk/__fixtures__/freshdeskFixtures";
 import { alphaTenantWithTickets } from "@/services/freshdesk/__fixtures__/freshdeskTicketFixtures";
 import {
   ALPHA_BACKLOG_LIST_ID,
@@ -74,7 +74,10 @@ beforeEach(async () => {
   vi.useFakeTimers({ toFake: ["Date"] });
   db = createSqliteTestDb();
   clickup = createClickUpFetchStub(clickupTokens);
-  freshdesk = createFreshdeskFetchStub({ [ALPHA_HOST]: { apiKey: HELPDESK_KEY, tenant: alphaTenantWithTickets } });
+  freshdesk = createFreshdeskFetchStub({
+    [ALPHA_HOST]: { apiKey: HELPDESK_KEY, tenant: alphaTenantWithTickets },
+    [BETA_HOST]: { apiKey: "fixture-key-beta-0002", tenant: betaTenant },
+  });
   useUIStore.setState({ isOnline: true });
   await runMigrations();
   await connectHelpdesk({ host: ALPHA_HOST, apiKey: HELPDESK_KEY });
@@ -138,8 +141,8 @@ describe("backlinks that cannot or did not get written", () => {
     expect(writes()).toEqual([`POST /list/${ALPHA_BACKLOG_LIST_ID}/task`, "POST /tickets/1002/notes"]);
   });
 
-  it("keeps a failed backlink as a pending step and retries only that one (A14)", async () => {
-    freshdesk.respondOnce(ALPHA_HOST, "/api/v2/tickets/1002/notes", { method: "POST", status: 500, body: {} });
+  it("keeps a rejected backlink as a pending step and retries only that one (A14)", async () => {
+    freshdesk.respondOnce(ALPHA_HOST, "/api/v2/tickets/1002/notes", { method: "POST", status: 403, body: {} });
     const result = await createTaskFromItem(TICKET, input());
     if (result.outcome !== "created") throw new Error(result.outcome);
     expect(result.task.backlinks.map((b) => b.state)).toEqual(["done", "done", "failed"]);
@@ -152,8 +155,8 @@ describe("backlinks that cannot or did not get written", () => {
     expect(clickup.tasksInList(FOLLOW_UPS).filter((t) => t.name === "Fixture: chase the export fix")).toHaveLength(1);
   });
 
-  it("checks the ticket before retrying an internal note whose answer never came", async () => {
-    freshdesk.respondOnce(ALPHA_HOST, "/api/v2/tickets/1002/notes", { method: "POST", apply: true, networkError: true });
+  it.each([0, 500, 502, 503])("checks the ticket before retrying an internal note with ambiguous response %s", async (status) => {
+    freshdesk.respondOnce(ALPHA_HOST, "/api/v2/tickets/1002/notes", { method: "POST", apply: true, ...(status ? { status, body: {} } : { networkError: true }) });
     const result = await createTaskFromItem(TICKET, input());
     if (result.outcome !== "created") throw new Error(result.outcome);
     expect(result.task.backlinks[2]!.state).toBe("unconfirmed");
@@ -166,8 +169,8 @@ describe("backlinks that cannot or did not get written", () => {
 });
 
 describe("an ambiguous creation timeout", () => {
-  it("is reconciled through the operation marker, with no second create request (A10-style)", async () => {
-    clickup.respondOnce(`/list/${FOLLOW_UPS}/task`, { method: "POST", apply: true, networkError: true });
+  it.each([0, 500, 502, 503])("reconciles an accepted creation with ambiguous response %s without a second create", async (status) => {
+    clickup.respondOnce(`/list/${FOLLOW_UPS}/task`, { method: "POST", apply: true, ...(status ? { status, body: {} } : { networkError: true }) });
     const first = await createTaskFromItem(TICKET, input());
     if (first.outcome !== "unconfirmed") throw new Error(first.outcome);
     expect(writes()).toEqual([`POST /list/${FOLLOW_UPS}/task`]);
@@ -273,4 +276,67 @@ describe("offline", () => {
     expect([...clickup.requests, ...freshdesk.requests]).toEqual([]);
     expect(await getPendingTaskCreations(TICKET)).toEqual([]);
   });
+});
+
+
+it("keeps task creation Unconfirmed after bounded discovery with more pages remaining", async () => {
+  clickup.respondOnce(`/list/${FOLLOW_UPS}/task`, { method: "POST", apply: true, networkError: true });
+  const first = await createTaskFromItem(EMAIL, input());
+  if (first.outcome !== "unconfirmed") throw new Error(first.outcome);
+  for (let page = 0; page < 5; page++) {
+    clickup.respondOnce(`/list/${FOLLOW_UPS}/task`, { method: "GET", body: { tasks: [{ id: `unrelated-${page}` }], last_page: false } });
+  }
+  expect(await reconcileTaskCreation(first.operationId)).toMatchObject({ outcome: "unconfirmed" });
+  expect(await getPendingTaskCreations(EMAIL)).toHaveLength(1);
+  expect(await createTaskFromItem(EMAIL, input())).toMatchObject({ outcome: "unconfirmed" });
+  expect(writes()).toEqual([`POST /list/${FOLLOW_UPS}/task`]);
+  // A positive marker settles it even if ClickUp still reports more pages.
+  clickup.respondOnce(`/list/${FOLLOW_UPS}/task`, { method: "GET", body: {
+    tasks: clickup.tasksInList(FOLLOW_UPS), last_page: false,
+  } });
+  expect(await reconcileTaskCreation(first.operationId)).toMatchObject({ outcome: "created" });
+  expect(writes()).toEqual([`POST /list/${FOLLOW_UPS}/task`]);
+});
+
+
+it("does not repeat an ambiguous backlink note when bounded history cannot prove absence", async () => {
+  freshdesk.respondOnce(ALPHA_HOST, "/api/v2/tickets/1002/notes", { method: "POST", apply: true, status: 503, body: {} });
+  const result = await createTaskFromItem(TICKET, input());
+  if (result.outcome !== "created") throw new Error(result.outcome);
+  freshdesk.requests.length = 0;
+  for (let page = 1; page <= 10; page++) {
+    freshdesk.respondOnce(ALPHA_HOST, "/api/v2/tickets/1002/conversations", { page, body: Array.from({ length: 100 }, (_, i) => ({
+      id: page * 100 + i, body: "<p>Unrelated old note.</p>", body_text: "Unrelated old note.",
+      private: true, incoming: false, source: 2, user_id: 9000000002,
+      created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z", attachments: [],
+    })) });
+  }
+  expect((await retryMissingBacklinks(TICKET, result.task.taskId)).backlinks[2]?.state).toBe("unconfirmed");
+  expect(freshdesk.requests.filter((r) => r.method === "POST")).toEqual([]);
+  expect((await retryMissingBacklinks(TICKET, result.task.taskId)).backlinks[2]?.state).toBe("done");
+  expect(freshdesk.requests.filter((r) => r.method === "POST")).toEqual([]);
+});
+
+
+it.each([ALPHA_HOST, BETA_HOST])("does not add the task note after reconnecting while creation waits (%s)", async (host) => {
+  const original = clickup.fetch;
+  let release!: () => void;
+  let started!: () => void;
+  const waiting = new Promise<void>((resolve) => { started = resolve; });
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  clickup.fetch = async (...args: Parameters<typeof original>) => {
+    const response = await original(...args);
+    if (args[1]?.method === "POST" && String(args[0]).includes(`/list/${FOLLOW_UPS}/task`)) {
+      started();
+      await gate;
+    }
+    return response;
+  };
+  const creating = createTaskFromItem(TICKET, input());
+  await waiting;
+  await connectHelpdesk({ host, apiKey: host === ALPHA_HOST ? HELPDESK_KEY : "fixture-key-beta-0002" });
+  release();
+  await creating;
+  expect(freshdesk.requests.filter((r) => r.method === "POST")).toEqual([]);
+  expect(clickup.tasksInList(FOLLOW_UPS).filter((t) => t.name === input().name)).toHaveLength(1);
 });

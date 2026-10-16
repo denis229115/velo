@@ -348,7 +348,8 @@ export function Composer() {
   const sendLaterKeys = useShortcutStore((s) => s.keyMap["app.sendLater"]);
   useComposerShortcuts(
     { onSend: handleSend, onSendLater: () => setShowSchedule(true) },
-    isOpen,
+    isOpen && !showSchedule,
+    overlayRef,
   );
 
   const handleDiscard = useCallback(async () => {
