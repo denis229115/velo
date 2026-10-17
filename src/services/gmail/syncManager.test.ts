@@ -28,6 +28,7 @@ vi.mock("../imap/imapSync", () => ({
 }));
 vi.mock("../db/folderSyncState", () => ({
   clearAllFolderSyncStates: vi.fn(),
+  getAllFolderSyncStates: vi.fn(),
 }));
 vi.mock("../oauth/oauthTokenManager", () => ({
   ensureFreshToken: vi.fn(),
@@ -57,7 +58,8 @@ import {
 import { getAccount } from "../db/accounts";
 import { getGmailClient } from "./tokenManager";
 import { initialSync, deltaSync } from "./sync";
-import { imapInitialSync } from "../imap/imapSync";
+import { imapInitialSync, imapDeltaSync } from "../imap/imapSync";
+import { getAllFolderSyncStates } from "../db/folderSyncState";
 import { hasCalendarSupport, getCalendarProvider } from "../calendar/providerFactory";
 
 const mockGetAccount = vi.mocked(getAccount);
@@ -65,22 +67,12 @@ const mockGetGmailClient = vi.mocked(getGmailClient);
 const mockInitialSync = vi.mocked(initialSync);
 const mockDeltaSync = vi.mocked(deltaSync);
 const mockImapInitialSync = vi.mocked(imapInitialSync);
+const mockImapDeltaSync = vi.mocked(imapDeltaSync);
+const mockGetAllFolderSyncStates = vi.mocked(getAllFolderSyncStates);
 const mockHasCalendarSupport = vi.mocked(hasCalendarSupport);
 const mockGetCalendarProvider = vi.mocked(getCalendarProvider);
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-function makeImapAccount(id: string) {
-  return {
-    ...makeGmailAccount(id),
-    email: `${id}@example.com`,
-    provider: "imap" as const,
-    history_id: null,
-    auth_method: "password",
-    calendar_provider: "caldav",
-    caldav_url: "https://cloud.example.com/remote.php/dav",
-  };
-}
 
 function makeGmailAccount(id: string, historyId: string | null = null) {
   return {
@@ -109,6 +101,25 @@ function makeGmailAccount(id: string, historyId: string | null = null) {
   };
 }
 
+function makeImapAccount(id: string, historyId: string | null = null) {
+  return {
+    ...makeGmailAccount(id, historyId),
+    email: `${id}@example.com`,
+    provider: "imap" as const,
+    imap_host: "plesk.winning-solutions.de",
+    imap_port: 993,
+    imap_security: "tls",
+    smtp_host: "Plesk.winning-solutions.de",
+    smtp_port: 587,
+    smtp_security: "starttls",
+    auth_method: "password",
+    imap_password: "secret",
+    imap_username: `${id}@example.com`,
+    calendar_provider: "caldav",
+    caldav_url: "https://cloud.example.com/remote.php/dav",
+  };
+}
+
 describe("syncManager", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -120,7 +131,9 @@ describe("syncManager", () => {
     );
     mockInitialSync.mockResolvedValue();
     mockDeltaSync.mockResolvedValue();
-    mockImapInitialSync.mockResolvedValue({ messages: [], threads: [] } as never);
+    mockImapInitialSync.mockResolvedValue({ messages: [] });
+    mockImapDeltaSync.mockResolvedValue({ messages: [] });
+    mockGetAllFolderSyncStates.mockResolvedValue([]);
     mockHasCalendarSupport.mockResolvedValue(false);
   });
 
@@ -260,6 +273,66 @@ describe("syncManager", () => {
 
       // existing account's delta sync ran BEFORE new account's initial sync
       expect(syncOrder).toEqual(["delta-existing", "initial-new"]);
+    });
+  });
+
+  describe("IMAP account sync", () => {
+    it("runs initial sync once when there is no history id and no folder state", async () => {
+      mockGetAccount.mockResolvedValue(makeImapAccount("imap-1"));
+
+      await syncAccount("imap-1");
+
+      expect(mockImapInitialSync).toHaveBeenCalledTimes(1);
+      expect(mockImapDeltaSync).not.toHaveBeenCalled();
+    });
+
+    it("runs delta sync when folder state exists but history id is still null", async () => {
+      mockGetAccount.mockResolvedValue(makeImapAccount("imap-1"));
+      mockGetAllFolderSyncStates.mockResolvedValue([
+        {
+          account_id: "imap-1",
+          folder_path: "INBOX",
+          uidvalidity: 1676877262,
+          last_uid: 8562,
+          modseq: null,
+          last_sync_at: 1,
+        },
+      ]);
+
+      await syncAccount("imap-1");
+
+      expect(mockImapDeltaSync).toHaveBeenCalledTimes(1);
+      expect(mockImapInitialSync).not.toHaveBeenCalled();
+    });
+
+    it("does not stack another initial sync when the interval fires during the first", async () => {
+      vi.useFakeTimers();
+      try {
+        mockGetAccount.mockResolvedValue(makeImapAccount("imap-1"));
+        mockGetAllFolderSyncStates.mockResolvedValue([]);
+        let release!: () => void;
+        mockImapInitialSync.mockImplementation(
+          () =>
+            new Promise((resolve) => {
+              release = () => resolve({ messages: [] });
+            }),
+        );
+
+        startBackgroundSync(["imap-1"]);
+        await vi.advanceTimersByTimeAsync(0);
+        expect(mockImapInitialSync).toHaveBeenCalledTimes(1);
+
+        await vi.advanceTimersByTimeAsync(60_000);
+        expect(mockImapInitialSync).toHaveBeenCalledTimes(1);
+
+        // The tick must not have queued a second initial for when this one settles.
+        release();
+        await vi.advanceTimersByTimeAsync(0);
+        expect(mockImapInitialSync).toHaveBeenCalledTimes(1);
+      } finally {
+        stopBackgroundSync();
+        vi.useRealTimers();
+      }
     });
   });
 
