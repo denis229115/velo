@@ -25,7 +25,7 @@ import { Kbd } from "@/components/list/Kbd";
 import { HighlightedText } from "@/components/ai/HighlightedText";
 import { commandRank } from "@/utils/fuzzyMatch";
 import { useLabelStore } from "@/stores/labelStore";
-import { addThreadLabel } from "@/services/emailActions";
+import { moveThread } from "@/services/emailActions";
 import { snoozeThread } from "@/services/snooze/snoozeManager";
 import { buildSchedulePresets } from "@/utils/schedulePresets";
 import { askMyInbox, type AskInboxResult } from "@/services/ai/askInbox";
@@ -293,7 +293,7 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
       return [{
         name: "Snooze",
         note: selected ? "Commands › Snooze" : "Open a thread to snooze it",
-        items: selected ? presets.map((preset) => ({
+        items: selected ? presets.filter((preset) => !trimmed || commandRank(preset.label, preset.detail ?? "", trimmed.toLowerCase(), -1) > 0).map((preset) => ({
           id: `snooze-${preset.id}`,
           label: preset.label,
           detail: preset.detail,
@@ -312,15 +312,16 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
       return [{
         name: "Move to",
         note: "Commands › Move to",
-        items: labels.map((label) => ({
+        items: selected ? labels.filter((label) => !trimmed || commandRank(label.name, "", trimmed.toLowerCase(), -1) > 0).map((label) => ({
           id: `move-${label.id}`,
           label: label.name,
           action: () => {
             if (!selected || !activeAccountId) return;
-            void addThreadLabel(activeAccountId, selected, label.id);
+            const source = labels.find((item) => item.id === activeLabel)?.id ?? ({ inbox: "INBOX", trash: "TRASH", spam: "SPAM" } as Record<string, string>)[activeLabel];
+            void moveThread(activeAccountId, selected, [], label.id, source);
             onClose();
           },
-        })),
+        })) : [],
       }];
     }
     if (!trimmed) {

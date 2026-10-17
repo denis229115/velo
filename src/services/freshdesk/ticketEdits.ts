@@ -19,7 +19,7 @@ export interface TicketChanges {
   ticketType?: string | null;
   tags?: string[];
   /** Custom fields keyed by Freshdesk's name. null clears one field. */
-  customFields?: Record<string, string | null>;
+  customFields?: Record<string, string | number | boolean | null>;
 }
 
 /** A field Freshdesk demands before it accepts the change (for example one required for closure) */
@@ -56,7 +56,7 @@ function payloadFor(changes: TicketChanges, requiredFields: Record<string, strin
   if (changes.ticketType !== undefined) payload.type = changes.ticketType;
   if (changes.tags !== undefined) payload.tags = changes.tags;
   // Freshdesk names custom fields cf_*; they travel under custom_fields
-  const custom: Record<string, string | null> = { ...(changes.customFields ?? {}) };
+  const custom: Record<string, string | number | boolean | null> = { ...(changes.customFields ?? {}) };
   for (const [name, value] of Object.entries(requiredFields)) {
     if (name.startsWith("cf_")) custom[name] = value;
     else payload[name] = value;

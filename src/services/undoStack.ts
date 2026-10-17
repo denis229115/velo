@@ -1,6 +1,6 @@
 export interface UndoAction {
   label: string;
-  undo: () => void;
+  undo: () => void | Promise<void>;
 }
 
 type Listener = () => void;
@@ -22,8 +22,8 @@ export function peekUndo(): UndoAction | null {
   return current;
 }
 
-export function clearUndo(): void {
-  if (!current) return;
+export function clearUndo(expected?: UndoAction): void {
+  if (!current || (expected && current !== expected)) return;
   current = null;
   emit();
 }
@@ -34,7 +34,9 @@ export function undoLast(): boolean {
   if (!action) return false;
   current = null;
   emit();
-  action.undo();
+  const failed = (error: unknown) => window.dispatchEvent(new CustomEvent("velo-undo-error", { detail: `Undo failed: ${String(error)}` }));
+  try { void Promise.resolve(action.undo()).catch(failed); }
+  catch (error) { failed(error); }
   return true;
 }
 

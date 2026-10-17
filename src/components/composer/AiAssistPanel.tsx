@@ -33,7 +33,7 @@ interface PendingDiff {
   retry: () => void;
 }
 
-const TONES: Array<{ id: string; label: string; type: TransformType | "warm" | "neutral" }> = [
+const TONES: Array<{ id: string; label: string; type: TransformType }> = [
   { id: "rewrite", label: "Rewrite", type: "improve" },
   { id: "shorten", label: "Shorten", type: "shorten" },
   { id: "concise", label: "Concise", type: "shorten" },
@@ -181,11 +181,6 @@ export function AiAssistPanel({ editor, isReplyMode, threadMessages }: AiAssistP
     await run();
   };
 
-  const toneType = (tone: (typeof TONES)[number]): TransformType => {
-    if (tone.type === "warm" || tone.type === "neutral") return "improve";
-    return tone.type;
-  };
-
   return (
     <div className="px-3 py-2 border-b border-border-secondary">
       <div className="flex items-center gap-2 mb-2">
@@ -258,7 +253,7 @@ export function AiAssistPanel({ editor, isReplyMode, threadMessages }: AiAssistP
             items={TONES.map((tone) => ({
               id: tone.id,
               label: tone.label,
-              onSelect: () => void handleTransform(tone.label, toneType(tone)),
+              onSelect: () => void handleTransform(tone.label, tone.type),
             }))}
           />
         </div>

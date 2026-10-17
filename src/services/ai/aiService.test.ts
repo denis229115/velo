@@ -1,14 +1,42 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 const mockComplete = vi.fn();
+const mockStream = vi.fn();
 
 // The AI answers by source item position (1-based), never by thread ID.
 vi.mock("./gateway", async (importOriginal) => ({
   senderDomain: (await importOriginal<typeof import("./gateway")>()).senderDomain,
   requestAi: (req: unknown) => mockComplete(req),
+  requestAiStream: (req: unknown, signal?: AbortSignal) => mockStream(req, signal),
 }));
 
-import { classifyThreadsBySmartLabels } from "./aiService";
+import { classifyThreadsBySmartLabels, transformText, transformTextStream } from "./aiService";
+import { IMPROVE_PROMPT, SHORTEN_PROMPT, FORMALIZE_PROMPT } from "./prompts";
+
+describe("text transforms", () => {
+  beforeEach(() => { vi.clearAllMocks(); });
+
+  it.each([
+    ["improve", IMPROVE_PROMPT],
+    ["shorten", SHORTEN_PROMPT],
+    ["formalize", FORMALIZE_PROMPT],
+    ["warm", expect.stringContaining("warm, friendly, and approachable tone")],
+    ["neutral", expect.stringContaining("neutral, matter-of-fact tone")],
+  ] as const)("sends the %s instruction and selected text to both gateway APIs", async (type, systemPrompt) => {
+    const selected = "<strong>Please send the invoice.</strong>";
+    const request = { feature: "text_transform", systemPrompt, items: [{ body: selected }] };
+    mockComplete.mockResolvedValueOnce("<strong>Rewritten</strong>");
+    expect(await transformText(selected, type)).toBe("<strong>Rewritten</strong>");
+    expect(mockComplete).toHaveBeenCalledExactlyOnceWith(request);
+
+    const signal = new AbortController().signal;
+    mockStream.mockReturnValueOnce((async function* () { yield "<strong>"; yield "Rewritten</strong>"; })());
+    const chunks = [];
+    for await (const chunk of transformTextStream(selected, type, signal)) chunks.push(chunk);
+    expect(chunks).toEqual(["<strong>", "Rewritten</strong>"]);
+    expect(mockStream).toHaveBeenCalledExactlyOnceWith(request, signal);
+  });
+});
 
 describe("classifyThreadsBySmartLabels", () => {
   beforeEach(() => {

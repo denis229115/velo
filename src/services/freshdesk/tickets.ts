@@ -27,13 +27,13 @@ function seconds(iso: unknown): number {
 /** A CC-style list from the ticket; null when the field is absent. Entries that are not addresses are dropped. */
 const addressList = (v: unknown): string[] | null => (Array.isArray(v) ? uniqueValidAddresses(v) : null);
 
-/** String values from Freshdesk's custom_fields object; null when the key is absent. */
-function customFieldsOf(raw: unknown): Record<string, string> | null {
+/** Scalar values from Freshdesk's custom_fields object; null when the key is absent. */
+function customFieldsOf(raw: unknown): Record<string, string | number | boolean> | null {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
-  const fields: Record<string, string> = {};
+  const fields: Record<string, string | number | boolean> = {};
   for (const [name, value] of Object.entries(raw as Record<string, unknown>)) {
     if (typeof value === "string") fields[name] = value;
-    else if (typeof value === "number" || typeof value === "boolean") fields[name] = String(value);
+    else if (typeof value === "number" || typeof value === "boolean") fields[name] = value;
   }
   return fields;
 }

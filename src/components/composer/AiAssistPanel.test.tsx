@@ -110,3 +110,23 @@ it("refuses a stale rewrite if the selected text was edited", async () => {
   expect(await screen.findByText(/The original text changed/)).toBeInTheDocument();
   expect(editor.getText()).toBe("Edited own draft");
 });
+
+it.each(["Warm", "Neutral"])("passes the %s selection tone through and retries it without changing the draft", async (label) => {
+  vi.mocked(getAiReadiness).mockResolvedValue({ status: "ready", provider: "claude", model: "m" });
+  transformText.mockResolvedValue("revised");
+  const { editor } = fakeEditor();
+  editor.commands.setContent("<p>Before selected after.</p><p>Keep me.</p>");
+  editor.commands.setTextSelection({ from: 8, to: 16 });
+  render(<AiAssistPanel editor={editor} isReplyMode={false} />);
+  fireEvent.click(await screen.findByText("Selection"));
+  fireEvent.click(screen.getByRole("menuitem", { name: label }));
+  await screen.findByRole("button", { name: "Accept" });
+  expect(transformText).toHaveBeenCalledExactlyOnceWith("selected", label.toLowerCase());
+  expect(editor.getHTML()).toBe("<p>Before selected after.</p><p>Keep me.</p>");
+  fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+  await screen.findByRole("button", { name: "Accept" });
+  expect(transformText).toHaveBeenCalledTimes(2);
+  expect(transformText).toHaveBeenLastCalledWith("selected", label.toLowerCase());
+  fireEvent.click(screen.getByRole("button", { name: "Accept" }));
+  expect(editor.getHTML()).toBe("<p>Before revised after.</p><p>Keep me.</p>");
+});

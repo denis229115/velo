@@ -111,7 +111,7 @@ export function createFreshdeskFetchStub(
     const found = ticketsOf(host).find((t) => t.id === ticketId);
     if (!found) return null;
     const changes: Partial<FixtureTicket> = { updated_at: new Date().toISOString().replace(/\.\d{3}Z$/, "Z") };
-    for (const key of ["status", "priority", "responder_id"] as const) if (key in body) Object.assign(changes, { [key]: body[key] });
+    for (const key of ["status", "priority", "responder_id", "custom_fields"] as const) if (key in body) Object.assign(changes, { [key]: body[key] });
     written.set(`${host}/${ticketId}`, { ...written.get(`${host}/${ticketId}`), ...changes });
     return { ...found, ...changes };
   }

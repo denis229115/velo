@@ -81,6 +81,14 @@ describe("ticket edits (remote writes)", () => {
     ]);
   });
 
+  it("keeps numeric zero and checkbox false typed in the API payload, cache, and journal", async () => {
+    const fields = { cf_fixture_count: 0, cf_fixture_checked: false, cf_fixture_decimal: 12.5 };
+    expect(await updateTicket("1001", { customFields: fields })).toEqual({ outcome: "confirmed" });
+    expect(writes()[0]!.body).toEqual({ custom_fields: fields });
+    expect((await cached("1001")).customFields).toMatchObject(fields);
+    expect((await getOperationJournal("1001"))[0]?.changes).toEqual({ custom_fields: fields });
+  });
+
   it("changes priority and assignee, keeping the customer it already knew", async () => {
     expect(await updateTicket("1001", { priorityId: "4", assigneeId: String(COLLEAGUE_ID) })).toEqual({ outcome: "confirmed" });
 

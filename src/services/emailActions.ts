@@ -3,7 +3,8 @@ import { useThreadStore, type Thread } from "@/stores/threadStore";
 import { getEmailProvider } from "@/services/email/providerFactory";
 import { enqueuePendingOperation } from "@/services/db/pendingOperations";
 import { classifyError } from "@/utils/networkErrors";
-import { getDb } from "@/services/db/connection";
+import { useAccountStore } from "@/stores/accountStore";
+import { getDb, withTransaction } from "@/services/db/connection";
 import { navigateToThread, getSelectedThreadId } from "@/router/navigate";
 import { clearUndo, offerUndo } from "@/services/undoStack";
 import { reportAuthExpired } from "@/services/authNotice";
@@ -39,6 +40,7 @@ export type EmailAction =
       threadId: string;
       messageIds: string[];
       folderPath: string;
+      sourceLabelId?: string;
     }
   | { type: "addLabel"; threadId: string; labelId: string }
   | { type: "removeLabel"; threadId: string; labelId: string }
@@ -129,12 +131,12 @@ interface RemovalSnapshot {
 
 const REMOVALS = new Set<EmailAction["type"]>(["archive", "trash", "spam", "moveToFolder"]);
 
-function captureRemoval(action: EmailAction): RemovalSnapshot | null {
+function captureRemoval(action: EmailAction, accountId?: string): RemovalSnapshot | null {
   if (!("threadId" in action) || !REMOVALS.has(action.type)) return null;
   const threads = useThreadStore.getState().threads ?? [];
   const index = threads.findIndex((thread) => thread.id === action.threadId);
   const thread = threads[index];
-  if (!thread || index < 0) return null;
+  if (!thread || index < 0 || (accountId && thread.accountId !== accountId)) return null;
   return { thread: { ...thread, labelIds: [...(thread.labelIds ?? [])] }, index };
 }
 
@@ -157,16 +159,104 @@ function undoLabel(action: EmailAction): string {
   }
 }
 
-function rememberUndo(action: EmailAction, snapshot: RemovalSnapshot | null): void {
-  if (action.type === "permanentDelete" || action.type === "sendMessage" || action.type === "createDraft" || action.type === "updateDraft" || action.type === "deleteDraft") return;
-  if (!snapshot && action.type !== "star" && action.type !== "markRead" && action.type !== "addLabel" && action.type !== "removeLabel") return;
-  offerUndo({
+export const MAIL_UNDO_MS = 10_000;
+interface DurableRemoval {
+  labels: string[];
+  touched: string[];
+  thread: RemovalSnapshot | null;
+}
+
+async function restoreDurableRemoval(accountId: string, threadId: string, before: DurableRemoval): Promise<void> {
+  const db = await getDb();
+  for (const label of before.touched) {
+    await db.execute("DELETE FROM thread_labels WHERE account_id = $1 AND thread_id = $2 AND label_id = $3", [accountId, threadId, label]);
+  }
+  for (const label of before.labels.filter((label) => before.touched.includes(label))) {
+    await db.execute("INSERT OR IGNORE INTO thread_labels (account_id, thread_id, label_id) VALUES ($1, $2, $3)", [accountId, threadId, label]);
+  }
+}
+
+function restoreVisibleRemoval(accountId: string, before: DurableRemoval): void {
+  if (useAccountStore.getState().activeAccountId === accountId) restoreRemoval(before.thread);
+  window.dispatchEvent(new Event("velo-sync-done"));
+}
+
+/** Hold provider dispatch until Undo expires. IMAP MOVE changes UIDs and cannot
+ * safely be inverted using the old IDs. Cancelling the durable intent before
+ * dispatch gives Gmail and IMAP the same honest, bounded Undo contract. */
+async function executeReversibleRemoval(accountId: string, action: EmailAction): Promise<ActionResult> {
+  if (!("threadId" in action) || !action.threadId) return { success: false, error: "Missing thread" };
+  const threadId = action.threadId;
+  const id = crypto.randomUUID();
+  const deadline = Math.ceil((Date.now() + MAIL_UNDO_MS) / 1000);
+  let before: DurableRemoval;
+  try {
+    await withTransaction(async (db) => {
+      const pending = await db.select<{ id: string }[]>("SELECT id FROM pending_operations WHERE account_id = $1 AND resource_id = $2 AND status IN ('pending', 'executing')", [accountId, threadId]);
+      if (pending.length) throw new Error("This thread already has a pending action. Wait for it to finish or Undo it first.");
+      const labels = await db.select<{ label_id: string }[]>("SELECT label_id FROM thread_labels WHERE account_id = $1 AND thread_id = $2", [accountId, threadId]);
+      const touched = action.type === "archive" ? ["INBOX"] : action.type === "trash" ? ["INBOX", "TRASH"] : action.type === "spam" ? ["INBOX", "SPAM"] : action.type === "moveToFolder" ? [action.sourceLabelId ?? "INBOX", action.folderPath] : [];
+      before = { labels: labels.map((row) => row.label_id), touched, thread: captureRemoval(action, accountId) };
+      const accounts = await db.select<{ provider: string }[]>("SELECT provider FROM accounts WHERE id = $1", [accountId]);
+      let imapDestination: string | undefined;
+      if (accounts[0]?.provider === "imap") {
+        const folders = await db.select<{ id: string; imap_folder_path: string | null }[]>("SELECT id, imap_folder_path FROM labels WHERE account_id = $1", [accountId]);
+        if (action.type === "moveToFolder") {
+          const requested = action.folderPath;
+          const destination = folders.find((folder) => folder.id === requested || folder.imap_folder_path === requested);
+          if (!destination?.imap_folder_path) throw new Error("The destination IMAP folder is not synced. Refresh the mailbox first.");
+          action = { ...action, folderPath: destination.imap_folder_path };
+          imapDestination = destination.id;
+        } else {
+          imapDestination = action.type === "archive" ? "archive" : action.type === "trash" ? "TRASH" : action.type === "spam" && action.isSpam ? "SPAM" : "INBOX";
+        }
+        // IMAP folders are locations; flag labels remain independent.
+        before.touched = [...new Set([...folders.filter((folder) => folder.imap_folder_path && before.labels.includes(folder.id)).map((folder) => folder.id), imapDestination])];
+      }
+      // Callers often pass [] for a whole thread. IMAP needs real message IDs.
+      if ("messageIds" in action && action.messageIds.length === 0) {
+        const messages = await db.select<{ id: string }[]>("SELECT id FROM messages WHERE account_id = $1 AND thread_id = $2", [accountId, threadId]);
+        action = { ...action, messageIds: messages.map((row) => row.id) } as EmailAction;
+      }
+      await db.execute(`INSERT INTO pending_operations (id, account_id, operation_type, resource_id, params, next_retry_at)
+        VALUES ($1, $2, $3, $4, $5, $6)`, [id, accountId, action.type, threadId, JSON.stringify({ ...actionToParams(action), before: before! }), deadline]);
+      if (imapDestination) {
+        for (const label of before.touched) {
+          await db.execute("DELETE FROM thread_labels WHERE account_id = $1 AND thread_id = $2 AND label_id = $3", [accountId, threadId, label]);
+        }
+        await db.execute("INSERT OR IGNORE INTO thread_labels (account_id, thread_id, label_id) VALUES ($1, $2, $3)", [accountId, threadId, imapDestination]);
+      } else await applyLocalDbUpdate(accountId, action);
+    });
+  } catch (error) {
+    return { success: false, error: String(error) };
+  }
+  if (useAccountStore.getState().activeAccountId === accountId) applyOptimisticUpdate(action);
+  const undo = {
     label: undoLabel(action),
-    undo: () => {
-      restoreRemoval(snapshot);
-      if (!snapshot) revertOptimisticUpdate(action);
+    undo: async () => {
+      await withTransaction(async (db) => {
+        const claimed = await db.execute("DELETE FROM pending_operations WHERE id = $1 AND account_id = $2 AND status = 'pending'", [id, accountId]);
+        if (claimed.rowsAffected !== 1) throw new Error("This action has already started. Refresh the mailbox to check its result.");
+        await restoreDurableRemoval(accountId, threadId, before!);
+      });
+      restoreVisibleRemoval(accountId, before!);
     },
+  };
+  offerUndo(undo);
+  // Only expire this action; a later action owns its own timer.
+  setTimeout(() => { clearUndo(undo); }, Math.max(0, deadline * 1000 - Date.now()));
+  return { success: true, queued: true };
+}
+
+/** Called before retiring a permanently rejected intent, including after restart. */
+export async function rollbackQueuedRemoval(accountId: string, params: Record<string, unknown>, operationId?: string, error?: string): Promise<void> {
+  const before = params.before as DurableRemoval | undefined;
+  if (!before || typeof params.threadId !== "string") return;
+  await withTransaction(async (db) => {
+    await restoreDurableRemoval(accountId, params.threadId as string, before);
+    if (operationId) await db.execute("UPDATE pending_operations SET status = 'cancelled', error_message = $1 WHERE id = $2", [error ?? null, operationId]);
   });
+  restoreVisibleRemoval(accountId, before);
 }
 
 function revertOptimisticUpdate(action: EmailAction): void {
@@ -217,6 +307,10 @@ async function applyLocalDbUpdate(
           [accountId, action.threadId],
         );
       }
+      break;
+    case "moveToFolder":
+      await db.execute("DELETE FROM thread_labels WHERE account_id = $1 AND thread_id = $2 AND label_id = $3", [accountId, action.threadId, action.sourceLabelId ?? "INBOX"]);
+      await db.execute("INSERT OR IGNORE INTO thread_labels (account_id, thread_id, label_id) VALUES ($1, $2, $3)", [accountId, action.threadId, action.folderPath]);
       break;
     case "archive":
       await db.execute(
@@ -299,6 +393,9 @@ async function executeViaProvider(
   action: EmailAction,
 ): Promise<unknown> {
   const provider = await getEmailProvider(accountId);
+  if (provider.type === "imap" && REMOVALS.has(action.type) && "messageIds" in action && action.messageIds.length === 0) {
+    throw new Error("No synced messages were found for this IMAP thread. Refresh the mailbox before trying again.");
+  }
   switch (action.type) {
     case "archive":
       return provider.archive(action.threadId, action.messageIds);
@@ -329,6 +426,7 @@ async function executeViaProvider(
         action.threadId,
         action.messageIds,
         action.folderPath,
+        action.sourceLabelId,
       );
     case "addLabel":
       return provider.addLabel(action.threadId, action.labelId);
@@ -353,6 +451,7 @@ export async function executeEmailAction(
   accountId: string,
   action: EmailAction,
 ): Promise<ActionResult> {
+  if (REMOVALS.has(action.type)) return executeReversibleRemoval(accountId, action);
   const snapshot = captureRemoval(action);
   // 1. Optimistic UI update
   applyOptimisticUpdate(action);
@@ -372,14 +471,12 @@ export async function executeEmailAction(
       getResourceId(action),
       actionToParams(action),
     );
-    rememberUndo(action, snapshot);
     return { success: true, queued: true };
   }
 
   // 4. Try online execution
   try {
     const data = await executeViaProvider(accountId, action);
-    rememberUndo(action, snapshot);
     return { success: true, data };
   } catch (err) {
     const classified = classifyError(err);
@@ -392,7 +489,6 @@ export async function executeEmailAction(
         getResourceId(action),
         actionToParams(action),
       );
-      rememberUndo(action, snapshot);
       return { success: true, queued: true };
     }
 
@@ -506,12 +602,14 @@ export function moveThread(
   threadId: string,
   messageIds: string[],
   folderPath: string,
+  sourceLabelId?: string,
 ): Promise<ActionResult> {
   return executeEmailAction(accountId, {
     type: "moveToFolder",
     threadId,
     messageIds,
     folderPath,
+    sourceLabelId,
   });
 }
 

@@ -108,7 +108,7 @@ export interface TicketListItem {
   /** Freshdesk ticket type, when the helpdesk has one */
   ticketType: string | null;
   /** Custom field values keyed by Freshdesk's field name */
-  customFields: Record<string, string>;
+  customFields: Record<string, string | number | boolean>;
 }
 
 export interface TicketSyncStatus {

@@ -15,7 +15,10 @@ vi.mock("../db/pendingOperations", () => ({
   compactQueue: vi.fn(() => Promise.resolve(0)),
 }));
 
+vi.mock("../db/connection", () => ({ withTransaction: async (fn: (db: unknown) => Promise<void>) => fn({ execute: async () => ({ rowsAffected: 1 }) }) }));
+
 vi.mock("../emailActions", () => ({
+  rollbackQueuedRemoval: vi.fn(async () => {}),
   executeQueuedAction: vi.fn(() => Promise.resolve()),
 }));
 
@@ -91,7 +94,7 @@ describe("queueProcessor", () => {
 
     await triggerQueueFlush();
 
-    expect(updateOperationStatus).toHaveBeenCalledWith("op-1", "executing");
+
     expect(executeQueuedAction).toHaveBeenCalledWith("acct-1", "archive", {
       threadId: "t1",
       messageIds: [],

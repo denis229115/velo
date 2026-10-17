@@ -225,13 +225,13 @@ export function TicketInspector({
                 disabled={!writable.writable}
                 describedBy={writable.controlProps["aria-describedby"]}
                 onChange={(value) => {
-                  const customFields = { ...ticket.customFields, [field.name]: value };
+                  const customFields = { ...ticket.customFields, [field.name]: value ?? "" };
                   void onEdit({
                     ticket,
-                    changes: { customFields: { [field.name]: value || null } },
+                    changes: { customFields: { [field.name]: value === "" ? null : value } },
                     shown: { customFields },
                     action: `Set ${field.label}`,
-                    failure: `${field.label} stays ${ticket.customFields[field.name] || "unset"}`,
+                    failure: `${field.label} stays ${ticket.customFields[field.name] ?? "unset"}`,
                   });
                 }}
               />
@@ -271,7 +271,7 @@ function ChoiceRow({
       <dd>
         <select
           aria-label={label}
-          value={value}
+          value={String(value)}
           disabled={disabled}
           aria-describedby={describedBy}
           onChange={(event) => onChange(event.target.value)}
@@ -359,19 +359,22 @@ function CustomField({
   onChange,
 }: {
   field: TicketFieldDefinition;
-  value: string;
+  value: string | number | boolean;
   choices: FieldChoice[];
   disabled: boolean;
   describedBy?: string;
-  onChange: (value: string) => void;
+  onChange: (value: string | number | boolean | null) => void;
 }) {
+  if (field.type === "custom_checkbox") {
+    return <label className="block text-meta text-text-tertiary"><input type="checkbox" aria-label={field.label} checked={value === true} disabled={disabled} aria-describedby={describedBy} onChange={(event) => onChange(event.target.checked)} /> {field.label}</label>;
+  }
   if (choices.length > 0) {
     return (
       <label className="block text-meta text-text-tertiary">
         {field.label}
         <select
           aria-label={field.label}
-          value={value}
+          value={String(value)}
           disabled={disabled}
           aria-describedby={describedBy}
           onChange={(event) => onChange(event.target.value)}
@@ -385,7 +388,12 @@ function CustomField({
       </label>
     );
   }
-  return <TextCustomField field={field} value={value} disabled={disabled} describedBy={describedBy} onChange={onChange} />;
+  return <TextCustomField field={field} value={String(value)} disabled={disabled} describedBy={describedBy} onChange={(text) => {
+    if (field.type === "custom_number" || field.type === "custom_decimal") {
+      if (text.trim() === "") onChange(null);
+      else if (Number.isFinite(Number(text))) onChange(Number(text));
+    } else onChange(text || null);
+  }} />;
 }
 
 function TextCustomField({
@@ -411,6 +419,8 @@ function TextCustomField({
       {field.label}
       <input
         aria-label={field.label}
+        type={field.type === "custom_number" || field.type === "custom_decimal" ? "number" : "text"}
+        step={field.type === "custom_decimal" ? "any" : undefined}
         value={draft}
         disabled={disabled}
         aria-describedby={describedBy}

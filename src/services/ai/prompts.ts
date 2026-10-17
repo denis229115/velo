@@ -17,6 +17,10 @@ export const SHORTEN_PROMPT = `Make the following email text more concise while 
 
 export const FORMALIZE_PROMPT = `Rewrite the following email text in a more formal, professional tone. Output only the formalized HTML.`;
 
+export const WARM_PROMPT = `Rewrite the following email text in a warm, friendly, and approachable tone. Preserve its meaning and intent without adding facts or commitments. Output only the rewritten HTML.`;
+
+export const NEUTRAL_PROMPT = `Rewrite the following email text in a neutral, matter-of-fact tone. Use balanced, objective language without emotional emphasis. Preserve its meaning and intent without adding facts or commitments. Output only the rewritten HTML.`;
+
 export const SMART_REPLY_PROMPT = `Generate exactly 3 short email reply options for the given email thread. Each reply should be 1-2 sentences.
 
 Rules:

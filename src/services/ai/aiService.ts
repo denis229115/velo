@@ -7,6 +7,8 @@ import {
   IMPROVE_PROMPT,
   SHORTEN_PROMPT,
   FORMALIZE_PROMPT,
+  WARM_PROMPT,
+  NEUTRAL_PROMPT,
   CATEGORIZE_PROMPT,
   SMART_REPLY_PROMPT,
   ASK_INBOX_PROMPT,
@@ -93,13 +95,15 @@ export async function generateReply(
   return requestAi(replyRequest(messagesText, instructions));
 }
 
-export type TransformType = "improve" | "shorten" | "formalize";
+export type TransformType = "improve" | "shorten" | "formalize" | "warm" | "neutral";
 
 function transformRequest(text: string, type: TransformType) {
   const prompts: Record<TransformType, string> = {
     improve: IMPROVE_PROMPT,
     shorten: SHORTEN_PROMPT,
     formalize: FORMALIZE_PROMPT,
+    warm: WARM_PROMPT,
+    neutral: NEUTRAL_PROMPT,
   };
   return { feature: "text_transform" as const, systemPrompt: prompts[type], items: [{ body: text }] };
 }

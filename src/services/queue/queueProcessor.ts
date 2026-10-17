@@ -8,7 +8,9 @@ import {
   getPendingOpsCount,
   compactQueue,
 } from "../db/pendingOperations";
-import { executeQueuedAction } from "../emailActions";
+import { withTransaction } from "../db/connection";
+import { reportAuthExpired } from "../authNotice";
+import { executeQueuedAction, rollbackQueuedRemoval } from "../emailActions";
 import { classifyError } from "@/utils/networkErrors";
 
 const BATCH_SIZE = 50;
@@ -20,7 +22,7 @@ async function processQueue(): Promise<void> {
   if (!useUIStore.getState().isOnline) return;
 
   // Compact first to eliminate redundant ops
-  await compactQueue();
+  await withTransaction(async () => { await compactQueue(); });
 
   // Get pending operations
   const ops = await getPendingOperations(undefined, BATCH_SIZE);
@@ -32,24 +34,40 @@ async function processQueue(): Promise<void> {
   for (const op of ops) {
     try {
       // Mark as executing
-      await updateOperationStatus(op.id, "executing");
+      let claimed = false;
+      await withTransaction(async (db) => {
+        const result = await db.execute("UPDATE pending_operations SET status = 'executing' WHERE id = $1 AND status = 'pending'", [op.id]);
+        claimed = result.rowsAffected === 1;
+      });
+      if (!claimed) continue;
 
       // Parse params and execute
       const params = JSON.parse(op.params) as Record<string, unknown>;
       await executeQueuedAction(op.account_id, op.operation_type, params);
 
       // Success — delete from queue
-      await deleteOperation(op.id);
+      await withTransaction(async () => { await deleteOperation(op.id); });
     } catch (err) {
       const classified = classifyError(err);
 
       if (classified.isRetryable) {
         // Increment retry with exponential backoff
-        await updateOperationStatus(op.id, "pending", classified.message);
-        await incrementRetry(op.id);
+        if (op.retry_count + 1 >= op.max_retries && JSON.parse(op.params).before) {
+          await rollbackQueuedRemoval(op.account_id, JSON.parse(op.params), op.id, classified.message);
+          window.dispatchEvent(new CustomEvent("velo-mail-action-error", { detail: "Email action retries exhausted. Local labels were restored; refresh the mailbox to check the server result." }));
+        } else {
+          await withTransaction(async () => {
+            await incrementRetry(op.id);
+            if (op.retry_count + 1 < op.max_retries) await updateOperationStatus(op.id, "pending", classified.message);
+          });
+        }
       } else {
         // Permanent failure
-        await updateOperationStatus(op.id, "failed", classified.message);
+        const params = JSON.parse(op.params) as Record<string, unknown>;
+        if (params.before) await rollbackQueuedRemoval(op.account_id, params, op.id, classified.message);
+        else await withTransaction(async () => { await updateOperationStatus(op.id, "failed", classified.message); });
+        window.dispatchEvent(new CustomEvent("velo-mail-action-error", { detail: `Email action failed: ${classified.message}.${params.before ? " The local change was restored." : ""}` }));
+        if (classified.type === "auth") reportAuthExpired(op.account_id);
       }
     }
   }

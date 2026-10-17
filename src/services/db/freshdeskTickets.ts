@@ -31,7 +31,7 @@ export interface CachedTicket {
   /** False when this copy omitted `type`, so the stored type is kept */
   ticketTypeKnown: boolean;
   /** Custom field values; null when this copy omitted `custom_fields` */
-  customFields: Record<string, string> | null;
+  customFields: Record<string, string | number | boolean> | null;
 }
 
 interface TicketRow {
@@ -113,14 +113,14 @@ function parseAddresses(json: string | null): string[] | null {
 
 const jsonOrNull = (list: string[] | null): string | null => (list === null ? null : JSON.stringify(list));
 
-function parseCustomFields(json: string | null): Record<string, string> {
+function parseCustomFields(json: string | null): Record<string, string | number | boolean> {
   if (!json) return {};
   try {
     const value: unknown = JSON.parse(json);
     if (!value || typeof value !== "object" || Array.isArray(value)) return {};
-    const fields: Record<string, string> = {};
+    const fields: Record<string, string | number | boolean> = {};
     for (const [name, field] of Object.entries(value)) {
-      if (typeof field === "string") fields[name] = field;
+      if (typeof field === "string" || typeof field === "number" || typeof field === "boolean") fields[name] = field;
     }
     return fields;
   } catch {
