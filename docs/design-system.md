@@ -264,6 +264,36 @@ New text appears at the caret as it arrives. The caret is a 1.5px hairline in `-
 
 The brief at the top of a thread is a separate surface: three bullets, accent heading, a source line in tertiary ("Claude · redacted"). It is not an editor.
 
+## Working aura
+
+A field that is doing work draws a soft colour behind it. The colour is four (light) or three (dark) radial blobs on eased paths. They drift. They do not rotate. The paths are 8s, 8s, 4s and 8s, and the group breathes over 8s. Blur radius is a static filter: about 44px in light, with about 100px of visible spread, and about 26px in dark, with about 48px of spread. Dark blobs are saturated, have near-white centres, and blend with `plus-lighter` at about 0.9 opacity (pearl stays at 0.55). Motion is transform and opacity only.
+
+The blobs sit in a mask that is punched out of the field shape, so the field keeps its own glass blur. A glass field also gets a grain overlay and a hairline edge. Placeholder text carries a slow sheen, again transform and opacity.
+
+| Token | Light | Dark |
+| --- | --- | --- |
+| `--aura-blur` | `44px` | `26px` |
+| `--aura-spread` | `100px` | `48px` |
+| `--aura-room` | `140px` | `140px` |
+| `--aura-opacity` | `0.62` | `0.9` |
+| Halo `--aura-halo-1…4` | `#8FB8FF`, `#D7E3F7`, `#5D9BFF`, `#C3CFE2` | `#3D86FF`, `#8FC0FF`, `#1F6FFF` |
+| Intelligence `--aura-intel-1…4` | `#F2A77A`, `#6FB3E6`, `#EC8FA1`, `#8FCDB0` | `#FF9A5C`, `#38A8F0`, `#FF6F8E` |
+| Pearl `--aura-pearl-1…4` | `#C9CED8`, `#FFFFFF`, `#B3BAC6`, `#E2E5EA` | `#D8DDE6`, `#FFFFFF`, `#AAB3C2` |
+
+Intelligence is peach, sky, rose and mint. It has no purple.
+
+Palettes:
+
+- **Halo**, silver-blue, on the ⌘J bar while the assistant has been asked and no text has arrived yet.
+- **Intelligence** only while the assistant is writing: the composer body, the inline diff, and the thread brief.
+- **Pearl** while ⌘K is loading mail search.
+
+States on the field: idle, focus (a soft blue ring on the ⌘J bar and the search field), working (the aura), success (a one-shot green flash of about 1.4s), and error (a red pulse). Only one field glows at a time. The composer body outranks the diff and the brief, which outrank ⌘K, which outranks the ⌘J bar. When the work ends the blobs fade out. A newer claim of the same priority replaces the older one.
+
+Reduced motion drops the drift, the breath, the sheen and the pulses, because animations and transitions are already none. Reduced transparency hides the blobs and the sheen and draws a static soft ring instead.
+
+The reference is `docs/glow-inputs.html`, with `docs/glow-inputs-v3.mp4`. `docs/glow-inputs-v3.png` is a frame of that video, so it shows the working fields and not the idle, focus, success, and error row.
+
 ## Accessibility
 
 Three OS preferences, each also represented by a class on `<html>` so the app can follow them after first paint:
@@ -296,7 +326,7 @@ Product surfaces on those tokens:
 - A sticky Freshdesk header with an SLA chip and a ⌘I inspector. Status and priority are property pills with anchored menus. Group, type, tags and custom fields save through Freshdesk. Assignee stays a searchable combobox. On a ticket, s, p and a open status, priority and assign.
 - Command palette fuzzy ranking, Move to and Snooze pages, and Ask AI on Tab.
 - Mail-list virtualisation past 80 rows, undo for optimistic removals, confirm sheets, and an auth-expired banner.
-- The AI brief, reply chips, ⌘J prompt bar, selection rewrite and inline diff. Cards are a neutral material surface. Claude, OpenAI, Gemini, Ollama and Copilot stream through the gateway; a provider without `stream` still yields one snapshot.
+- The AI brief, reply chips, ⌘J prompt bar, selection rewrite and inline diff. Cards are a neutral material surface. Claude, OpenAI, Gemini, Ollama and Copilot stream through the gateway; a provider without `stream` still yields one snapshot. The working aura follows that stream, and ⌘K mail search, with one field glowing at a time.
 
 Not done, on purpose:
 
@@ -309,8 +339,11 @@ Not done, on purpose:
 
 | File | Holds |
 | --- | --- |
-| `src/styles/theme.css` | Token values, platform and accessibility overrides |
+| `src/styles/theme.css` | Token values, platform and accessibility overrides, aura colours |
 | `src/styles/globals.css` | Tailwind aliases, `.glass-bar`, `.glass-pop`, `.material-bar`, `.material-pop`, `.glass-sidebar` |
+| `src/styles/aura.css` | Working-aura mask, blobs, grain, sheen and state rings |
+| `src/components/ui/AuraGlow.tsx` | Field wrapper. One working glow at a time |
 | `src/hooks/useAppearance.ts` | `platform-mac`, `reduce-transparency`, `increase-contrast`, plus theme and reduced motion |
 | `docs/velo.html` | Static mockup |
 | `docs/velo-light.png`, `docs/velo-dark.png` | Renders of that mockup |
+| `docs/glow-inputs.html`, `docs/glow-inputs-v3.png`, `docs/glow-inputs-v3.mp4` | Approved working-aura reference |

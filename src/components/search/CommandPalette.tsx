@@ -20,6 +20,7 @@ import { parseTicketIdQuery, searchTickets } from "@/services/freshdesk/ticketSe
 import { TicketPriorityBadge, TicketStatusBadge } from "@/components/freshdesk/TicketBadges";
 import { coverageText } from "@/components/freshdesk/TicketSyncBar";
 import { SampleBadge } from "@/components/ui/SampleBadge";
+import { AuraGlow, AuraShimmer } from "@/components/ui/AuraGlow";
 import { formatShortcut } from "@/utils/shortcutLabel";
 import { Kbd } from "@/components/list/Kbd";
 import { HighlightedText } from "@/components/ai/HighlightedText";
@@ -425,9 +426,17 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
     <CSSTransition nodeRef={overlayRef} in={isOpen} timeout={200} classNames="modal" unmountOnExit>
     <div ref={overlayRef} className="fixed inset-0 z-[60] flex items-start justify-center pt-[15vh]">
       <div className="absolute inset-0 bg-black/30" onClick={onClose} />
-      <div className="relative bg-surface-overlay border border-separator rounded-lg overlay-shadow w-full max-w-lg overflow-hidden modal-panel">
-        {/* Input */}
-        <div className="flex items-center gap-2.5 px-4 py-3 border-b border-border-primary">
+      <div className="relative bg-surface-overlay border border-separator rounded-lg overlay-shadow w-full max-w-lg overflow-visible modal-panel">
+        {/* Input. Pearl while mail search is loading; the glow has to escape the panel. */}
+        <AuraGlow
+          palette="pearl"
+          phase={threadSearch.loading ? "working" : "idle"}
+          priority={20}
+          shape="search"
+          variant="field"
+          className="border-b border-border-primary"
+          fieldClassName="flex items-center gap-2.5 px-4 py-3"
+        >
           <Search size={15} className="shrink-0 text-text-tertiary" aria-hidden />
           <input
             ref={inputRef}
@@ -448,9 +457,10 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
             placeholder={askMode ? "Ask about your mail…" : page ? "Filter this list…" : "Search mail and tickets or type a command… (#123, from:, has:attachment)"}
             // The caret marks focus here; the global focus ring would box the whole field
             style={{ outline: "none" }}
-            className="w-full bg-transparent text-sm text-text-primary placeholder:text-text-tertiary"
+            className="min-w-0 flex-1 bg-transparent text-sm text-text-primary placeholder:text-text-tertiary"
           />
-        </div>
+          {threadSearch.loading && <AuraShimmer>Searching…</AuraShimmer>}
+        </AuraGlow>
 
         {/* Results */}
         <div ref={listRef} id="command-palette-results" role="listbox" aria-label="Results" className="max-h-96 overflow-y-auto py-1">

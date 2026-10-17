@@ -28,12 +28,42 @@ const files = [...sourceFiles(SRC), ...ENTRY_PAGES].map((path) => ({
   text: readFileSync(path, "utf-8"),
 }));
 
+/** Walks one @keyframes rule, including nested percentage blocks. */
+function keyframeBodies(css: string): string[] {
+  const bodies: string[] = [];
+  const start = /@keyframes\s+[\w-]+\s*\{/g;
+  let match: RegExpExecArray | null;
+  while ((match = start.exec(css))) {
+    let depth = 1;
+    let index = match.index + match[0].length;
+    const from = index;
+    while (index < css.length && depth > 0) {
+      const char = css[index];
+      if (char === "{") depth += 1;
+      else if (char === "}") depth -= 1;
+      index += 1;
+    }
+    bodies.push(css.slice(from, index - 1));
+  }
+  return bodies;
+}
+
 describe("theme guard", () => {
   it("has no animated gradient blobs or gradient backdrops", () => {
     const offenders = files
+      .filter(({ path }) => path !== "styles/aura.css")
       .filter(({ text }) => /animated-bg|className="blob"|linear-gradient|radial-gradient/.test(text))
       .map(({ path }) => path);
     expect(offenders).toEqual([]);
+  });
+
+  it("keeps the aura motion to transform and opacity", () => {
+    const css = files.find((file) => file.path === "styles/aura.css")?.text ?? "";
+    const bodies = keyframeBodies(css);
+    expect(bodies.length).toBeGreaterThan(0);
+    for (const body of bodies) {
+      expect(body).not.toMatch(/filter|blur|rotate|background-position|\bwidth\b|\bheight\b/);
+    }
   });
 
   it("applies glass/blur only to the sidebar and the window frame it sits on", () => {
