@@ -5,7 +5,7 @@ import { getSetting } from "../db/settings";
 import { getThreadCountForAccount, deleteAllThreadsForAccount } from "../db/threads";
 import { deleteAllMessagesForAccount } from "../db/messages";
 import { imapInitialSync, imapDeltaSync } from "../imap/imapSync";
-import { clearAllFolderSyncStates } from "../db/folderSyncState";
+import { clearAllFolderSyncStates, getAllFolderSyncStates } from "../db/folderSyncState";
 import { ensureFreshToken } from "../oauth/oauthTokenManager";
 import { hasCalendarSupport, getCalendarProvider } from "../calendar/providerFactory";
 import { getVisibleCalendars, upsertCalendar, updateCalendarSyncToken } from "../db/calendars";
@@ -97,14 +97,17 @@ async function syncImapAccount(accountId: string): Promise<void> {
   const syncPeriodStr = await getSetting("sync_period_days");
   const syncDays = parseInt(syncPeriodStr ?? "365", 10) || 365;
 
-  if (account.history_id) {
+  const folderStates = await getAllFolderSyncStates(accountId);
+  // history_id stays null until the mailbox finishes, but a completed folder
+  // already has durable UID state. Another initial would re-download it.
+  if (account.history_id || folderStates.length > 0) {
     // Delta sync — IMAP uses folder-level UID tracking
     const result = await imapDeltaSync(accountId, syncDays);
 
     // Recovery: if delta sync found nothing new but the DB has no threads,
     // the previous initial sync likely failed or stored data incorrectly.
     // Force a full re-sync to recover.
-    if (result.messages.length === 0) {
+    if (account.history_id && result.messages.length === 0) {
       const threadCount = await getThreadCountForAccount(accountId);
       if (threadCount === 0) {
         console.warn(`[syncManager] IMAP delta sync returned 0 new messages and DB has 0 threads for ${accountId} — forcing full re-sync`);
@@ -300,8 +303,10 @@ export function startBackgroundSync(accountIds: string[], skipImmediateSync = fa
     runSync(accountIds);
   }
 
-  // Periodic sync
+  // Periodic sync. Skip the tick while a pass is in flight so it cannot
+  // queue another initial for the same accounts.
   syncTimer = setInterval(() => {
+    if (syncPromise) return;
     runSync(accountIds);
   }, SYNC_INTERVAL_MS);
 }

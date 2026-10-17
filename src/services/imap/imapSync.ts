@@ -73,6 +73,11 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function isInboxFolder(folder: { path: string; raw_path: string; name: string; special_use: string | null }): boolean {
+  if (folder.special_use?.toLowerCase() === "\\inbox") return true;
+  return [folder.path, folder.raw_path, folder.name].some((value) => value.toLowerCase() === "inbox");
+}
+
 // ---------------------------------------------------------------------------
 // IMAP SINCE date helpers
 // ---------------------------------------------------------------------------
@@ -397,12 +402,16 @@ export async function imapInitialSync(
     throw new Error(`Account ${accountId} not found`);
   }
 
+  // Kept for call-site compatibility. IMAP initial sync searches the whole mailbox.
+  void daysBack;
+
   const config = buildImapConfig(account);
 
   // Phase 1: List and sync folders
   onProgress?.({ phase: "folders", current: 0, total: 1 });
   const allFolders = await imapListFolders(config);
   const syncableFolders = getSyncableFolders(allFolders);
+  syncableFolders.sort((a, b) => Number(isInboxFolder(b)) - Number(isInboxFolder(a)));
   await syncFoldersToLabels(accountId, syncableFolders);
   console.log(`[imapSync] Initial sync for account ${accountId}: ${syncableFolders.length} syncable folders`);
   onProgress?.({ phase: "folders", current: 1, total: 1 });
@@ -477,9 +486,9 @@ export async function imapInitialSync(
     const folderMapping = mapFolderToLabel(folder);
 
     try {
-      // Phase 2a: Lightweight search — get UIDs only (no message bodies over IPC)
-      const sinceDate = computeSinceDate(daysBack);
-      const searchResult = await imapSearchFolder(config, folder.raw_path, sinceDate);
+      // Phase 2a: Lightweight search — get UIDs only (no message bodies over IPC).
+      // SEARCH ALL so older mail is kept, matching a full mailbox client.
+      const searchResult = await imapSearchFolder(config, folder.raw_path, null);
       const uidsToFetch = searchResult.uids;
 
       // Reset circuit breaker on success
@@ -487,8 +496,6 @@ export async function imapInitialSync(
 
       if (uidsToFetch.length === 0) continue;
 
-      // Date filter config
-      const cutoffDate = Math.floor(Date.now() / 1000) - daysBack * 86400;
       const nowSeconds = Math.floor(Date.now() / 1000);
       let dateFallbackCount = 0;
       let folderFetchedCount = 0;
@@ -526,12 +533,10 @@ export async function imapInitialSync(
           if (msg.uid > lastUid) lastUid = msg.uid;
           folderFetchedCount++;
 
-          // Date filter
           if (msg.date === 0) {
             dateFallbackCount++;
             msg.date = nowSeconds;
           }
-          if (msg.date < cutoffDate) continue;
 
           const { parsed, threadable } = imapMessageToParsedMessage(
             msg,
@@ -588,6 +593,7 @@ export async function imapInitialSync(
                 imapUid: msg.uid ?? null,
                 imapFolder: msg.folder ?? null,
               });
+              await setThreadLabels(accountId, parsed.id, parsed.labelIds);
 
               // Store attachments
               for (const att of parsed.attachments) {
@@ -656,10 +662,10 @@ export async function imapInitialSync(
       }
 
       console.log(
-        `[imapSync] Folder ${folder.path}: ${uidsToFetch.length} UIDs, ${folderFetchedCount} fetched, ${folderStoredCount} after date filter`,
+        `[imapSync] Folder ${folder.path}: ${uidsToFetch.length} UIDs, ${folderFetchedCount} fetched, ${folderStoredCount} stored`,
       );
 
-      // Update folder sync state
+      // Update folder sync state only after this folder's chunks have finished.
       await upsertFolderSyncState({
         account_id: accountId,
         folder_path: folder.raw_path,
@@ -668,6 +674,11 @@ export async function imapInitialSync(
         modseq: null,
         last_sync_at: Math.floor(Date.now() / 1000),
       });
+
+      // A later background tick can delta-sync once INBOX is durable, even if Archive is still going.
+      if (folderMapping.labelId === "INBOX") {
+        await updateAccountSyncState(accountId, `imap-synced-${Date.now()}`);
+      }
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err ?? "Unknown error");
       console.error(`[imapSync] Failed to sync folder ${folder.path}:`, err);
@@ -867,8 +878,8 @@ export async function imapDeltaSync(accountId: string, daysBack = 365): Promise<
 
     const folderMapping = mapFolderToLabel(folder);
     try {
-      const sinceDate = computeSinceDate(daysBack);
-      const searchResult = await imapSearchFolder(config, folder.raw_path, sinceDate);
+      // A folder with no saved state is a first pass: search the whole mailbox.
+      const searchResult = await imapSearchFolder(config, folder.raw_path, null);
       consecutiveFailures = 0;
 
       if (searchResult.uids.length === 0) continue;
