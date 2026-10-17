@@ -42,7 +42,7 @@ export function Modal({
       <div data-modal-root ref={nodeRef} className={`fixed inset-0 ${zIndex} flex items-center justify-center`} onContextMenu={(e) => e.stopPropagation()}>
         <div className="absolute inset-0 bg-black/20" onClick={onClose} />
         <div
-          className={`relative bg-surface-overlay border border-separator rounded-lg overlay-shadow ${width}${panelClassName ? ` ${panelClassName}` : ""}`}
+          className={`relative bg-surface-overlay border border-separator rounded-[var(--radius-modal)] overlay-shadow ${width}${panelClassName ? ` ${panelClassName}` : ""}`}
         >
           {renderHeader !== undefined ? (
             renderHeader

@@ -28,7 +28,7 @@ export function Kbd({ keys }: { keys: string }) {
       {formatKeyBinding(keys).map((part, i) => (
         <kbd
           key={i}
-          className="inline-flex items-center justify-center min-w-4 h-4 px-1 rounded-[4px] border border-border-primary bg-surface-subtle font-sans text-micro leading-none text-text-secondary"
+          className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-[var(--radius-chip)] border-b border-[var(--system-kbd-edge)] bg-[var(--system-kbd)] font-sans text-meta leading-none text-text-secondary"
         >
           {part}
         </kbd>

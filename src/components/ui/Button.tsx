@@ -20,7 +20,7 @@ export function Button({
   ref,
   ...rest
 }: ButtonProps) {
-  const base = "inline-flex items-center justify-center font-medium rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed";
+  const base = "inline-flex items-center justify-center font-medium rounded-[var(--radius-control)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed";
 
   const variants = {
     primary: "text-white bg-accent hover:bg-accent-hover",

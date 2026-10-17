@@ -1,0 +1,240 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Velo — Liquid Glass mockup</title>
+<style>
+:root{
+ --font:-apple-system,BlinkMacSystemFont,"SF Pro Text","Inter",system-ui,sans-serif;
+ --label:#1D1D1F;--label2:#6E6E73;--label3:#AEAEB2;--sep:#E5E5EA;
+ --accent:#007AFF;--accent-soft:rgba(0,122,255,.12);
+ --hover:rgba(0,0,0,.04);--press:rgba(0,0,0,.08);
+ --content:#FFFFFF;--list:#FAFAFC;
+ --glass-bar:rgba(255,255,255,.62);--glass-pop:rgba(250,250,252,.78);
+ --glass-side:rgba(255,255,255,.34);
+ --edge:rgba(0,0,0,.08);--hl:rgba(255,255,255,.75);
+ --green:#34C759;--green-bg:rgba(52,199,89,.14);--red:#FF3B30;
+ --e1:0 1px 3px rgba(0,0,0,.08);--e2:0 8px 24px rgba(0,0,0,.12);
+ --kbd:rgba(0,0,0,.05);--kbdb:rgba(0,0,0,.12);
+ --wall:radial-gradient(1200px 800px at 8% 10%,#FFB38A 0,transparent 55%),radial-gradient(1000px 900px at 92% 15%,#8FB8FF 0,transparent 55%),radial-gradient(900px 800px at 60% 100%,#C79BFF 0,transparent 60%),radial-gradient(700px 600px at 0% 100%,#7FE0C8 0,transparent 60%),#E9D9F5;
+}
+.dark{
+ --label:#F5F5F7;--label2:#98989D;--label3:#636366;--sep:#38383A;
+ --accent:#0A84FF;--accent-soft:rgba(10,132,255,.22);
+ --hover:rgba(255,255,255,.06);--press:rgba(255,255,255,.10);
+ --content:#1C1C1E;--list:#161618;
+ --glass-bar:rgba(44,44,48,.58);--glass-pop:rgba(36,36,40,.72);
+ --glass-side:rgba(30,30,34,.42);
+ --edge:rgba(255,255,255,.10);--hl:rgba(255,255,255,.12);
+ --green:#30D158;--green-bg:rgba(48,209,88,.18);--red:#FF453A;
+ --e1:0 1px 3px rgba(0,0,0,.35);--e2:0 8px 24px rgba(0,0,0,.45);
+ --kbd:rgba(255,255,255,.08);--kbdb:rgba(255,255,255,.16);
+ --wall:radial-gradient(1200px 800px at 8% 10%,#7A3A2A 0,transparent 55%),radial-gradient(1000px 900px at 92% 15%,#1F3F80 0,transparent 55%),radial-gradient(900px 800px at 60% 100%,#4B2A7A 0,transparent 60%),radial-gradient(700px 600px at 0% 100%,#0F5A50 0,transparent 60%),#15121F;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:1440px;height:900px;overflow:hidden}
+body{font-family:var(--font);font-size:13px;color:var(--label);background:var(--wall);-webkit-font-smoothing:antialiased;font-feature-settings:"cv11","ss01";letter-spacing:-.003em}
+svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.glass{backdrop-filter:blur(24px) saturate(180%);-webkit-backdrop-filter:blur(24px) saturate(180%);border:1px solid var(--edge);box-shadow:inset 0 1px 0 var(--hl),var(--e1)}
+.kbd{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 4px;border-radius:4px;background:var(--kbd);border-bottom:1px solid var(--kbdb);font-size:11px;font-weight:500;color:var(--label2)}
+/* window */
+.win{position:absolute;left:28px;top:28px;width:1384px;height:844px;border-radius:26px;overflow:hidden;display:flex;
+ background:rgba(255,255,255,.18);backdrop-filter:blur(40px) saturate(170%);border:1px solid rgba(255,255,255,.45);
+ box-shadow:0 30px 80px rgba(30,20,60,.28),0 0 0 .5px rgba(0,0,0,.18)}
+.dark .win{background:rgba(20,20,24,.30);border-color:rgba(255,255,255,.12);box-shadow:0 30px 80px rgba(0,0,0,.6),0 0 0 .5px rgba(0,0,0,.6)}
+/* sidebar */
+.side{margin:8px 0 8px 8px;width:236px;border-radius:18px;background:var(--glass-side);display:flex;flex-direction:column;padding:14px 10px 10px}
+.lights{display:flex;gap:8px;padding:2px 6px 14px}.lights i{width:12px;height:12px;border-radius:50%;box-shadow:inset 0 0 0 .5px rgba(0,0,0,.2)}
+.acct{display:flex;align-items:center;gap:9px;padding:7px 8px;border-radius:10px;margin-bottom:12px}
+.acct:hover{background:var(--hover)}
+.av{border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:600;flex:none;letter-spacing:0}
+.acct .av{width:28px;height:28px;font-size:11px;color:#fff;background:linear-gradient(135deg,#5E8BFF,#9B6BFF)}
+.acct b{font-size:13px;font-weight:600;display:block}.acct small{font-size:11px;color:var(--label2)}
+.sect{font-size:11px;font-weight:600;color:var(--label2);padding:12px 10px 5px;letter-spacing:.01em}
+.nav{display:flex;align-items:center;gap:9px;height:30px;padding:0 10px;border-radius:9px;color:var(--label);font-weight:500}
+.nav svg{color:var(--label2)}.nav .n{margin-left:auto;font-size:12px;color:var(--label2);font-variant-numeric:tabular-nums}
+.nav.on{background:var(--accent-soft);color:var(--accent)}.nav.on svg,.nav.on .n{color:var(--accent)}.nav.on .n{font-weight:600}
+.dot{width:8px;height:8px;border-radius:50%;margin:0 4px}
+.sfoot{margin-top:auto;display:flex;align-items:center;gap:6px;padding:8px 6px 2px;color:var(--label2);font-size:12px}
+.sfoot .sp{flex:1}
+/* panel */
+.panel{flex:1;margin:8px;border-radius:18px;overflow:hidden;display:flex;background:var(--content);border:1px solid var(--edge)}
+.list{width:404px;background:var(--list);border-right:1px solid var(--sep);position:relative;display:flex;flex-direction:column}
+.tb{position:absolute;left:10px;right:10px;top:10px;z-index:5;border-radius:999px;background:var(--glass-bar);padding:5px;display:flex;flex-direction:column;gap:0}
+.tbrow{display:flex;align-items:center;gap:6px}
+.search{flex:1;height:30px;border-radius:999px;display:flex;align-items:center;gap:7px;padding:0 6px 0 10px;color:var(--label2);background:var(--hover)}
+.search span{flex:1}
+.ib{width:30px;height:30px;border-radius:999px;display:flex;align-items:center;justify-content:center;color:var(--label2)}
+.tabs{position:absolute;left:10px;right:10px;top:58px;z-index:5;display:flex;gap:2px;padding:3px;border-radius:999px;background:var(--glass-bar)}
+.tab{flex:1;height:24px;border-radius:999px;display:flex;align-items:center;justify-content:center;gap:5px;font-size:12px;font-weight:500;color:var(--label2)}
+.tab.on{background:var(--content);color:var(--label);box-shadow:0 1px 2px rgba(0,0,0,.12)}
+.dark .tab.on{background:rgba(255,255,255,.16)}
+.tab .c{font-size:11px;color:var(--accent);font-weight:600}
+.rows{padding:100px 6px 10px;overflow:hidden}
+.grp{font-size:11px;font-weight:600;color:var(--label3);padding:10px 12px 4px}
+.row{position:relative;display:flex;gap:10px;padding:9px 12px 9px 8px;border-radius:10px;height:66px}
+.row .ud{width:7px;flex:none;display:flex;justify-content:center;padding-top:6px}.row .ud i{width:7px;height:7px;border-radius:50%;background:var(--accent)}
+.row .av{width:32px;height:32px;font-size:12px}
+.row .bd{flex:1;min-width:0}
+.l1{display:flex;align-items:baseline;gap:8px}
+.from{font-weight:400;color:var(--label2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1}
+.unread .from{font-weight:600;color:var(--label)}
+.time{font-size:12px;color:var(--label3);font-variant-numeric:tabular-nums;flex:none}
+.unread .time{color:var(--label2)}
+.subj{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px;color:var(--label)}
+.unread .subj{font-weight:500}
+.prev{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--label2);margin-top:1px}
+.row.hov{background:var(--hover)}.row.hov .bd{padding-right:120px}.row.hov .qa{top:50%;transform:translateY(-50%)}
+.row.sel{background:var(--accent-soft)}
+.row.sel .time,.row.sel .prev{color:var(--label2)}
+.qa{position:absolute;right:10px;top:8px;display:flex;gap:1px;padding:2px;border-radius:999px;background:var(--glass-pop)}
+.qa div{width:26px;height:24px;border-radius:999px;display:flex;align-items:center;justify-content:center;color:var(--label2)}
+.qa div:first-child{background:var(--hover);color:var(--label)}
+.qa svg{width:14px;height:14px}
+.chip{display:inline-flex;align-items:center;gap:4px;height:16px;padding:0 6px;border-radius:999px;font-size:10.5px;font-weight:600;vertical-align:1px}
+.ic{display:inline-flex;color:var(--label3);margin-left:4px}.ic svg{width:12px;height:12px}
+/* reader */
+.reader{flex:1;position:relative;overflow:hidden;background:var(--content)}
+.rtb{position:absolute;right:12px;top:10px;z-index:5;display:flex;gap:8px}
+.cap{display:flex;gap:2px;padding:4px;border-radius:999px;background:var(--glass-bar)}
+.cap div{width:30px;height:28px;border-radius:999px;display:flex;align-items:center;justify-content:center;color:var(--label)}
+.cap div.on{background:var(--hover)}
+.rtl{position:absolute;left:16px;top:16px;display:flex;align-items:center;gap:6px;color:var(--label2);font-size:12px}
+.col{max-width:720px;margin:0 auto;padding:62px 32px 0}
+h1{font-size:17px;font-weight:600;letter-spacing:-.012em;line-height:1.3}
+.meta{display:flex;gap:6px;margin-top:8px;align-items:center}
+.brief{margin-top:16px;border-radius:14px;padding:12px 14px;background:linear-gradient(135deg,rgba(0,122,255,.07),rgba(175,82,222,.07));border:1px solid var(--edge)}
+.dark .brief{background:linear-gradient(135deg,rgba(10,132,255,.14),rgba(191,90,242,.12))}
+.bh{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--accent)}
+.bh .sp{flex:1}.bh small{font-weight:400;color:var(--label3);font-size:11px}
+.brief ul{margin:8px 0 0 18px;color:var(--label);line-height:1.55}
+.brief li::marker{color:var(--label3)}
+.collapsed{margin-top:14px;display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--sep);color:var(--label2)}
+.collapsed .av{width:24px;height:24px;font-size:10px}
+.collapsed b{color:var(--label);font-weight:500}
+.msg{border-top:1px solid var(--sep);padding-top:14px}
+.mh{display:flex;align-items:center;gap:10px}
+.mh .av{width:32px;height:32px;font-size:12px}
+.mh b{font-weight:600}.mh small{display:block;color:var(--label2);font-size:12px}
+.mh .t{margin-left:auto;color:var(--label3);font-size:12px}
+.body{font-size:14px;line-height:1.6;margin-top:12px;color:var(--label)}
+.body p+p{margin-top:9px}
+/* reply */
+.reply{position:absolute;left:50%;transform:translateX(-50%);bottom:14px;width:calc(100% - 40px);max-width:680px;border-radius:18px;background:var(--content);border:1px solid var(--edge);box-shadow:0 20px 50px rgba(0,0,0,.16),0 0 0 .5px rgba(0,0,0,.04)}
+.dark .reply{background:#232326;box-shadow:0 20px 50px rgba(0,0,0,.55)}
+.rh{display:flex;align-items:center;gap:8px;padding:10px 14px 0;color:var(--label2);font-size:12px}
+.rh b{color:var(--label);font-weight:500}
+.seg{margin-left:auto;display:flex;padding:2px;border-radius:8px;background:var(--hover)}
+.dark .seg{background:rgba(255,255,255,.08)}
+.seg div{height:22px;padding:0 9px;border-radius:6px;display:flex;align-items:center;font-size:12px;font-weight:500;color:var(--label2)}
+.seg div.on{background:var(--content);color:var(--label);box-shadow:0 1px 2px rgba(0,0,0,.14)}
+.dark .seg div.on{background:rgba(255,255,255,.18)}
+.rb{padding:10px 14px 12px;font-size:14px;line-height:1.6}
+del{color:var(--red);text-decoration-color:var(--red);opacity:.7}
+ins{text-decoration:none;background:var(--green-bg);border-radius:3px;padding:0 1px;box-shadow:inset 0 -1.5px 0 rgba(52,199,89,.5)}
+.caret{display:inline-block;width:2px;height:16px;vertical-align:-3px;border-radius:1px;background:linear-gradient(var(--accent),#AF52DE)}
+.aibar{margin:0 8px 8px;border-radius:999px;background:var(--glass-pop);display:flex;align-items:center;gap:6px;padding:4px 4px 4px 12px}
+.aibar .lab{display:flex;align-items:center;gap:6px;color:var(--label2);font-size:12px;flex:1}
+.aibar .lab svg{color:var(--accent);width:14px;height:14px}
+.btn{height:28px;padding:0 12px;border-radius:999px;display:flex;align-items:center;gap:6px;font-weight:500;font-size:13px;color:var(--label)}
+.btn.sec{background:var(--hover)}
+.btn.pri{background:var(--accent);color:#fff;box-shadow:inset 0 1px 0 rgba(255,255,255,.25)}
+.btn.pri .kbd{background:rgba(255,255,255,.2);border-color:rgba(255,255,255,.25);color:#fff}
+.btn svg{width:14px;height:14px}
+</style></head><body>
+<script>if(location.hash==='#dark')document.documentElement.classList.add('dark')</script>
+<svg style="display:none"><defs>
+<symbol id="inbox" viewBox="0 0 24 24"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></symbol>
+<symbol id="star" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></symbol>
+<symbol id="clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></symbol>
+<symbol id="send" viewBox="0 0 24 24"><path d="m22 2-7 20-4-9-9-4z"/><path d="M22 2 11 13"/></symbol>
+<symbol id="file" viewBox="0 0 24 24"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5z"/><path d="M14 2v6h6"/></symbol>
+<symbol id="archive" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="5" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></symbol>
+<symbol id="search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></symbol>
+<symbol id="filter" viewBox="0 0 24 24"><path d="M3 6h18M7 12h10M10 18h4"/></symbol>
+<symbol id="pen" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/></symbol>
+<symbol id="reply" viewBox="0 0 24 24"><path d="M9 17 4 12l5-5"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></symbol>
+<symbol id="fwd" viewBox="0 0 24 24"><path d="m15 17 5-5-5-5"/><path d="M4 18v-2a4 4 0 0 1 4-4h12"/></symbol>
+<symbol id="trash" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></symbol>
+<symbol id="more" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></symbol>
+<symbol id="spark" viewBox="0 0 24 24"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></symbol>
+<symbol id="clip" viewBox="0 0 24 24"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></symbol>
+<symbol id="down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+<symbol id="cog" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></symbol>
+<symbol id="refresh" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></symbol>
+<symbol id="side" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M9 3v18"/></symbol>
+<symbol id="x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+</defs></svg>
+
+<div class="win">
+ <aside class="side glass">
+  <div class="lights"><i style="background:#FF5F57"></i><i style="background:#FEBC2E"></i><i style="background:#28C840"></i></div>
+  <div class="acct"><div class="av">DA</div><div style="flex:1;min-width:0"><b>Denis Ackerknecht</b><small>denis@ackerknecht.studio</small></div><svg style="width:14px;height:14px;color:var(--label2)"><use href="#down"/></svg></div>
+  <div class="nav on"><svg><use href="#inbox"/></svg>Inbox<span class="n">12</span></div>
+  <div class="nav"><svg><use href="#star"/></svg>Starred</div>
+  <div class="nav"><svg><use href="#clock"/></svg>Snoozed<span class="n">3</span></div>
+  <div class="nav"><svg><use href="#send"/></svg>Sent</div>
+  <div class="nav"><svg><use href="#file"/></svg>Drafts<span class="n">2</span></div>
+  <div class="nav"><svg><use href="#archive"/></svg>Archive</div>
+  <div class="sect">Labels</div>
+  <div class="nav"><span class="dot" style="background:#FF9500"></span>Clients</div>
+  <div class="nav"><span class="dot" style="background:#AF52DE"></span>Product</div>
+  <div class="nav"><span class="dot" style="background:#34C759"></span>Finance</div>
+  <div class="nav"><span class="dot" style="background:#5AC8FA"></span>Travel</div>
+  <div class="nav"><span class="dot" style="background:#FF2D55"></span>Personal</div>
+  <div class="sfoot"><svg style="width:15px;height:15px"><use href="#cog"/></svg><span class="sp">Synced just now</span><svg style="width:15px;height:15px"><use href="#side"/></svg></div>
+ </aside>
+ <main class="panel">
+  <section class="list">
+   <div class="tb glass"><div class="tbrow">
+     <div class="search"><svg style="width:15px;height:15px"><use href="#search"/></svg><span>Search</span><span class="kbd" style="flex:none">⌘K</span></div>
+     <div class="ib"><svg><use href="#filter"/></svg></div>
+     <div class="ib" style="background:var(--accent);color:#fff"><svg style="width:15px;height:15px"><use href="#pen"/></svg></div>
+   </div></div>
+   <div class="tabs glass">
+     <div class="tab on">Important <span class="c">8</span></div>
+     <div class="tab">Other <span class="c" style="color:var(--label3)">4</span></div>
+     <div class="tab">Calendar</div>
+     <div class="tab">Notifications</div>
+   </div>
+   <div class="rows">
+    <div class="grp">Today</div>
+    <div class="row unread sel"><div class="ud"><i></i></div><div class="av" style="background:rgba(255,149,0,.16);color:#D97706">MR</div><div class="bd"><div class="l1"><span class="from">Mara Reyes</span><span class="time">9:41</span></div><div class="subj">Northwind rebrand — final scope &amp; timeline</div><div class="prev">Thanks for the call yesterday. Attached the revised scope with the…</div></div></div>
+    <div class="row unread hov"><div class="ud"><i></i></div><div class="av" style="background:rgba(88,86,214,.15);color:#5856D6">JO</div><div class="bd"><div class="l1"><span class="from">Jonas Okafor</span><span class="time" style="visibility:hidden">9:12</span></div><div class="subj">Q4 roadmap review moved to Thursday</div><div class="prev">Quick heads-up — Priya is out Wednesday so we pushed…</div></div>
+     <div class="qa glass"><div><svg><use href="#archive"/></svg></div><div><svg><use href="#clock"/></svg></div><div><svg><use href="#star"/></svg></div><div><svg><use href="#more"/></svg></div></div></div>
+    <div class="row unread"><div class="ud"><i></i></div><div class="av" style="background:rgba(52,199,89,.16);color:#1F9D55">LH</div><div class="bd"><div class="l1"><span class="from">Lena Hoffmann</span><span class="time">8:55</span></div><div class="subj">Invoice #2041 approved<span class="ic"><svg><use href="#clip"/></svg></span></div><div class="prev">Payment is scheduled for the 24th. PDF attached for your…</div></div></div>
+    <div class="row"><div class="ud"></div><div class="av" style="background:rgba(90,200,250,.18);color:#0A84C6">AS</div><div class="bd"><div class="l1"><span class="from">Aiko Sato</span><span class="time">8:02</span></div><div class="subj">Re: Tokyo workshop venue options</div><div class="prev">The Daikanyama space has the better light, but Shibuya is…</div></div></div>
+    <div class="grp">Yesterday</div>
+    <div class="row unread"><div class="ud"><i></i></div><div class="av" style="background:rgba(255,45,85,.14);color:#E0284F">TB</div><div class="bd"><div class="l1"><span class="from">Theo Brandt</span><span class="time">Fri</span></div><div class="subj">Contract redlines — two open points</div><div class="prev">Legal is fine with everything except clause 7.2 and the…</div></div></div>
+    <div class="row"><div class="ud"></div><div class="av" style="background:rgba(175,82,222,.15);color:#A44BD6">NP</div><div class="bd"><div class="l1"><span class="from">Nadia Petrova</span><span class="time">Fri</span></div><div class="subj">Design crit notes from Friday</div><div class="prev">Summarised the feedback on the onboarding flow below…</div></div></div>
+    <div class="row"><div class="ud"></div><div class="av" style="background:var(--hover);color:var(--label2)">GH</div><div class="bd"><div class="l1"><span class="from">GitHub</span><span class="time">Fri</span></div><div class="subj">[velo] PR #318 merged: streaming AI gateway</div><div class="prev">denis229115 merged 4 commits into main from feat/stream…</div></div></div>
+    <div class="row"><div class="ud"></div><div class="av" style="background:rgba(255,204,0,.2);color:#B38600">SK</div><div class="bd"><div class="l1"><span class="from">Sam Keller</span><span class="time">Thu</span></div><div class="subj">Dinner on the 28th?</div><div class="prev">We finally booked the place in Ari — let me know if 7:30…</div></div></div>
+    <div class="row"><div class="ud"></div><div class="av" style="background:rgba(0,122,255,.12);color:var(--accent)">BA</div><div class="bd"><div class="l1"><span class="from">Bangkok Airways</span><span class="time">Thu</span></div><div class="subj">Your e-ticket: BKK → USM, 2 Nov</div><div class="prev">Booking reference PG7XK2 · Seat 4A · Check-in opens 24h…</div></div></div>
+   </div>
+  </section>
+  <section class="reader">
+   <div class="rtl"><svg style="width:14px;height:14px"><use href="#inbox"/></svg>Inbox · 3 messages</div>
+   <div class="rtb">
+    <div class="cap glass"><div><svg><use href="#reply"/></svg></div><div><svg><use href="#fwd"/></svg></div></div>
+    <div class="cap glass"><div><svg><use href="#archive"/></svg></div><div><svg><use href="#clock"/></svg></div><div><svg><use href="#trash"/></svg></div><div><svg><use href="#more"/></svg></div></div>
+   </div>
+   <div class="col">
+    <h1>Northwind rebrand — final scope &amp; timeline</h1>
+    <div class="meta"><span class="chip" style="background:rgba(255,149,0,.15);color:#D97706"><span class="dot" style="width:6px;height:6px;margin:0;background:#FF9500"></span>Clients</span><span class="chip" style="background:var(--hover);color:var(--label2)">Important</span></div>
+    <div class="brief"><div class="bh"><svg style="width:14px;height:14px"><use href="#spark"/></svg>Brief<span class="sp"></span><small>Claude · redacted</small></div>
+     <ul><li>Scope trimmed to identity, web and launch kit; packaging moves to phase 2.</li><li>Kickoff 3 Nov, final delivery 12 Dec — Mara needs sign-off by Friday.</li><li>Budget unchanged at €48k; she asks whether you can join the 30 Oct workshop.</li></ul></div>
+    <div class="collapsed"><div class="av" style="background:rgba(0,122,255,.12);color:var(--accent)">DA</div><b>You</b><span style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Sounds good — send over the revised scope when ready.</span><span style="color:var(--label3);font-size:12px">Tue</span></div>
+    <div class="msg">
+     <div class="mh"><div class="av" style="background:rgba(255,149,0,.16);color:#D97706">MR</div><div><b>Mara Reyes</b><small>to me, Jonas Okafor</small></div><span class="t">Today, 9:41</span></div>
+     <div class="body"><p>Hi Denis,</p><p>Thanks for the call yesterday. I've attached the revised scope — we've trimmed it to identity, web and the launch kit, and moved packaging to a second phase so we can hit the December date.</p><p>Kickoff would be 3 November with final delivery on 12 December. Could you confirm by Friday, and let me know if you can make the workshop on the 30th?</p></div>
+    </div>
+   </div>
+   <div class="reply">
+    <div class="rh"><svg style="width:14px;height:14px"><use href="#reply"/></svg>Reply to <b>Mara Reyes</b>
+     <div class="seg"><div>Concise</div><div class="on">Warm</div><div>Neutral</div><div>Formal</div></div></div>
+    <div class="rb">Hi Mara, <del>yeah that works for me, I'll try to make the workshop.</del> <ins>thanks — the trimmed scope and the 3 Nov kickoff work well for us. I'll confirm sign-off by Friday, and I'd love to join the workshop on the 30th.</ins><span class="caret"></span></div>
+    <div class="aibar glass"><div class="lab"><svg><use href="#spark"/></svg>Rewrote 1 sentence · Warm</div>
+     <div class="btn"><svg><use href="#refresh"/></svg>Retry</div>
+     <div class="btn sec"><svg><use href="#x"/></svg>Discard</div>
+     <div class="btn pri">Accept <span class="kbd">⌘↵</span></div></div>
+   </div>
+  </section>
+ </main>
+</div>
+</body></html>
