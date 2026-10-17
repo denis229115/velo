@@ -85,8 +85,9 @@ export function useKeyboardShortcuts() {
         target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT" ||
         target.isContentEditable || target.closest("[contenteditable='true']") !== null
       );
-      // A dialog owns its keys; the underlying ticket must not react.
-      if (document.querySelector('[role="dialog"]')) return;
+      // A dialog owns its keys so the underlying ticket does not react.
+      // The hidden-pane reader is the open email thread, so mail shortcuts still apply.
+      if (document.querySelector('[role="dialog"]:not([data-mail-reader])')) return;
       if (isInputFocused) {
         pendingKeyRef.current = null;
         if (pendingTimerRef.current) clearTimeout(pendingTimerRef.current);
