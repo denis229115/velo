@@ -503,6 +503,10 @@ export async function imapInitialSync(
       let folderFetchedCount = 0;
       let folderStoredCount = 0;
       let lastUid = 0;
+      // Lowest UID of a chunk that could not be fetched. last_uid must stay below it, or the
+      // folder would be recorded as synced with that mail missing.
+      let firstFailedUid: number | null = null;
+      let failedChunks = 0;
       const uidvalidity = searchResult.folder_status.uidvalidity;
 
       // Phase 2b: Fetch messages in small IPC-friendly chunks
@@ -520,10 +524,14 @@ export async function imapInitialSync(
               chunkResult = await imapFetchMessages(config, folder.raw_path, chunkUids);
             } catch (retryErr) {
               console.error(`[imapSync] Chunk retry failed in ${folder.path}:`, retryErr);
+              failedChunks++;
+              firstFailedUid ??= Math.min(...chunkUids);
               continue;
             }
           } else {
             console.error(`[imapSync] Failed to fetch chunk ${chunkStart}-${chunkStart + chunkUids.length} in ${folder.path}:`, chunkErr);
+            failedChunks++;
+            firstFailedUid ??= Math.min(...chunkUids);
             continue;
           }
         }
@@ -667,6 +675,13 @@ export async function imapInitialSync(
       console.log(
         `[imapSync] Folder ${folder.path}: ${uidsToFetch.length} UIDs, ${folderFetchedCount} fetched, ${folderStoredCount} stored`,
       );
+
+      if (firstFailedUid !== null) {
+        lastUid = Math.min(lastUid, firstFailedUid - 1);
+        folderErrors.push(
+          `${folder.path}: ${failedChunks} chunk(s) failed to fetch, last_uid held at ${lastUid} so the next sync retries them`,
+        );
+      }
 
       // Update folder sync state only after this folder's chunks have finished.
       await upsertFolderSyncState({
@@ -834,11 +849,31 @@ export async function imapInitialSync(
 // Delta sync
 // ---------------------------------------------------------------------------
 
+/** What one delta cycle did, for the one-line-per-cycle sync log. */
+export interface ImapDeltaStats {
+  foldersChecked: number;
+  messagesFetched: number;
+  errors: string[];
+}
+
 /**
  * Perform delta sync for an IMAP account.
  * Fetches only new messages since the last sync using stored UID state.
  */
-export async function imapDeltaSync(accountId: string, daysBack = 365): Promise<SyncResult> {
+export async function imapDeltaSync(
+  accountId: string,
+  daysBack = 365,
+): Promise<SyncResult & { stats: ImapDeltaStats }> {
+  const stats: ImapDeltaStats = { foldersChecked: 0, messagesFetched: 0, errors: [] };
+  const result = await imapDeltaSyncInner(accountId, daysBack, stats);
+  return { ...result, stats };
+}
+
+async function imapDeltaSyncInner(
+  accountId: string,
+  daysBack: number,
+  stats: ImapDeltaStats,
+): Promise<SyncResult> {
   const account = await getAccount(accountId);
   if (!account) {
     throw new Error(`Account ${accountId} not found`);
@@ -863,6 +898,7 @@ export async function imapDeltaSync(accountId: string, daysBack = 365): Promise<
   // Separate folders into new (no saved state) vs existing (have saved state)
   const newFolders = syncableFolders.filter((f) => !syncStateMap.has(f.raw_path));
   const existingFolders = syncableFolders.filter((f) => syncStateMap.has(f.raw_path));
+  stats.foldersChecked = newFolders.length;
 
   // Handle new folders: search for UIDs then fetch in chunks
   let consecutiveFailures = 0;
@@ -916,6 +952,7 @@ export async function imapDeltaSync(accountId: string, daysBack = 365): Promise<
       const errMsg = err instanceof Error ? err.message : String(err ?? "Unknown error");
       console.error(`Delta sync failed for new folder ${folder.path}:`, err);
       deltaFolderErrors.push(`${folder.path}: ${errMsg}`);
+      stats.errors.push(`${folder.path}: ${errMsg}`);
       if (isConnectionError(err)) {
         consecutiveFailures++;
       }
@@ -969,9 +1006,14 @@ export async function imapDeltaSync(accountId: string, daysBack = 365): Promise<
           }
         } catch (folderErr) {
           console.error(`[imapSync] Per-folder check failed for ${folder.path}:`, folderErr);
+          stats.errors.push(
+            `${folder.path}: ${folderErr instanceof Error ? folderErr.message : String(folderErr ?? "Unknown error")}`,
+          );
         }
       }
     }
+
+    stats.foldersChecked += deltaResultMap.size;
 
     for (const folder of existingFolders) {
       const folderMapping = mapFolderToLabel(folder);
@@ -1052,9 +1094,12 @@ export async function imapDeltaSync(accountId: string, daysBack = 365): Promise<
         const errMsg = err instanceof Error ? err.message : String(err ?? "Unknown error");
         console.error(`Delta sync failed for folder ${folder.path}:`, err);
         deltaFolderErrors.push(`${folder.path}: ${errMsg}`);
+        stats.errors.push(`${folder.path}: ${errMsg}`);
       }
     }
   }
+
+  stats.messagesFetched = allThreadable.length;
 
   // If no new messages found and every folder errored, propagate the error
   if (allThreadable.length === 0 && deltaFolderErrors.length > 0) {

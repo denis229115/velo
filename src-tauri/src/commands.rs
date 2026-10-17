@@ -6,6 +6,13 @@ use crate::imap::types::{
 use crate::smtp::client as smtp_client;
 use crate::smtp::types::{SmtpConfig, SmtpSendResult};
 
+/// Write one sync-cycle summary line from the frontend to the app log at info level.
+#[tauri::command]
+pub fn log_sync_cycle(line: String) {
+    let line: String = line.chars().filter(|c| !c.is_control()).take(600).collect();
+    log::info!("{line}");
+}
+
 // ---------- IMAP commands ----------
 
 #[tauri::command]
@@ -38,19 +45,7 @@ pub async fn imap_fetch_messages(
         .collect::<Vec<_>>()
         .join(",");
 
-    let mut session = imap_client::connect(&config).await?;
-    let result = imap_client::fetch_messages(&mut session, &folder, &uid_set).await;
-    let _ = session.logout().await;
-
-    match result {
-        Ok(r) => Ok(r),
-        Err(e) if e.starts_with("ASYNC_IMAP_EMPTY:") => {
-            // async-imap can't parse this server's responses — use raw TCP fallback
-            log::info!("Falling back to raw TCP fetch for folder {folder}");
-            imap_client::raw_fetch_messages(&config, &folder, &uid_set).await
-        }
-        Err(e) => Err(e),
-    }
+    imap_client::fetch_messages_with_fallback(&config, &folder, &uid_set).await
 }
 
 #[tauri::command]
@@ -261,7 +256,7 @@ pub async fn imap_sync_folder(
     since_date: Option<String>,
 ) -> Result<ImapFolderSyncResult, String> {
     let mut session = imap_client::connect(&config).await?;
-    let result = imap_client::sync_folder(&mut session, &folder, batch_size, since_date).await;
+    let result = imap_client::sync_folder(&mut session, &config, &folder, batch_size, since_date).await;
     let _ = session.logout().await;
     result
 }

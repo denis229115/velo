@@ -42,6 +42,9 @@ vi.mock("../db/calendars", () => ({
   upsertCalendar: vi.fn(),
   updateCalendarSyncToken: vi.fn(),
 }));
+vi.mock("../syncCycleLog", () => ({
+  logSyncCycle: vi.fn(),
+}));
 vi.mock("../db/calendarEvents", () => ({
   upsertCalendarEvent: vi.fn(),
   deleteEventByRemoteId: vi.fn(),
@@ -56,6 +59,7 @@ import {
   onSyncStatus,
 } from "./syncManager";
 import { getAccount } from "../db/accounts";
+import { logSyncCycle } from "../syncCycleLog";
 import { getGmailClient } from "./tokenManager";
 import { initialSync, deltaSync } from "./sync";
 import { imapInitialSync, imapDeltaSync } from "../imap/imapSync";
@@ -417,6 +421,56 @@ describe("syncManager", () => {
 
       expect(errors).toHaveLength(1);
       expect(errors[0]).toBe("Unknown error");
+    });
+  });
+
+  describe("sync cycle log", () => {
+    const folderState = {
+      account_id: "imap-1",
+      folder_path: "INBOX",
+      uidvalidity: 1,
+      last_uid: 5,
+      modseq: null,
+      last_sync_at: 1,
+    };
+
+    it("logs one summary per IMAP delta cycle with folders, messages and errors", async () => {
+      mockGetAccount.mockResolvedValue(makeImapAccount("imap-1"));
+      mockGetAllFolderSyncStates.mockResolvedValue([folderState]);
+      mockImapDeltaSync.mockResolvedValue({
+        messages: [],
+        stats: { foldersChecked: 12, messagesFetched: 3, errors: ["Sent: timeout"] },
+      });
+
+      await syncAccount("imap-1");
+
+      expect(logSyncCycle).toHaveBeenCalledTimes(1);
+      expect(logSyncCycle).toHaveBeenCalledWith(
+        expect.objectContaining({
+          accountId: "imap-1",
+          provider: "imap",
+          kind: "delta",
+          foldersChecked: 12,
+          messagesFetched: 3,
+          errors: ["Sent: timeout"],
+          durationMs: expect.any(Number),
+        }),
+      );
+    });
+
+    it("logs the cycle even when the sync fails", async () => {
+      mockGetAccount.mockResolvedValue(makeImapAccount("imap-1"));
+      mockGetAllFolderSyncStates.mockResolvedValue([folderState]);
+      mockImapDeltaSync.mockRejectedValue(new Error("All folders failed to sync: INBOX: boom"));
+
+      await syncAccount("imap-1");
+
+      expect(logSyncCycle).toHaveBeenCalledTimes(1);
+      expect(logSyncCycle).toHaveBeenCalledWith(
+        expect.objectContaining({
+          errors: ["All folders failed to sync: INBOX: boom"],
+        }),
+      );
     });
   });
 });

@@ -97,6 +97,7 @@ pub fn run() {
             open_devtools,
             vibrancy::native_vibrancy_active,
             commands::imap_test_connection,
+            commands::log_sync_cycle,
             commands::imap_list_folders,
             commands::imap_fetch_messages,
             commands::imap_fetch_new_uids,
