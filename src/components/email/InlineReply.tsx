@@ -40,6 +40,7 @@ export function InlineReply({ thread, messages, accountId, noReply, onSent }: In
   const [autoDraftLoading, setAutoDraftLoading] = useState(false);
   const [hasAutoDraft, setHasAutoDraft] = useState(false);
   const [autoDraftOn, setAutoDraftOn] = useState(false);
+  const [reviewDraft, setReviewDraft] = useState(false);
   const accounts = useAccountStore((s) => s.accounts);
   const activeAccount = accounts.find((a) => a.id === accountId);
   const openComposer = useComposerStore((s) => s.openComposer);
@@ -118,8 +119,20 @@ export function InlineReply({ thread, messages, accountId, noReply, onSent }: In
       }
     };
     window.addEventListener("velo-inline-reply", handler);
-    return () => window.removeEventListener("velo-inline-reply", handler);
-  }, [activateMode]);
+    const onDraft = (event: Event) => {
+      const text = (event as CustomEvent<{ text?: string }>).detail?.text;
+      if (!text || !editor) return;
+      autoDraftAbortRef.current = true;
+      setMode("reply");
+      setReviewDraft(true);
+      editor.commands.setContent(`<p>${escapeHtml(text)}</p>`);
+    };
+    window.addEventListener("velo-insert-reply-draft", onDraft);
+    return () => {
+      window.removeEventListener("velo-inline-reply", handler);
+      window.removeEventListener("velo-insert-reply-draft", onDraft);
+    };
+  }, [activateMode, editor]);
 
   // Scroll into view when activated
   useEffect(() => {
@@ -390,6 +403,9 @@ export function InlineReply({ thread, messages, accountId, noReply, onSent }: In
       />}
       {/* Editor */}
       <div className="relative">
+        {reviewDraft && (
+          <p className="px-3 pt-2 text-meta text-text-tertiary">Review this draft before sending.</p>
+        )}
         <EditorContent editor={editor} />
         {autoDraftLoading && (
           <div className="absolute inset-0 flex items-center justify-center bg-bg-primary/60">
@@ -450,4 +466,8 @@ export function InlineReply({ thread, messages, accountId, noReply, onSent }: In
       </div>
     </div>
   );
+}
+
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[char] ?? char));
 }

@@ -14,6 +14,7 @@ import { EntryKindBadge } from "./TicketActivity";
 import { TicketEditError, useTicketEditor } from "./useTicketEditor";
 import { useTicketEditControls } from "./TicketEditControls";
 import { TicketHeader } from "./TicketHeader";
+import { TicketInspector } from "./TicketInspector";
 import { FreshdeskWriteReason } from "./useFreshdeskWritable";
 import { TicketComposer } from "./TicketComposer";
 import { TicketSummaryCard, ticketEntryAnchor } from "./TicketSummaryCard";
@@ -151,6 +152,21 @@ export function TicketReader({ ticket, ticketId }: { ticket: TicketListItem | nu
   const edit = useTicketEditControls(ticket, editor);
   const editError = editor.error && editor.error.ticketId === ticket?.id ? editor.error : null;
   const [composing, setComposing] = useState<{ ticketId: string; mode: ComposerMode; aiDraftRequest?: number } | null>(null);
+  const [inspectorOpen, setInspectorOpen] = useState(false);
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey || event.key.toLowerCase() !== "i") return;
+      const target = event.target;
+      if (target instanceof HTMLElement) {
+        const tag = target.tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || target.isContentEditable) return;
+      }
+      event.preventDefault();
+      setInspectorOpen((open) => !open);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   const composerMode = composing && composing.ticketId === ticket?.id ? composing.mode : null;
   const compose = (mode: ComposerMode) => ticket && setComposing({ ticketId: ticket.id, mode });
   useShortcutAction("action.reply", ({ ticketId }) => {
@@ -181,11 +197,14 @@ export function TicketReader({ ticket, ticketId }: { ticket: TicketListItem | nu
           subtitle={ticketId ? `Ticket #${ticketId} is not in the local copy` : "Select a ticket to read"}
         />
       ) : (
-        <div className="overflow-y-auto px-8 py-6">
+        <div className="flex min-h-0 flex-1">
+        <div className="min-w-0 flex-1 overflow-y-auto px-8 py-6">
           <TicketHeader
             ticket={ticket}
             channel={view?.channel ?? null}
             edit={edit}
+            compact={inspectorOpen}
+            onToggleInspector={() => setInspectorOpen((open) => !open)}
             onReply={() => compose("reply")}
             onInternalNote={() => compose("note")}
             notice={
@@ -204,6 +223,8 @@ export function TicketReader({ ticket, ticketId }: { ticket: TicketListItem | nu
           )}
           <HistoryNotice view={view} />
           {view && view.entries.length > 0 && <History key={view.ticketId} entries={view.entries} />}
+        </div>
+        {inspectorOpen && <TicketInspector ticket={ticket} onAssign={editor.run} />}
         </div>
       )}
     </section>

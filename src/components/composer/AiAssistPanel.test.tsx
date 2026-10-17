@@ -51,7 +51,8 @@ describe("AiAssistPanel", () => {
     fireEvent.change(input, { target: { value: "Ask for the invoice" } });
     fireEvent.click(screen.getByText("Generate"));
 
-    expect(await screen.findByText("Network unavailable")).toBeInTheDocument();
+    expect(await screen.findByText("Couldn't reach the assistant. Check your connection and try again.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
     expect(setContent).not.toHaveBeenCalled();
   });
 

@@ -282,27 +282,35 @@ Do not rely on colour alone for unread state: the dot is paired with a heavier n
 
 ## What is wired today
 
-Shipped with this foundation:
+The token foundation:
 
 - The tokens in `theme.css`, in light and dark.
 - Tailwind aliases: `bg-system-*`, `text-system-*`, `bg-glass-*`, `shadow-e0`–`shadow-e3`, `ease-glass`, `rounded-window`, `rounded-shell`, `rounded-panel`, `rounded-menu`, `rounded-control`, `font-ui`, `text-callout`, `text-headline`. Durations are the `--motion-*` variables; `duration-160`, `duration-220` and `duration-280` match them.
-- `.glass-bar` and `.glass-pop`, unused by product components.
+- `.glass-bar` and `.glass-pop`, and the same recipes as `.material-bar` and `.material-pop` for product components.
 - Solid fallbacks for non-macOS, reduced transparency and increased contrast.
 - Radius updates on `Button`, `TextField`, `Modal` and `ContextMenu`. `Kbd` uses the key-chip colours.
+
+Product surfaces on those tokens:
+
+- Anchored schedule, snooze and follow-up pickers. `DateTimePickerDialog` stays for its existing contract.
+- A sticky Freshdesk header with an SLA chip and a ⌘I inspector. Assignee is a searchable combobox. Group, tags and custom fields stay read-only.
+- Command palette fuzzy ranking, Move to and Snooze pages, and Ask AI on Tab.
+- Mail-list virtualisation past 80 rows, undo for optimistic removals, confirm sheets, and an auth-expired banner.
+- The AI brief, reply chips, ⌘J prompt bar, selection rewrite and inline diff. Providers still return one finished string; `completeText` is the streaming-shaped interface in front of them.
 
 Not done, on purpose:
 
 - Restyling the sidebar, list, reader, composer or settings onto these tokens.
 - Switching `body` to `--font-ui`.
 - Replacing `--color-accent` or the AA-safe `--status-*` colours.
-- Building the ⌘J bar, selection menu, inline diff or streaming caret.
+- Token-by-token streaming from the model providers. The caret, Stop and chunk callback are ready for that.
 
 ## File map
 
 | File | Holds |
 | --- | --- |
 | `src/styles/theme.css` | Token values, platform and accessibility overrides |
-| `src/styles/globals.css` | Tailwind aliases, `.glass-bar`, `.glass-pop`, `.glass-sidebar` |
+| `src/styles/globals.css` | Tailwind aliases, `.glass-bar`, `.glass-pop`, `.material-bar`, `.material-pop`, `.glass-sidebar` |
 | `src/hooks/useAppearance.ts` | `platform-mac`, `reduce-transparency`, `increase-contrast`, plus theme and reduced motion |
 | `docs/velo.html` | Static mockup |
 | `docs/velo-light.png`, `docs/velo-dark.png` | Renders of that mockup |

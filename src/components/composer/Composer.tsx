@@ -69,6 +69,7 @@ export function Composer() {
   const activeAccount = accounts.find((a) => a.id === activeAccountId);
   const sendingRef = useRef(false);
   const [showSchedule, setShowSchedule] = useState(false);
+  const scheduleAnchorRef = useRef<HTMLButtonElement>(null);
   const [showAiAssist, setShowAiAssist] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [aliases, setAliases] = useState<SendAsAlias[]>([]);
@@ -582,8 +583,10 @@ export function Composer() {
                 Send
               </button>
               <button
+                ref={scheduleAnchorRef}
                 onClick={() => setShowSchedule(true)}
                 disabled={to.length === 0}
+                aria-label="Send later"
                 className="px-2 py-1.5 text-white bg-accent hover:bg-accent-hover border-l border-white/20 rounded-r-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 title={sendLaterKeys ? `Send later (${formatShortcut(sendLaterKeys)})` : "Send later"}
               >
@@ -598,6 +601,7 @@ export function Composer() {
         <ScheduleSendDialog
           onSchedule={handleSchedule}
           onClose={() => setShowSchedule(false)}
+          anchorRef={scheduleAnchorRef}
         />
       )}
     </div>

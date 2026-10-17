@@ -9,6 +9,8 @@ import { useContextMenuStore } from "@/stores/contextMenuStore";
 import { navigateToLabel, navigateToThread, navigateToTicket, navigateBack, getActiveLabel, getSelectedThreadId, getSelectedTicketId } from "@/router/navigate";
 import { selectCurrentView, selectVisibleTickets, useTicketStore } from "@/stores/ticketStore";
 import { archiveThread, trashThread, permanentDeleteThread, starThread, spamThread } from "@/services/emailActions";
+import { peekUndo, undoLast } from "@/services/undoStack";
+import { requestConfirm } from "@/components/ui/confirmRequest";
 import { deleteThread as deleteThreadFromDb, pinThread as pinThreadDb, unpinThread as unpinThreadDb, muteThread as muteThreadDb, unmuteThread as unmuteThreadDb } from "@/services/db/threads";
 import { deleteDraftsForThread } from "@/services/gmail/draftDeletion";
 import { getGmailClient } from "@/services/gmail/tokenManager";
@@ -85,6 +87,11 @@ export function useKeyboardShortcuts() {
         target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT" ||
         target.isContentEditable || target.closest("[contenteditable='true']") !== null
       );
+      if (!isInputFocused && e.key.toLowerCase() === "z" && !e.metaKey && !e.ctrlKey && !e.altKey && peekUndo()) {
+        e.preventDefault();
+        undoLast();
+        return;
+      }
       // A dialog owns its keys; the underlying ticket must not react.
       if (document.querySelector('[role="dialog"]')) return;
       if (isInputFocused) {
@@ -361,6 +368,22 @@ async function executeAction(actionId: string): Promise<void> {
       const multiDeleteIds = useThreadStore.getState().selectedThreadIds;
       if (multiDeleteIds.size > 0 && activeAccountId) {
         const ids = [...multiDeleteIds];
+        if (isTrashView) {
+          const ok = await requestConfirm({
+            title: ids.length > 1 ? `Delete ${ids.length} forever?` : "Delete forever?",
+            message: "This removes the conversation from Velo. It can't be undone.",
+            confirmLabel: "Delete forever",
+            danger: true,
+          });
+          if (!ok) return;
+        } else if (ids.length >= 10) {
+          const ok = await requestConfirm({
+            title: `Move ${ids.length} to trash?`,
+            message: "You can undo this from the toast, or press Z.",
+            confirmLabel: "Move to trash",
+          });
+          if (!ok) return;
+        }
         for (const id of ids) {
           if (isTrashView) {
             await permanentDeleteThread(activeAccountId, id, []);
@@ -379,6 +402,13 @@ async function executeAction(actionId: string): Promise<void> {
         }
       } else if (selectedId && activeAccountId) {
         if (isTrashView) {
+          const ok = await requestConfirm({
+            title: "Delete forever?",
+            message: "This removes the conversation from Velo. It can't be undone.",
+            confirmLabel: "Delete forever",
+            danger: true,
+          });
+          if (!ok) return;
           await permanentDeleteThread(activeAccountId, selectedId, []);
           await deleteThreadFromDb(activeAccountId, selectedId);
         } else if (isDraftsView) {

@@ -2,8 +2,9 @@ import { useState, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { Sparkles, X, Send, ExternalLink } from "lucide-react";
 import { askMyInbox, type AskInboxResult } from "@/services/ai/askInbox";
-import { AiError } from "@/services/ai/errors";
+import { friendlyAiError } from "@/services/ai/friendlyError";
 import { AiSendNote } from "@/components/ai/AiSendPreview";
+import { AiFailure } from "@/components/ai/AiCard";
 import { useAccountStore } from "@/stores/accountStore";
 import { navigateToLabel } from "@/router/navigate";
 
@@ -16,6 +17,7 @@ export function AskInbox({ isOpen, onClose }: AskInboxProps) {
   const [question, setQuestion] = useState("");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<AskInboxResult | null>(null);
+  const [failure, setFailure] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const activeAccountId = useAccountStore((s) => s.activeAccountId);
 
@@ -23,17 +25,13 @@ export function AskInbox({ isOpen, onClose }: AskInboxProps) {
     if (!question.trim() || !activeAccountId || loading) return;
     setLoading(true);
     setResult(null);
+    setFailure(null);
     try {
       const res = await askMyInbox(question.trim(), activeAccountId);
       setResult(res);
     } catch (err) {
       console.error("Ask inbox failed:", err);
-      setResult({
-        answer: err instanceof AiError
-          ? err.message
-          : "Sorry, something went wrong. Please check your AI configuration and try again.",
-        sourceMessages: [],
-      });
+      setFailure(friendlyAiError(err).message);
     } finally {
       setLoading(false);
     }
@@ -59,6 +57,7 @@ export function AskInbox({ isOpen, onClose }: AskInboxProps) {
   const handleClear = useCallback(() => {
     setQuestion("");
     setResult(null);
+    setFailure(null);
     inputRef.current?.focus();
   }, []);
 
@@ -113,41 +112,32 @@ export function AskInbox({ isOpen, onClose }: AskInboxProps) {
             </div>
           )}
 
+          {failure && !loading && (
+            <div className="p-4">
+              <AiFailure message={failure} onRetry={() => void handleAsk()} />
+            </div>
+          )}
+
           {result && (
             <div className="p-4 space-y-4">
-              {/* Answer */}
               <div className="text-sm text-text-primary leading-relaxed whitespace-pre-wrap">
                 {result.answer}
               </div>
 
-              {/* Source messages */}
               {result.sourceMessages.length > 0 && (
-                <div>
-                  <div className="text-xs font-medium text-text-tertiary uppercase tracking-wider mb-2">
-                    Sources ({result.sourceMessages.length})
-                  </div>
-                  <div className="space-y-1.5">
-                    {result.sourceMessages.slice(0, 5).map((msg) => (
-                      <button
-                        key={msg.message_id}
-                        onClick={() => handleNavigateToThread(msg.thread_id)}
-                        className="w-full text-left px-3 py-2 rounded-md bg-bg-secondary hover:bg-bg-hover transition-colors group"
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-medium text-text-primary truncate">
-                            {msg.from_name ?? msg.from_address ?? "Unknown"}
-                          </span>
-                          <span className="text-[0.625rem] text-text-tertiary shrink-0 ml-2">
-                            {new Date(msg.date).toLocaleDateString()}
-                          </span>
-                        </div>
-                        <div className="text-xs text-text-secondary truncate mt-0.5 flex items-center gap-1">
-                          {msg.subject ?? "(no subject)"}
-                          <ExternalLink size={10} className="opacity-0 group-hover:opacity-100 shrink-0" />
-                        </div>
-                      </button>
-                    ))}
-                  </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {result.sourceMessages.slice(0, 5).map((msg) => (
+                    <button
+                      key={msg.message_id}
+                      type="button"
+                      onClick={() => handleNavigateToThread(msg.thread_id)}
+                      className="inline-flex items-center gap-1 max-w-full rounded-full border border-separator px-2.5 py-1 text-meta text-text-secondary hover:bg-state-hover"
+                      title={msg.subject ?? "(no subject)"}
+                    >
+                      <span className="truncate">{msg.from_name ?? msg.from_address ?? "Unknown"}</span>
+                      <ExternalLink size={10} className="shrink-0" />
+                    </button>
+                  ))}
                 </div>
               )}
 
@@ -161,7 +151,7 @@ export function AskInbox({ isOpen, onClose }: AskInboxProps) {
             </div>
           )}
 
-          {!loading && !result && (
+          {!loading && !result && !failure && (
             <div className="px-4 py-8 text-center text-sm text-text-tertiary">
               Ask anything about your emails — meetings, conversations, attachments, and more.
             </div>

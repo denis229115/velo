@@ -1,53 +1,35 @@
-import { DateTimePickerDialog } from "@/components/ui/DateTimePickerDialog";
+import type { RefObject } from "react";
+import { Popover } from "@/components/ui/Popover";
+import { QuickSchedulePicker, type ScheduleChoice } from "@/components/ui/QuickSchedulePicker";
 
 interface FollowUpDialogProps {
   isOpen?: boolean;
   onSetReminder: (remindAt: number) => void;
   onClose: () => void;
+  anchorRef?: RefObject<HTMLElement | null>;
 }
 
-function getFollowUpPresets(): { label: string; timestamp: number }[] {
+function getFollowUpPresets(): ScheduleChoice[] {
   const now = new Date();
-
-  // In 1 day
-  const oneDay = new Date(now);
-  oneDay.setDate(oneDay.getDate() + 1);
-  oneDay.setHours(9, 0, 0, 0);
-
-  // In 2 days
-  const twoDays = new Date(now);
-  twoDays.setDate(twoDays.getDate() + 2);
-  twoDays.setHours(9, 0, 0, 0);
-
-  // In 3 days
-  const threeDays = new Date(now);
-  threeDays.setDate(threeDays.getDate() + 3);
-  threeDays.setHours(9, 0, 0, 0);
-
-  // In 1 week
-  const oneWeek = new Date(now);
-  oneWeek.setDate(oneWeek.getDate() + 7);
-  oneWeek.setHours(9, 0, 0, 0);
-
+  const at = (days: number) => {
+    const next = new Date(now);
+    next.setDate(next.getDate() + days);
+    next.setHours(8, 0, 0, 0);
+    return Math.floor(next.getTime() / 1000);
+  };
   return [
-    { label: "In 1 day", timestamp: Math.floor(oneDay.getTime() / 1000) },
-    { label: "In 2 days", timestamp: Math.floor(twoDays.getTime() / 1000) },
-    { label: "In 3 days", timestamp: Math.floor(threeDays.getTime() / 1000) },
-    { label: "In 1 week", timestamp: Math.floor(oneWeek.getTime() / 1000) },
+    { label: "In 1 day", timestamp: at(1) },
+    { label: "In 2 days", timestamp: at(2) },
+    { label: "In 3 days", timestamp: at(3) },
+    { label: "In 1 week", timestamp: at(7) },
   ];
 }
 
-export function FollowUpDialog({ isOpen = true, onSetReminder, onClose }: FollowUpDialogProps) {
-  const presets = getFollowUpPresets();
-
+export function FollowUpDialog({ isOpen = true, onSetReminder, onClose, anchorRef }: FollowUpDialogProps) {
+  if (!isOpen) return null;
   return (
-    <DateTimePickerDialog
-      isOpen={isOpen}
-      onClose={onClose}
-      title="Remind me if no reply..."
-      presets={presets}
-      onSelect={onSetReminder}
-      submitLabel="Set reminder"
-    />
+    <Popover open onClose={onClose} title="Remind me if no reply..." anchorRef={anchorRef}>
+      <QuickSchedulePicker presets={getFollowUpPresets()} onSelect={onSetReminder} submitLabel="Set reminder" />
+    </Popover>
   );
 }

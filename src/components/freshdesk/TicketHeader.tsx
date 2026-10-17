@@ -331,6 +331,34 @@ function Details({ ticket }: { ticket: TicketListItem }) {
   );
 }
 
+/** Amber under two hours, red when overdue or inside the last half hour. Hidden when Freshdesk sent no due time. */
+function SlaChip({ dueBy }: { dueBy: number | null }) {
+  if (dueBy === null) return null;
+  const remaining = dueBy - Date.now();
+  const overdue = remaining < 0;
+  const urgent = remaining < 30 * 60 * 1000;
+  const warning = !overdue && !urgent && remaining < 2 * 60 * 60 * 1000;
+  const tone = overdue || urgent ? "text-status-error" : warning ? "text-status-warning" : "text-text-secondary";
+  const label = overdue ? `Overdue ${formatSla(-remaining)}` : formatSla(remaining);
+  return (
+    <span
+      title={overdue ? "Resolution time has passed" : "Time left to resolve"}
+      className={`inline-flex items-center gap-1 rounded-full bg-surface-subtle px-2 py-0.5 text-meta tabular-nums ${tone}`}
+    >
+      <CircleAlert size={11} aria-hidden className="shrink-0" />
+      <span>{label}</span>
+    </span>
+  );
+}
+
+function formatSla(ms: number): string {
+  const minutes = Math.max(0, Math.round(ms / 60000));
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 48) return `${hours}h`;
+  return `${Math.round(hours / 24)}d`;
+}
+
 /**
  * The ticket's header, grouped by what the operator decides from it: identity
  * and actions, what it needs, its state, the customer and timing, linked work.
@@ -342,6 +370,8 @@ export function TicketHeader({
   notice,
   onReply,
   onInternalNote,
+  compact = false,
+  onToggleInspector,
 }: {
   ticket: TicketListItem;
   /** How the ticket reached the helpdesk, once its history is read */
@@ -352,6 +382,9 @@ export function TicketHeader({
   /** Open the ticket composer in that mode; without them the slots explain they are not available */
   onReply?: () => void;
   onInternalNote?: () => void;
+  /** Inspector open: keep status, priority and SLA, and tuck the rest away. */
+  compact?: boolean;
+  onToggleInspector?: () => void;
 }) {
   const a = ticket.activity;
   const priority: BadgeAppearance = ticket.priority
@@ -359,7 +392,7 @@ export function TicketHeader({
     : { tone: "neutral", icon: Equal, label: "No priority", title: "Priority: None" };
   const assignee = ticket.assignee ?? (ticket.assigneeId ? `Agent ${ticket.assigneeId}` : "Unassigned");
   return (
-    <div role="group" aria-label="Ticket header" className="@container max-w-4xl mb-6 space-y-4">
+    <div role="group" aria-label="Ticket header" className="@container sticky top-0 z-10 bg-surface-reader max-w-4xl mb-6 space-y-4 pb-2">
       <div>
         <div data-clickup-drawer-header className="flex flex-wrap items-center gap-x-2 gap-y-1.5 min-w-0 text-meta text-text-tertiary">
           <nav aria-label="Breadcrumb" className="hidden @md:block truncate">
@@ -383,6 +416,17 @@ export function TicketHeader({
               onClick={onInternalNote}
             />
             <MoreMenu ticket={ticket} />
+            {onToggleInspector && (
+              <button
+                type="button"
+                aria-pressed={compact}
+                title="Inspector (Cmd+I)"
+                onClick={onToggleInspector}
+                className="inline-flex items-center rounded-md border border-border-primary px-2 py-1 text-meta text-text-secondary hover:bg-bg-hover"
+              >
+                Inspector
+              </button>
+            )}
           </div>
         </div>
         <h2 className="text-title font-semibold text-text-primary mt-2 break-words">{ticket.subject || "(no subject)"}</h2>
@@ -394,12 +438,15 @@ export function TicketHeader({
         <div role="group" aria-label="Ticket state" className="flex flex-wrap items-center gap-1.5">
           <EditPill field="Status" appearance={statusAppearance(ticket.status)} edit={edit} />
           <EditPill field="Priority" appearance={priority} edit={edit} />
+          <SlaChip dueBy={ticket.dueBy} />
+          {!compact && (
           <EditPill
             field="Assignee"
             appearance={{ tone: "neutral", icon: UserRound, label: assignee, title: `Assignee: ${assignee}` }}
             edit={edit}
           />
-          {ticket.group && (
+          )}
+          {!compact && ticket.group && (
             <span
               title={`Group: ${ticket.group.name}`}
               className="inline-flex items-center gap-1 min-w-0 max-w-full rounded-full px-2 py-0.5 text-meta text-text-tertiary bg-surface-subtle"
@@ -412,7 +459,7 @@ export function TicketHeader({
         {notice}
       </div>
 
-      <div className="grid gap-x-8 gap-y-3 @2xl:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)] items-start border-t border-border-primary pt-4">
+      {!compact && <div className="grid gap-x-8 gap-y-3 @2xl:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)] items-start border-t border-border-primary pt-4">
         <Customer ticket={ticket} channel={channel} />
         <div className="min-w-0 space-y-2">
           <dl className="grid grid-cols-3 items-end gap-x-4">
@@ -428,9 +475,9 @@ export function TicketHeader({
           </dl>
           <Details ticket={ticket} />
         </div>
-      </div>
+      </div>}
 
-      <LinkedWorkRow item={{ kind: "ticket", ticketId: ticket.id }} />
+      {!compact && <LinkedWorkRow item={{ kind: "ticket", ticketId: ticket.id }} />}
     </div>
   );
 }

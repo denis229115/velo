@@ -4,6 +4,7 @@ import { useThreadStore } from "@/stores/threadStore";
 import { useAccountStore } from "@/stores/accountStore";
 import { useActiveLabel } from "@/hooks/useRouteNavigation";
 import { archiveThread, trashThread, permanentDeleteThread, markThreadRead, starThread, spamThread } from "@/services/emailActions";
+import { requestConfirm } from "@/components/ui/confirmRequest";
 import { deleteThread as deleteThreadFromDb, pinThread as pinThreadDb, unpinThread as unpinThreadDb, muteThread as muteThreadDb, unmuteThread as unmuteThreadDb } from "@/services/db/threads";
 import { deleteDraftsForThread } from "@/services/gmail/draftDeletion";
 import { snoozeThread } from "@/services/snooze/snoozeManager";
@@ -75,6 +76,13 @@ export function ActionBar({ thread, messages, noReply, defaultReplyMode = "reply
     const isTrashView = activeLabel === "trash";
     const isDraftsView = activeLabel === "drafts";
     if (isTrashView) {
+      const ok = await requestConfirm({
+        title: "Delete forever?",
+        message: "This removes the conversation from Velo. It can't be undone.",
+        confirmLabel: "Delete forever",
+        danger: true,
+      });
+      if (!ok) return;
       await permanentDeleteThread(activeAccountId, thread.id, []);
       await deleteThreadFromDb(activeAccountId, thread.id);
     } else if (isDraftsView) {

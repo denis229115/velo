@@ -81,6 +81,9 @@ import { useTaskStore } from "./stores/taskStore";
 import { ContextMenuPortal } from "./components/ui/ContextMenuPortal";
 import { MoveToFolderDialog } from "./components/email/MoveToFolderDialog";
 import { OfflineBanner } from "./components/ui/OfflineBanner";
+import { AuthExpiredBanner } from "./components/ui/AuthExpiredBanner";
+import { ConfirmHost } from "./components/ui/ConfirmSheet";
+import { UndoToast } from "./components/ui/UndoToast";
 import { UpdateToast } from "./components/ui/UpdateToast";
 import { ErrorBoundary } from "./components/ui/ErrorBoundary";
 import { formatSyncError } from "./utils/networkErrors";
@@ -530,7 +533,12 @@ export default function App() {
             </ErrorBoundary>
           }
           footer={<StatusBar syncStatus={syncStatus} />}
-          banner={<OfflineBanner />}
+          banner={
+            <>
+              <OfflineBanner />
+              <AuthExpiredBanner />
+            </>
+          }
         >
           <Outlet />
         </AppFrame>
@@ -547,6 +555,8 @@ export default function App() {
         <Composer />
       </ErrorBoundary>
       <UndoSendToast />
+      <UndoToast />
+      <ConfirmHost />
       <UpdateToast />
       <ErrorBoundary name="CommandPalette">
         <CommandPalette

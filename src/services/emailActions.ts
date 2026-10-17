@@ -1,10 +1,12 @@
 import { useUIStore } from "@/stores/uiStore";
-import { useThreadStore } from "@/stores/threadStore";
+import { useThreadStore, type Thread } from "@/stores/threadStore";
 import { getEmailProvider } from "@/services/email/providerFactory";
 import { enqueuePendingOperation } from "@/services/db/pendingOperations";
 import { classifyError } from "@/utils/networkErrors";
 import { getDb } from "@/services/db/connection";
 import { navigateToThread, getSelectedThreadId } from "@/router/navigate";
+import { clearUndo, offerUndo } from "@/services/undoStack";
+import { reportAuthExpired } from "@/services/authNotice";
 
 // ---------------------------------------------------------------------------
 // Action types
@@ -118,6 +120,53 @@ function applyOptimisticUpdate(action: EmailAction): void {
       // No universal optimistic update for these
       break;
   }
+}
+
+interface RemovalSnapshot {
+  thread: Thread;
+  index: number;
+}
+
+const REMOVALS = new Set<EmailAction["type"]>(["archive", "trash", "spam", "moveToFolder"]);
+
+function captureRemoval(action: EmailAction): RemovalSnapshot | null {
+  if (!("threadId" in action) || !REMOVALS.has(action.type)) return null;
+  const threads = useThreadStore.getState().threads ?? [];
+  const index = threads.findIndex((thread) => thread.id === action.threadId);
+  const thread = threads[index];
+  if (!thread || index < 0) return null;
+  return { thread: { ...thread, labelIds: [...(thread.labelIds ?? [])] }, index };
+}
+
+function restoreRemoval(snapshot: RemovalSnapshot | null): void {
+  if (!snapshot) return;
+  useThreadStore.getState().restoreThread?.(snapshot.thread, snapshot.index);
+}
+
+function undoLabel(action: EmailAction): string {
+  switch (action.type) {
+    case "archive": return "Archived";
+    case "trash": return "Moved to trash";
+    case "spam": return action.isSpam ? "Reported spam" : "Not spam";
+    case "moveToFolder": return "Moved";
+    case "addLabel": return "Labelled";
+    case "removeLabel": return "Label removed";
+    case "star": return action.starred ? "Starred" : "Unstarred";
+    case "markRead": return action.read ? "Marked read" : "Marked unread";
+    default: return "Updated";
+  }
+}
+
+function rememberUndo(action: EmailAction, snapshot: RemovalSnapshot | null): void {
+  if (action.type === "permanentDelete" || action.type === "sendMessage" || action.type === "createDraft" || action.type === "updateDraft" || action.type === "deleteDraft") return;
+  if (!snapshot && action.type !== "star" && action.type !== "markRead" && action.type !== "addLabel" && action.type !== "removeLabel") return;
+  offerUndo({
+    label: undoLabel(action),
+    undo: () => {
+      restoreRemoval(snapshot);
+      if (!snapshot) revertOptimisticUpdate(action);
+    },
+  });
 }
 
 function revertOptimisticUpdate(action: EmailAction): void {
@@ -304,6 +353,7 @@ export async function executeEmailAction(
   accountId: string,
   action: EmailAction,
 ): Promise<ActionResult> {
+  const snapshot = captureRemoval(action);
   // 1. Optimistic UI update
   applyOptimisticUpdate(action);
 
@@ -322,12 +372,14 @@ export async function executeEmailAction(
       getResourceId(action),
       actionToParams(action),
     );
+    rememberUndo(action, snapshot);
     return { success: true, queued: true };
   }
 
   // 4. Try online execution
   try {
     const data = await executeViaProvider(accountId, action);
+    rememberUndo(action, snapshot);
     return { success: true, data };
   } catch (err) {
     const classified = classifyError(err);
@@ -340,11 +392,15 @@ export async function executeEmailAction(
         getResourceId(action),
         actionToParams(action),
       );
+      rememberUndo(action, snapshot);
       return { success: true, queued: true };
     }
 
-    // Permanent error — revert optimistic update
+    // Permanent error — revert optimistic update and put a removed thread back.
     revertOptimisticUpdate(action);
+    restoreRemoval(snapshot);
+    clearUndo();
+    if (classified.type === "auth") reportAuthExpired(accountId);
     console.error(`Email action ${action.type} failed permanently:`, err);
     return { success: false, error: classified.message };
   }

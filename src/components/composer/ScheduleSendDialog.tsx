@@ -1,5 +1,7 @@
-import type { ReactNode } from "react";
-import { DateTimePickerDialog } from "@/components/ui/DateTimePickerDialog";
+import { useRef, type ReactNode, type RefObject } from "react";
+import { Popover } from "@/components/ui/Popover";
+import { QuickSchedulePicker } from "@/components/ui/QuickSchedulePicker";
+import { buildSchedulePresets, presetFromDate, recipientMorning } from "@/utils/schedulePresets";
 
 interface ScheduleSendDialogProps {
   onSchedule: (timestamp: number) => void;
@@ -9,66 +11,42 @@ interface ScheduleSendDialogProps {
   note?: string;
   /** Options chosen before picking a time */
   children?: ReactNode;
-}
-
-function getSchedulePresets(): { label: string; detail: string; timestamp: number }[] {
-  const now = new Date();
-  const today = new Date(now);
-
-  // Tomorrow morning 9am
-  const tomorrowMorning = new Date(today);
-  tomorrowMorning.setDate(tomorrowMorning.getDate() + 1);
-  tomorrowMorning.setHours(9, 0, 0, 0);
-
-  // Tomorrow afternoon 1pm
-  const tomorrowAfternoon = new Date(today);
-  tomorrowAfternoon.setDate(tomorrowAfternoon.getDate() + 1);
-  tomorrowAfternoon.setHours(13, 0, 0, 0);
-
-  // Monday morning 9am
-  const monday = new Date(today);
-  const dayOfWeek = monday.getDay();
-  const daysUntilMonday = (1 - dayOfWeek + 7) % 7 || 7;
-  monday.setDate(monday.getDate() + daysUntilMonday);
-  monday.setHours(9, 0, 0, 0);
-
-  return [
-    {
-      label: "Tomorrow morning",
-      detail: tomorrowMorning.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }) + " 9:00 AM",
-      timestamp: Math.floor(tomorrowMorning.getTime() / 1000),
-    },
-    {
-      label: "Tomorrow afternoon",
-      detail: tomorrowAfternoon.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }) + " 1:00 PM",
-      timestamp: Math.floor(tomorrowAfternoon.getTime() / 1000),
-    },
-    {
-      label: "Monday morning",
-      detail: monday.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }) + " 9:00 AM",
-      timestamp: Math.floor(monday.getTime() / 1000),
-    },
-  ];
+  anchorRef?: RefObject<HTMLElement | null>;
+  /** Minutes east of UTC, when the last inbound Date header had one. */
+  recipientOffsetMinutes?: number | null;
 }
 
 const EMAIL_NOTE =
   "Your email sends when Velo is next open at or after this time — not while your Mac sleeps or Velo is closed.";
 
-export function ScheduleSendDialog({ onSchedule, onClose, title = "Schedule send", note = EMAIL_NOTE, children }: ScheduleSendDialogProps) {
-  const presets = getSchedulePresets();
+export function ScheduleSendDialog({
+  onSchedule,
+  onClose,
+  title = "Schedule send",
+  note = EMAIL_NOTE,
+  children,
+  anchorRef,
+  recipientOffsetMinutes = null,
+}: ScheduleSendDialogProps) {
+  const fallbackRef = useRef<HTMLElement | null>(null);
+  const now = new Date();
+  const presets = buildSchedulePresets(now);
+  if (recipientOffsetMinutes !== null) {
+    const morning = recipientMorning(now, recipientOffsetMinutes);
+    presets.push(presetFromDate(morning, "Recipient’s morning", "recipient"));
+  }
 
   return (
-    <DateTimePickerDialog
-      isOpen={true}
-      onClose={onClose}
-      title={title}
-      presets={presets}
-      onSelect={onSchedule}
-      submitLabel="Schedule"
-      zIndex="z-[60]"
-      note={note}
-    >
-      {children}
-    </DateTimePickerDialog>
+    <Popover open onClose={onClose} title={title} anchorRef={anchorRef ?? fallbackRef} width={340}>
+      <QuickSchedulePicker
+        presets={presets}
+        onSelect={onSchedule}
+        submitLabel="Schedule"
+        note={note}
+        recipientOffsetMinutes={recipientOffsetMinutes}
+      >
+        {children}
+      </QuickSchedulePicker>
+    </Popover>
   );
 }
