@@ -9,7 +9,8 @@ vi.mock("@/services/db/connection", async (importOriginal) => {
 });
 
 import { getDb } from "@/services/db/connection";
-import { deleteAllMessagesForAccount, updateMessageThreadIds } from "./messages";
+import { deleteAllMessagesForAccount, updateMessageThreadIds, getLatestInboundDateHeader } from "./messages";
+import { createSqliteTestDb } from "@/test/sqliteTestDb";
 import { createMockDb } from "@/test/mocks";
 
 const mockDb = createMockDb();
@@ -18,6 +19,33 @@ describe("messages service", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(getDb).mockResolvedValue(mockDb as unknown as Awaited<ReturnType<typeof getDb>>);
+  });
+
+  it("loads the latest non-null sender header with a bound optional account scope", async () => {
+    mockDb.select.mockResolvedValueOnce([{ date_header: "+0530" }]);
+    expect(await getLatestInboundDateHeader("account-a", "Ada@example.test")).toBe("+0530");
+    expect(mockDb.select).toHaveBeenLastCalledWith(expect.stringMatching(/LOWER\(from_address\) = LOWER\(\$1\)[\s\S]*date_header IS NOT NULL[\s\S]*account_id = \$2[\s\S]*ORDER BY date DESC[\s\S]*LIMIT 1/), ["Ada@example.test", "account-a"]);
+    mockDb.select.mockResolvedValueOnce([]);
+    expect(await getLatestInboundDateHeader(null, "missing@example.test")).toBeNull();
+    expect(mockDb.select).toHaveBeenLastCalledWith(expect.any(String), ["missing@example.test", null]);
+  });
+
+  it("selects the newest usable header in the requested mailbox on SQLite", async () => {
+    const sqlite = createSqliteTestDb();
+    vi.mocked(getDb).mockResolvedValue(sqlite as unknown as Awaited<ReturnType<typeof getDb>>);
+    try {
+      await sqlite.execute("CREATE TABLE messages (account_id TEXT, from_address TEXT, date_header TEXT, date INTEGER)");
+      await sqlite.execute(`INSERT INTO messages VALUES
+        ('a', 'ADA@example.test', '+0100', 10),
+        ('a', 'ada@example.test', '+0530', 20),
+        ('a', 'ada@example.test', NULL, 40),
+        ('b', 'ada@example.test', '-0400', 30),
+        ('a', 'other@example.test', '+0900', 50)`);
+      expect(await getLatestInboundDateHeader("a", "Ada@example.test")).toBe("+0530");
+      expect(await getLatestInboundDateHeader("b", "Ada@example.test")).toBe("-0400");
+      expect(await getLatestInboundDateHeader(null, "Ada@example.test")).toBe("-0400");
+      expect(await getLatestInboundDateHeader("c", "Ada@example.test")).toBeNull();
+    } finally { sqlite.close(); }
   });
 
   describe("deleteAllMessagesForAccount", () => {

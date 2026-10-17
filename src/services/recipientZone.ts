@@ -1,4 +1,4 @@
-import { getDb } from "@/services/db/connection";
+import { getLatestInboundDateHeader } from "@/services/db/messages";
 import { getContactByEmail, setContactTimezone } from "@/services/db/contacts";
 import { offsetFromDateHeader, rememberRecipientOffset, recipientOffset } from "@/utils/recipientTime";
 
@@ -24,17 +24,7 @@ export async function loadRecipientZone(accountId: string | null, email: string)
   const cached = recipientOffset(email);
   if (cached !== null) return { name, offsetMinutes: cached };
 
-  const db = await getDb();
-  const rows = await db.select<{ date_header: string | null }[]>(
-    `SELECT date_header FROM messages
-     WHERE LOWER(from_address) = LOWER($1)
-       AND date_header IS NOT NULL
-       AND ($2 IS NULL OR account_id = $2)
-     ORDER BY date DESC
-     LIMIT 1`,
-    [email, accountId],
-  );
-  const header = rows[0]?.date_header ?? null;
+  const header = await getLatestInboundDateHeader(accountId, email);
   const parsed = header ? offsetFromDateHeader(header) : null;
   if (parsed !== null) {
     rememberRecipientOffset(email, parsed);

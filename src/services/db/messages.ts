@@ -192,3 +192,18 @@ export async function getRecentSentMessages(
     [accountId, accountEmail, limit],
   );
 }
+
+/** Latest known inbound Date header for a sender, optionally scoped to a mailbox. */
+export async function getLatestInboundDateHeader(accountId: string | null, email: string): Promise<string | null> {
+  const db = await getDb();
+  const rows = await db.select<{ date_header: string | null }[]>(
+    `SELECT date_header FROM messages
+     WHERE LOWER(from_address) = LOWER($1)
+       AND date_header IS NOT NULL
+       AND ($2 IS NULL OR account_id = $2)
+     ORDER BY date DESC
+     LIMIT 1`,
+    [email, accountId],
+  );
+  return rows[0]?.date_header ?? null;
+}
