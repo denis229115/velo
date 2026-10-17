@@ -1,10 +1,19 @@
 import { useEffect, useState } from "react";
 import { useUIStore } from "@/stores/uiStore";
 import { getThemeById } from "@/constants/themes";
+import { isMacPlatform } from "@/utils/shortcutLabel";
 import { useNativeVibrancy } from "./useNativeVibrancy";
 
 const DARK_QUERY = "(prefers-color-scheme: dark)";
 const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
+const REDUCED_TRANSPARENCY_QUERY = "(prefers-reduced-transparency: reduce)";
+const MORE_CONTRAST_QUERY = "(prefers-contrast: more)";
+
+function syncPlatformClass(): void {
+  document.documentElement.classList.toggle("platform-mac", isMacPlatform());
+}
+
+if (typeof document !== "undefined") syncPlatformClass();
 
 function useMediaQuery(query: string): boolean {
   const [matches, setMatches] = useState(() => window.matchMedia(query).matches);
@@ -31,6 +40,8 @@ export function useAppearance(): void {
   const colorTheme = useUIStore((s) => s.colorTheme);
   const reduceMotionSetting = useUIStore((s) => s.reduceMotion);
   const systemReducedMotion = useMediaQuery(REDUCED_MOTION_QUERY);
+  const systemReducedTransparency = useMediaQuery(REDUCED_TRANSPARENCY_QUERY);
+  const systemMoreContrast = useMediaQuery(MORE_CONTRAST_QUERY);
   const reduceMotion = reduceMotionSetting || systemReducedMotion;
 
   useNativeVibrancy(isDark);
@@ -40,8 +51,20 @@ export function useAppearance(): void {
   }, [isDark]);
 
   useEffect(() => {
+    syncPlatformClass();
+  }, []);
+
+  useEffect(() => {
     document.documentElement.classList.toggle("reduce-motion", reduceMotion);
   }, [reduceMotion]);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("reduce-transparency", systemReducedTransparency);
+  }, [systemReducedTransparency]);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("increase-contrast", systemMoreContrast);
+  }, [systemMoreContrast]);
 
   useEffect(() => {
     const root = document.documentElement;

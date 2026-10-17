@@ -136,6 +136,20 @@ describe("useAppearance", () => {
     });
   });
 
+  describe("transparency and contrast", () => {
+    it("follows reduced transparency and increased contrast from the system", () => {
+      const system = mockSystemPreferences({ reducedTransparency: false, moreContrast: false });
+      render(<AppearanceRoot />);
+      const root = document.documentElement;
+      expect(root.classList.contains("reduce-transparency")).toBe(false);
+      expect(root.classList.contains("increase-contrast")).toBe(false);
+
+      act(() => system.set({ reducedTransparency: true, moreContrast: true }));
+      expect(root.classList.contains("reduce-transparency")).toBe(true);
+      expect(root.classList.contains("increase-contrast")).toBe(true);
+    });
+  });
+
   describe.each(["light", "dark"] as const)("%s theme tokens", (theme) => {
     beforeEach(() => {
       mockSystemPreferences({ dark: false });
