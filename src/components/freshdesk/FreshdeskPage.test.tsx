@@ -448,13 +448,24 @@ it("rebinds Internal note from settings and uses the new key immediately", async
 
 
 it.each([
-  ["S", "Status"], ["P", "Priority"], ["A", "Assignee"],
-])("Shift+%s focuses the existing %s control", async (key, label) => {
+  ["s", "Status"], ["p", "Priority"],
+])("%s opens the %s property menu", async (key, label) => {
   await connectAndSync();
   renderFreshdesk("/freshdesk/ticket/1001");
   const region = within(await screen.findByRole("region", { name: "Ticket reader" }));
-  const control = await region.findByRole("combobox", { name: label });
-  fireEvent.keyDown(window, { key, shiftKey: true });
+  await region.findByRole("button", { name: label, exact: true });
+  fireEvent.keyDown(window, { key });
+  const menu = await screen.findByRole("menu", { name: label });
+  await waitFor(() => expect(menu).toHaveFocus());
+  expect(within(menu).getAllByRole("menuitem").length).toBeGreaterThan(0);
+});
+
+it("a focuses the existing Assignee control", async () => {
+  await connectAndSync();
+  renderFreshdesk("/freshdesk/ticket/1001");
+  const region = within(await screen.findByRole("region", { name: "Ticket reader" }));
+  const control = await region.findByRole("combobox", { name: "Assignee" });
+  fireEvent.keyDown(window, { key: "a" });
   expect(control).toHaveFocus();
 });
 
