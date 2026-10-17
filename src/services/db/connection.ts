@@ -39,9 +39,9 @@ export function buildDynamicUpdate(
 
 /**
  * Simple async mutex to prevent concurrent SQLite transactions.
- * SQLite only supports one writer at a time; overlapping BEGIN/COMMIT/ROLLBACK
- * on the same connection causes "cannot start a transaction within a transaction"
- * or "database is locked" errors.
+ * All queries share one connection, so overlapping BEGIN/COMMIT/ROLLBACK cause
+ * "cannot start a transaction within a transaction". Queries outside the mutex
+ * that run while a transaction is open join it.
  */
 let txQueue: Promise<void> = Promise.resolve();
 
@@ -66,12 +66,41 @@ async function runExclusive<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
+const BEGIN_RETRY_MS = 50;
+const BEGIN_WAIT_LIMIT_MS = 30_000;
+
+/**
+ * The app has ONE SQLite connection (vendored tauri-plugin-sql), shared by every
+ * window, but each window has its own `txQueue`. A transaction opened in another
+ * window makes BEGIN fail with "cannot start a transaction within a transaction";
+ * wait for it to finish instead of failing at once.
+ */
+async function retryBegin(database: Database, firstError: unknown): Promise<void> {
+  const deadline = Date.now() + BEGIN_WAIT_LIMIT_MS;
+  let err = firstError;
+  for (;;) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (!msg.includes("within a transaction") || Date.now() >= deadline) throw err;
+    await new Promise((resolve) => setTimeout(resolve, BEGIN_RETRY_MS));
+    try {
+      await database.execute("BEGIN TRANSACTION", []);
+      return;
+    } catch (next) {
+      err = next;
+    }
+  }
+}
+
 export async function withTransaction(fn: (db: Database) => Promise<void>): Promise<void> {
   // Queue this transaction behind any currently-running one.
   // This serialises all transactions without blocking non-transactional reads.
   await runExclusive(async () => {
     const database = await getDb();
-    await database.execute("BEGIN TRANSACTION", []);
+    try {
+      await database.execute("BEGIN TRANSACTION", []);
+    } catch (err) {
+      await retryBegin(database, err);
+    }
     try {
       await fn(database);
       await database.execute("COMMIT", []);

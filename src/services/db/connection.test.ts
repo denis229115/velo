@@ -120,6 +120,44 @@ describe("withTransaction", () => {
   });
 });
 
+describe("withTransaction across windows", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("waits while another window's transaction holds the shared connection", async () => {
+    const callOrder: string[] = [];
+    let busy = 2;
+    mockExecute.mockImplementation(async (sql: string) => {
+      if (sql === "BEGIN TRANSACTION" && busy-- > 0) {
+        // tauri-plugin-sql rejects with a plain string
+        throw "error returned from database: (code: 1) cannot start a transaction within a transaction";
+      }
+      callOrder.push(sql);
+    });
+
+    await withTransaction(async () => {
+      callOrder.push("callback");
+    });
+
+    expect(callOrder).toEqual(["BEGIN TRANSACTION", "callback", "COMMIT"]);
+  });
+
+  it("fails at once, without ROLLBACK, when BEGIN fails for another reason", async () => {
+    const callOrder: string[] = [];
+    mockExecute.mockImplementation(async (sql: string) => {
+      callOrder.push(sql);
+      if (sql === "BEGIN TRANSACTION") throw "disk I/O error";
+    });
+    const callback = vi.fn();
+
+    await expect(withTransaction(callback)).rejects.toBe("disk I/O error");
+
+    expect(callback).not.toHaveBeenCalled();
+    expect(callOrder).toEqual(["BEGIN TRANSACTION"]);
+  });
+});
+
 describe("getDb", () => {
   it("returns the same instance on repeated calls", async () => {
     const db1 = await getDb();

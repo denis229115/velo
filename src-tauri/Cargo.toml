@@ -46,8 +46,15 @@ utf7-imap = "0.3"
 socket2 = "0.5"
 reqwest = { version = "0.12", default-features = false, features = ["native-tls", "json"] }
 
+[dev-dependencies]
+sqlx = { version = "0.8", default-features = false, features = ["sqlite", "runtime-tokio"] }
+
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.58", features = ["Win32_UI_Shell"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 tray-item = { version = "0.10.0", default-features = false, features = ["ksni"] }
+
+# Single-connection SQLite pool (see vendor/tauri-plugin-sql/src/wrapper.rs).
+[patch.crates-io]
+tauri-plugin-sql = { path = "vendor/tauri-plugin-sql" }

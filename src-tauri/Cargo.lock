@@ -5994,8 +5994,6 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-sql"
 version = "2.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "27454a5476feb6ea78d74d0f07085fc8a5e97565d7ae825373011fd27ec30303"
 dependencies = [
  "futures-core",
  "indexmap 2.13.0",
@@ -6799,6 +6797,7 @@ dependencies = [
  "serde",
  "serde_json",
  "socket2 0.5.10",
+ "sqlx",
  "tauri",
  "tauri-build",
  "tauri-plugin-autostart",
