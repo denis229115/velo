@@ -3,13 +3,13 @@ import type { Editor } from "@tiptap/react";
 import { Sparkles } from "lucide-react";
 import { getAiReadiness, type AiReadiness } from "@/services/ai/gateway";
 import {
-  composeFromPrompt,
-  generateReply,
-  transformText,
+  composeFromPromptStream,
+  generateReplyStream,
+  transformTextStream,
   type TransformType,
 } from "@/services/ai/aiService";
 import { friendlyAiError } from "@/services/ai/friendlyError";
-import { completeText, readTextStream, type TextStream } from "@/services/ai/textStream";
+import { readTextStream, type TextStream } from "@/services/ai/textStream";
 import { useComposerStore } from "@/stores/composerStore";
 import { AiSendNote } from "@/components/ai/AiSendPreview";
 import { AiFailure } from "@/components/ai/AiCard";
@@ -106,23 +106,29 @@ export function AiAssistPanel({ editor, isReplyMode, threadMessages }: AiAssistP
     );
   }
 
-  const runStream = async (instruction: string, produce: () => Promise<string>) => {
+  const runStream = async (instruction: string, produce: (signal: AbortSignal) => AsyncIterable<string>) => {
     if (!editor || loading) return;
     const before = editor.getHTML();
+    const controller = new AbortController();
     setLoading(true);
     setError(null);
     setCanRetry(false);
     setDiff({ before, after: "", summary: instruction, streaming: true, retry: () => { void lastRun.current?.(); } });
-    const stream = completeText("");
+    const stream: TextStream = {
+      abort() { controller.abort(); },
+      async *[Symbol.asyncIterator]() {
+        yield* produce(controller.signal);
+      },
+    };
     streamRef.current = stream;
     try {
-      const result = await produce();
-      streamRef.current = completeText(result);
-      const after = await readTextStream(streamRef.current, (soFar) => {
-        setDiff((current) => current && { ...current, after: soFar });
+      const after = await readTextStream(stream, (soFar) => {
+        if (!controller.signal.aborted) setDiff((current) => current && { ...current, after: soFar });
       });
+      if (controller.signal.aborted) return;
       setDiff((current) => current && { ...current, after, streaming: false, summary: instruction });
     } catch (err) {
+      if (controller.signal.aborted) return;
       const friendly = friendlyAiError(err);
       setError(friendly.message);
       setCanRetry(friendly.retry);
@@ -136,7 +142,9 @@ export function AiAssistPanel({ editor, isReplyMode, threadMessages }: AiAssistP
   const handleCompose = async () => {
     const instruction = prompt.trim();
     if (!instruction) return;
-    const run = () => runStream(instruction, () => (isReplyMode ? generateReply(threadMessages ?? [], instruction) : composeFromPrompt(instruction)));
+    const run = () => runStream(instruction, (signal) => (
+      isReplyMode ? generateReplyStream(threadMessages ?? [], instruction, signal) : composeFromPromptStream(instruction, signal)
+    ));
     lastRun.current = run;
     await run();
   };
@@ -145,7 +153,7 @@ export function AiAssistPanel({ editor, isReplyMode, threadMessages }: AiAssistP
     if (!editor) return;
     const html = editor.getHTML();
     if (!html || html === "<p></p>") return;
-    const run = () => runStream(`${label}`, () => transformText(html, type));
+    const run = () => runStream(`${label}`, (signal) => transformTextStream(html, type, signal));
     lastRun.current = run;
     await run();
   };
@@ -161,7 +169,7 @@ export function AiAssistPanel({ editor, isReplyMode, threadMessages }: AiAssistP
         <button
           ref={anchorRef}
           type="button"
-          className="inline-flex items-center gap-1 text-xs text-accent"
+          className="inline-flex items-center gap-1 text-xs text-text-secondary"
           onClick={() => setOpen((value) => !value)}
         >
           <Sparkles size={12} />
@@ -174,7 +182,7 @@ export function AiAssistPanel({ editor, isReplyMode, threadMessages }: AiAssistP
 
       {open && (
         <div className="material-pop rounded-full px-3 py-1.5 flex items-center gap-2">
-          <Sparkles size={12} className="text-accent shrink-0" aria-hidden />
+          <Sparkles size={12} className="text-text-secondary shrink-0" aria-hidden />
           <input
             type="text"
             value={prompt}
@@ -201,7 +209,7 @@ export function AiAssistPanel({ editor, isReplyMode, threadMessages }: AiAssistP
             type="button"
             onClick={() => void handleCompose()}
             disabled={loading || (!isReplyMode && !prompt.trim())}
-            className="px-2 py-0.5 text-xs text-white bg-accent rounded-full disabled:opacity-50"
+            className="px-2 py-0.5 text-xs text-text-secondary border border-separator rounded-full disabled:opacity-50"
           >
             {loading ? "..." : isReplyMode ? "Generate Reply" : "Generate"}
           </button>

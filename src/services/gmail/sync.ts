@@ -133,6 +133,7 @@ async function processAndStoreThread(
       listUnsubscribe: parsed.listUnsubscribe,
       listUnsubscribePost: parsed.listUnsubscribePost,
       authResults: parsed.authResults,
+      dateHeader: parsed.dateHeader,
     });
 
     await Promise.all(parsed.attachments.map((att) =>

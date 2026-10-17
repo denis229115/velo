@@ -31,10 +31,13 @@ function buildReverseMap(keyMap: Record<string, string>): {
   singleKey: Map<string, string>;
   twoKeySequences: Map<string, string>; // second key -> action ID (first key is always "g")
   ctrlCombos: Map<string, string>;
+  /** Ticket keys stay off the mail map. s, p and a still star, pin and reply all in mail. */
+  ticketKeys: Map<string, string>;
 } {
   const singleKey = new Map<string, string>();
   const twoKeySequences = new Map<string, string>();
   const ctrlCombos = new Map<string, string>();
+  const ticketKeys = new Map<string, string>();
 
   for (const [id, keys] of Object.entries(keyMap)) {
     // Send now / send later are dispatched by the composer (useComposerShortcuts)
@@ -45,12 +48,14 @@ function buildReverseMap(keyMap: Record<string, string>): {
       twoKeySequences.set(secondKey, id);
     } else if (keys.includes("+")) {
       ctrlCombos.set(id, keys);
+    } else if (id.startsWith("ticket.")) {
+      ticketKeys.set(keys, id);
     } else {
       singleKey.set(keys, id);
     }
   }
 
-  return { singleKey, twoKeySequences, ctrlCombos };
+  return { singleKey, twoKeySequences, ctrlCombos, ticketKeys };
 }
 
 // Cached reverse map to avoid rebuilding on every keypress
@@ -100,7 +105,7 @@ export function useKeyboardShortcuts() {
       }
 
       const keyMap = useShortcutStore.getState().keyMap;
-      const { singleKey, twoKeySequences, ctrlCombos } = getCachedReverseMap(keyMap);
+      const { singleKey, twoKeySequences, ctrlCombos, ticketKeys } = getCachedReverseMap(keyMap);
 
       // Modified bindings (including Shift and Alt) use the same matcher as composers.
       if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) {
@@ -174,7 +179,8 @@ export function useKeyboardShortcuts() {
       if (key === "Enter" && target instanceof HTMLElement && target.closest("button, a")) return;
 
       // Single key shortcuts; keep o as an alias only for the default open binding.
-      let actionId = singleKey.get(key);
+      // On a ticket, s / p / a open status, priority and assign instead of mail actions.
+      let actionId = getActiveLabel() === "freshdesk" ? ticketKeys.get(key) ?? singleKey.get(key) : singleKey.get(key);
       if (!actionId && key === "o" && keyMap["nav.open"] === "Enter") actionId = "nav.open";
       // Delete and Backspace always trigger delete action
       if (!actionId && (key === "Delete" || key === "Backspace")) {

@@ -495,7 +495,7 @@ export const HELP_CATEGORIES: HelpCategory[] = [
           { text: "Ask Inbox (AI)", shortcut: "i" },
           { text: "Sync current folder", shortcut: "F5" },
           { text: "Tickets reuse r (reply), Ctrl+Enter (send) and Ctrl+Shift+L (send later)." },
-          { text: "Ticket actions: n (Internal note), z (Summarize), d (AI draft), Shift+S (Status), Shift+P (Priority), Shift+A (Assignee), b (list/board)." },
+          { text: "Ticket actions: n (Internal note), z (Summarize), d (AI draft), s (Status), p (Priority), a (Assign), b (list/board). On a ticket, s, p and a do not star, pin or reply all." },
           { text: "Press t on an email or ticket to open ClickUp create/link controls; Shift+T creates a Velo to-do from email." },
           { text: "Field shortcuts focus the control; choose with arrow keys and Enter. Ticket shortcuts are skipped while typing, even when rebound to modified keys." },
           { text: "Customize all shortcuts in Settings > Shortcuts." },

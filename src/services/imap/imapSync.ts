@@ -183,6 +183,7 @@ export function imapMessageToParsedMessage(
     listUnsubscribe: msg.list_unsubscribe,
     listUnsubscribePost: msg.list_unsubscribe_post,
     authResults: msg.auth_results,
+    dateHeader: msg.date_header ?? null,
   };
 
   const threadable: ThreadableMessage = {
@@ -315,6 +316,7 @@ async function storeThreadsAndMessages(
             listUnsubscribe: parsed.listUnsubscribe,
             listUnsubscribePost: parsed.listUnsubscribePost,
             authResults: parsed.authResults,
+            dateHeader: parsed.dateHeader,
             messageIdHeader: imapMsg?.message_id ?? null,
             referencesHeader: imapMsg?.references ?? null,
             inReplyToHeader: imapMsg?.in_reply_to ?? null,
@@ -582,6 +584,7 @@ export async function imapInitialSync(
                 listUnsubscribe: parsed.listUnsubscribe,
                 listUnsubscribePost: parsed.listUnsubscribePost,
                 authResults: parsed.authResults,
+                dateHeader: parsed.dateHeader,
                 messageIdHeader: msg.message_id ?? null,
                 referencesHeader: msg.references ?? null,
                 inReplyToHeader: msg.in_reply_to ?? null,

@@ -193,19 +193,22 @@ body {
 
 .ai-caret {
   display: inline-block;
-  width: 2px;
-  height: 16px;
+  width: 1.5px;
+  height: 1em;
+  margin-left: 1px;
   border-radius: 1px;
-  background: var(--system-accent);
+  background: var(--text-tertiary);
   vertical-align: text-bottom;
+  opacity: 0.35;
 }
 
 html:not(.reduce-motion) .ai-caret {
-  animation: ai-caret 1s step-end infinite;
+  animation: ai-caret 1.4s ease-in-out infinite;
 }
 
 @keyframes ai-caret {
-  50% { opacity: 0; }
+  0%, 100% { opacity: 0.2; }
+  50% { opacity: 0.85; }
 }
 
 html:not(.platform-mac) .glass-bar,

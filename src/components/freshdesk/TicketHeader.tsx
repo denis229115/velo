@@ -243,6 +243,7 @@ function AttentionLine({ ticket }: { ticket: TicketListItem }) {
  */
 function EditPill({ field, appearance, edit }: { field: "Status" | "Priority" | "Assignee"; appearance: BadgeAppearance; edit: EditControls }) {
   const labelId = fieldId(field);
+  if (field !== "Assignee") return edit.render(field, labelId);
   const { tone, icon: Icon, label, title } = appearance;
   return (
     <span
@@ -432,7 +433,7 @@ export function TicketHeader({
         <h2 className="text-title font-semibold text-text-primary mt-2 break-words">{ticket.subject || "(no subject)"}</h2>
       </div>
 
-      <AttentionLine ticket={ticket} />
+      {!compact && <AttentionLine ticket={ticket} />}
 
       <div className="space-y-1.5">
         <div role="group" aria-label="Ticket state" className="flex flex-wrap items-center gap-1.5">

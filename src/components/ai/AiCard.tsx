@@ -10,18 +10,15 @@ interface AiCardProps {
 }
 
 /**
- * The shared assistant surface: a quiet accent tint, a sparkle, and the same
- * header and footer on every card.
+ * The shared assistant surface: a neutral material card, a monochrome sparkle,
+ * and the same header and footer on every card. Accent is reserved for Accept.
  */
 export function AiCard({ title, footnote, actions, children }: AiCardProps) {
   return (
-    <section
-      className="rounded-[var(--radius-panel)] border border-separator px-3 py-2"
-      style={{ background: "color-mix(in srgb, var(--system-ai) 9%, var(--surface-reader))" }}
-    >
+    <section className="material-pop rounded-[var(--radius-panel)] border border-separator px-3 py-2">
       <header className="flex items-center gap-2">
-        <Sparkles size={14} className="shrink-0 text-accent" aria-hidden />
-        <h3 className="text-preview font-medium text-accent flex-1 min-w-0 truncate">{title}</h3>
+        <Sparkles size={14} className="shrink-0 text-text-secondary" aria-hidden />
+        <h3 className="text-preview font-medium text-text-primary flex-1 min-w-0 truncate">{title}</h3>
         {actions && <div className="flex items-center gap-1 shrink-0">{actions}</div>}
       </header>
       <div className="mt-2">{children}</div>
@@ -36,7 +33,7 @@ export function AiSkeleton({ lines = 3 }: { lines?: number }) {
       {Array.from({ length: lines }, (_, index) => (
         <div
           key={index}
-          className="h-2.5 rounded-full bg-accent/15 animate-pulse"
+          className="h-2.5 rounded-full bg-text-tertiary/20 animate-pulse"
           style={{ width: index === lines - 1 ? "55%" : "100%" }}
         />
       ))}
@@ -49,7 +46,7 @@ export function AiFailure({ message, onRetry }: { message: string; onRetry?: () 
     <div className="flex items-center gap-2">
       <p className="text-preview text-text-secondary flex-1">{message}</p>
       {onRetry && (
-        <button type="button" onClick={onRetry} className="text-preview text-accent hover:underline shrink-0">
+        <button type="button" onClick={onRetry} className="text-preview text-text-secondary hover:text-text-primary shrink-0">
           Retry
         </button>
       )}

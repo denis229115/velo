@@ -13,6 +13,7 @@ import { useUIStore } from "./stores/uiStore";
 import { useAccountStore } from "./stores/accountStore";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { runMigrations } from "./services/db/migrations";
+import { reportSyncNotice } from "./services/syncNotice";
 import { getAllAccounts } from "./services/db/accounts";
 import { getSetting } from "./services/db/settings";
 import {
@@ -421,24 +422,28 @@ export default function App() {
   // Listen for sync status updates
   const backfillDoneRef = useRef(false);
   useEffect(() => {
+    const showSync = (next: string | null) => {
+      setSyncStatus(next);
+      reportSyncNotice(next);
+    };
     const unsub = onSyncStatus((accountId, status, progress, error) => {
       if (status === "syncing") {
         if (progress) {
           if (progress.phase === "messages") {
-            setSyncStatus(
+            showSync(
               `Syncing: ${progress.current}/${progress.total} messages`,
             );
           } else if (progress.phase === "labels") {
-            setSyncStatus("Syncing labels...");
+            showSync("Syncing labels...");
           } else if (progress.phase === "threads") {
-            setSyncStatus(`Building threads... (${progress.current}/${progress.total})`);
+            showSync(`Building threads... (${progress.current}/${progress.total})`);
           }
         } else {
-          setSyncStatus("Syncing...");
+          showSync("Syncing...");
         }
       } else if (status === "done") {
-        setSyncStatus("Sync complete");
-        setTimeout(() => setSyncStatus(null), 2_000);
+        showSync("Sync complete");
+        setTimeout(() => showSync(null), 2_000);
         window.dispatchEvent(new Event("velo-sync-done"));
         updateBadgeCount();
 
@@ -450,11 +455,11 @@ export default function App() {
             .catch((err) => console.error("Backfill error:", err));
         }
       } else if (status === "error") {
-        setSyncStatus(error ? `Sync failed: ${formatSyncError(error)}` : "Sync failed");
+        showSync(error ? `Sync failed: ${formatSyncError(error)}` : "Sync failed");
         // Still dispatch sync-done so the UI refreshes with any partially stored data
         window.dispatchEvent(new Event("velo-sync-done"));
         // Auto-clear the error after 8 seconds
-        setTimeout(() => setSyncStatus(null), 8_000);
+        setTimeout(() => showSync(null), 8_000);
       }
     });
     return unsub;

@@ -70,13 +70,13 @@ macOS system colours. These do not replace `--text-primary`, `--separator` or `-
 | `--system-warning` | `#FF9500` | `#FF9F0A` |
 | `--system-danger` | `#FF3B30` | `#FF453A` |
 | `--system-success-soft` | `rgba(52, 199, 89, 0.14)` | `rgba(48, 209, 88, 0.18)` |
-| `--system-ai` | `#AF52DE` | `#BF5AF2` |
+| `--system-ai` | `#6E6E73` | `#98989D` |
 | `--system-kbd` | `rgba(0, 0, 0, 0.05)` | `rgba(255, 255, 255, 0.08)` |
 | `--system-kbd-edge` | `rgba(0, 0, 0, 0.12)` | `rgba(255, 255, 255, 0.16)` |
 
 `--system-accent` uses the CSS system colour `AccentColor` when the engine supports it, including in dark appearance. The hex values are the fallback. `--system-accent-soft` is a 12% wash of the light blue and a 22% wash of the dark blue. When a non-blue system accent is active, mix the same percentage of `--system-accent` rather than keeping the blue wash.
 
-`--system-ai` is only for the assistant: the brief, the streaming caret and the spark. It is not a second theme accent.
+`--system-ai` is the assistant's monochrome mark: the same secondary label grey in light and dark. It is not a second theme accent, and it is not a tint on the card. Accent blue is reserved for Accept.
 
 Label tertiary is for timestamps, placeholders and empty counts. It is too light for body text. Secondary is for previews, metadata and inactive tabs. Primary label is for names, subjects and message text.
 
@@ -204,7 +204,7 @@ Avatars are 32px circles. The initials colour is a darkened label hue; the fill 
 
 Title is 17px, 600, tracking `-0.012em`. Chips are 16px tall, fully round, 11px and 600. A label chip uses the label colour at 15% with a 6px dot. A neutral chip uses `--system-hover`.
 
-The brief is a 14px-radius card. Its fill is a quiet gradient from the accent wash to the AI wash, with a 1px edge. The heading is 12px, 600, accent, with the spark icon. Bullets use the label colour; markers use tertiary.
+The brief is a 14px-radius card. Its fill is the neutral material surface with a 1px hairline, and no coloured wash. The heading is 12px, 600, in the label colour, with a monochrome spark icon in the secondary label colour. Bullets use the label colour; markers use tertiary. Accent blue appears only on Accept.
 
 Collapsed messages are a single 24px-avatar row on a separator, name at 500, preview truncated, time tertiary.
 
@@ -260,7 +260,7 @@ Accept and Discard are available for the whole change. There is no per-word acce
 
 ### Streaming
 
-New text appears at the caret as it arrives. The caret is a 2px rounded bar, 16px tall, filled with a gradient from `--system-accent` to `--system-ai`. The bar's label switches from the instruction to the result line when the stream finishes. Discard during a stream aborts it and restores the previous text. Accept enables when the stream finishes. Reduced motion shows the text without a blinking or glowing caret.
+New text appears at the caret as it arrives. The caret is a 1.5px hairline in `--text-tertiary`, one em tall, whose opacity eases between faint and visible. It is not a gradient. The bar's label switches from the instruction to the result line when the stream finishes. Discard during a stream aborts it and restores the previous text. Accept enables when the stream finishes and is the only accent control. Reduced motion shows the text without a pulsing caret.
 
 The brief at the top of a thread is a separate surface: three bullets, accent heading, a source line in tertiary ("Claude · redacted"). It is not an editor.
 
@@ -293,17 +293,17 @@ The token foundation:
 Product surfaces on those tokens:
 
 - Anchored schedule, snooze and follow-up pickers. `DateTimePickerDialog` stays for its existing contract.
-- A sticky Freshdesk header with an SLA chip and a ⌘I inspector. Assignee is a searchable combobox. Group, tags and custom fields stay read-only.
+- A sticky Freshdesk header with an SLA chip and a ⌘I inspector. Status and priority are property pills with anchored menus. Group, type, tags and custom fields save through Freshdesk. Assignee stays a searchable combobox. On a ticket, s, p and a open status, priority and assign.
 - Command palette fuzzy ranking, Move to and Snooze pages, and Ask AI on Tab.
 - Mail-list virtualisation past 80 rows, undo for optimistic removals, confirm sheets, and an auth-expired banner.
-- The AI brief, reply chips, ⌘J prompt bar, selection rewrite and inline diff. Providers still return one finished string; `completeText` is the streaming-shaped interface in front of them.
+- The AI brief, reply chips, ⌘J prompt bar, selection rewrite and inline diff. Cards are a neutral material surface. Claude, OpenAI, Gemini, Ollama and Copilot stream through the gateway; a provider without `stream` still yields one snapshot.
 
 Not done, on purpose:
 
 - Restyling the sidebar, list, reader, composer or settings onto these tokens.
 - Switching `body` to `--font-ui`.
 - Replacing `--color-accent` or the AA-safe `--status-*` colours.
-- Token-by-token streaming from the model providers. The caret, Stop and chunk callback are ready for that.
+- A full restyle of every remaining surface onto the neutral assistant tokens.
 
 ## File map
 

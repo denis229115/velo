@@ -48,6 +48,9 @@ pub struct ImapMessage {
     pub list_unsubscribe: Option<String>,
     pub list_unsubscribe_post: Option<String>,
     pub auth_results: Option<String>,
+    /// The Date header's offset (`+0530`, `-0700`, or `Z`), when the message had one.
+    #[serde(default)]
+    pub date_header: Option<String>,
     pub attachments: Vec<ImapAttachment>,
 }
 

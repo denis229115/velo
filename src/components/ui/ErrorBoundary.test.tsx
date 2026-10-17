@@ -38,7 +38,7 @@ describe("ErrorBoundary", () => {
     );
     expect(screen.getByText("Something went wrong")).toBeInTheDocument();
     expect(screen.getByText("Test error")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
   });
 
   it("renders custom fallback when provided", () => {
@@ -77,7 +77,7 @@ describe("ErrorBoundary", () => {
     );
   });
 
-  it("recovers when 'Try again' is clicked and child no longer throws", () => {
+  it("recovers when 'Retry' is clicked and child no longer throws", () => {
     let shouldThrow = true;
 
     function MaybeThrow() {
@@ -96,7 +96,7 @@ describe("ErrorBoundary", () => {
     // Fix the error condition
     shouldThrow = false;
 
-    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
 
     expect(screen.getByText("Recovered")).toBeInTheDocument();
     expect(screen.queryByText("Something went wrong")).not.toBeInTheDocument();
@@ -111,7 +111,7 @@ describe("ErrorBoundary", () => {
 
     expect(screen.getByText("Something went wrong")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
 
     // Still broken, so fallback should reappear
     expect(screen.getByText("Something went wrong")).toBeInTheDocument();

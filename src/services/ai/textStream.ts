@@ -1,7 +1,7 @@
 /**
- * A stream of assistant text. Providers that only return a finished string
- * are wrapped with `completeText`, so the cards can render a caret, Stop and
- * a final result without each provider speaking the streaming protocol yet.
+ * A stream of assistant text. Each value is the full text so far, not a delta.
+ * `completeText` is the one-chunk shape used when a caller already has the
+ * finished string.
  */
 export interface TextStream {
   abort(): void;
@@ -21,11 +21,11 @@ export function completeText(text: string): TextStream {
   };
 }
 
-/** Appends each chunk and returns the finished text. Stops when the stream ends or is aborted. */
+/** Each yield replaces the text so far. Stops when the stream ends or is aborted. */
 export async function readTextStream(stream: TextStream, onChunk: (soFar: string) => void): Promise<string> {
   let soFar = "";
-  for await (const chunk of stream) {
-    soFar += chunk;
+  for await (const snapshot of stream) {
+    soFar = snapshot;
     onChunk(soFar);
   }
   return soFar;

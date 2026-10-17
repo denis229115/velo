@@ -1,9 +1,9 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { ChevronDown, ChevronUp, Copy, RefreshCw } from "lucide-react";
 import { getAiReadiness, type AiReadiness } from "@/services/ai/gateway";
-import { summarizeThread } from "@/services/ai/aiService";
+import { summarizeThreadStream } from "@/services/ai/aiService";
 import { AiError } from "@/services/ai/errors";
-import { completeText, readTextStream } from "@/services/ai/textStream";
+import { readTextStream, type TextStream } from "@/services/ai/textStream";
 import { AiSendNote } from "@/components/ai/AiSendPreview";
 import { AiCard, AiFailure, AiSkeleton } from "@/components/ai/AiCard";
 import { StreamingCaret } from "@/components/ai/InlineDiff";
@@ -60,9 +60,12 @@ export function ThreadSummary({ threadId, accountId, messages }: ThreadSummaryPr
     setNotSent(null);
     if (refresh) setSummary("");
     try {
-      const result = await summarizeThread(threadId, accountId, messages, { refresh });
-      if (controller.signal.aborted) return;
-      const stream = completeText(result);
+      const stream: TextStream = {
+        abort() { controller.abort(); },
+        async *[Symbol.asyncIterator]() {
+          yield* summarizeThreadStream(threadId, accountId, messages, { refresh }, controller.signal);
+        },
+      };
       const text = await readTextStream(stream, (soFar) => {
         if (!controller.signal.aborted) setSummary(soFar);
       });
@@ -110,14 +113,14 @@ export function ThreadSummary({ threadId, accountId, messages }: ThreadSummaryPr
                 tabIndex={0}
                 onClick={handleRefresh}
                 onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleRefresh(); } }}
-                className="p-0.5 text-text-tertiary hover:text-accent transition-colors cursor-pointer"
+                className="p-0.5 text-text-tertiary hover:text-text-primary transition-colors cursor-pointer"
                 title="Refresh summary"
               >
                 <RefreshCw size={12} className={loading ? "animate-spin" : ""} />
               </span>
             )}
             {summary && (
-              <button type="button" title="Copy summary" onClick={copySummary} className="p-0.5 text-text-tertiary hover:text-accent">
+              <button type="button" title="Copy summary" onClick={copySummary} className="p-0.5 text-text-tertiary hover:text-text-primary">
                 <Copy size={12} />
               </button>
             )}
@@ -126,7 +129,7 @@ export function ThreadSummary({ threadId, accountId, messages }: ThreadSummaryPr
               aria-expanded={!collapsed}
               aria-label={collapsed ? "Show brief" : "Hide brief"}
               onClick={() => setCollapsed((value) => !value)}
-              className="p-0.5 text-text-tertiary hover:text-accent"
+              className="p-0.5 text-text-tertiary hover:text-text-primary"
             >
               {collapsed ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
             </button>
@@ -136,7 +139,7 @@ export function ThreadSummary({ threadId, accountId, messages }: ThreadSummaryPr
         {!collapsed && (
           <div className="text-sm text-text-secondary">
             {!summary && !loading && (
-              <button type="button" onClick={() => loadSummary()} className="text-xs text-accent hover:underline">
+              <button type="button" onClick={() => loadSummary()} className="text-xs text-text-secondary hover:text-text-primary">
                 Summarize
               </button>
             )}

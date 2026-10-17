@@ -80,7 +80,7 @@ export function QuickSchedulePicker({
               <span className="text-row text-text-primary">{preset.label}</span>
               <span className="text-meta text-text-tertiary shrink-0">
                 {preset.detail ?? formatWhen(new Date(preset.timestamp * 1000))}
-                {night(preset.timestamp) ? " · night" : ""}
+                {night(preset.timestamp) ? " · night for them" : ""}
               </span>
             </button>
           </li>
@@ -93,6 +93,9 @@ export function QuickSchedulePicker({
         {picking && (
           <div className="mt-2 space-y-2">
             <MiniCalendar value={customDate} onChange={setCustomDate} />
+            {customDate && night(Math.floor(new Date(`${customDate}T${customTime}`).getTime() / 1000)) && (
+              <p role="status" className="text-meta text-text-secondary">Night for them (22:00–07:00).</p>
+            )}
             <div className="flex items-center gap-2">
               <input
                 type="time"

@@ -56,7 +56,7 @@ interface TicketState {
   /** Tells background hydration which tickets the operator is looking at */
   focusHistory: (openedId: string | null, visibleIds: string[]) => void;
   /**
-   * Changes status, priority or assignee in Freshdesk. `shown` is applied at once
+   * Changes a ticket in Freshdesk. `shown` is applied at once
    * and rolled back unless Freshdesk confirms; afterwards the ticket is re-read.
    */
   editTicket: (

@@ -14,6 +14,8 @@ interface ScheduleSendDialogProps {
   anchorRef?: RefObject<HTMLElement | null>;
   /** Minutes east of UTC, when the last inbound Date header had one. */
   recipientOffsetMinutes?: number | null;
+  /** Display name for the morning preset. */
+  recipientName?: string | null;
 }
 
 const EMAIL_NOTE =
@@ -27,13 +29,15 @@ export function ScheduleSendDialog({
   children,
   anchorRef,
   recipientOffsetMinutes = null,
+  recipientName = null,
 }: ScheduleSendDialogProps) {
   const fallbackRef = useRef<HTMLElement | null>(null);
   const now = new Date();
   const presets = buildSchedulePresets(now);
   if (recipientOffsetMinutes !== null) {
     const morning = recipientMorning(now, recipientOffsetMinutes);
-    presets.push(presetFromDate(morning, "Recipient’s morning", "recipient"));
+    const who = recipientName?.trim() || "Recipient";
+    presets.push(presetFromDate(morning, `${who}’s morning`, "recipient"));
   }
 
   return (

@@ -1210,6 +1210,16 @@ const MIGRATIONS = [
     description: "Helpdesk generation on scheduled Freshdesk replies",
     sql: `ALTER TABLE freshdesk_scheduled_replies ADD COLUMN connection_generation TEXT NOT NULL DEFAULT '';`,
   },
+  {
+    version: 41,
+    description: "Ticket type, custom fields, message Date headers, and a cached contact timezone",
+    sql: `
+      ALTER TABLE freshdesk_tickets ADD COLUMN ticket_type TEXT;
+      ALTER TABLE freshdesk_tickets ADD COLUMN custom_fields_json TEXT;
+      ALTER TABLE messages ADD COLUMN date_header TEXT;
+      ALTER TABLE contacts ADD COLUMN timezone_offset_minutes INTEGER;
+    `,
+  },
 ];
 
 /**

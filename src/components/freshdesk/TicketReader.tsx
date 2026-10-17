@@ -2,6 +2,7 @@ import { useShortcutAction } from "@/hooks/useShortcutAction";
 import { useEffect, useState } from "react";
 import { Lock, Paperclip } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ReadingPaneIllustration } from "@/components/ui/illustrations";
 import { Timestamp } from "@/components/ui/Timestamp";
@@ -224,7 +225,11 @@ export function TicketReader({ ticket, ticketId }: { ticket: TicketListItem | nu
           <HistoryNotice view={view} />
           {view && view.entries.length > 0 && <History key={view.ticketId} entries={view.entries} />}
         </div>
-        {inspectorOpen && <TicketInspector ticket={ticket} onAssign={editor.run} />}
+        {inspectorOpen && (
+          <ErrorBoundary name="Inspector">
+            <TicketInspector ticket={ticket} onEdit={editor.run} />
+          </ErrorBoundary>
+        )}
         </div>
       )}
     </section>

@@ -3,14 +3,23 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import type { Editor } from "@tiptap/react";
 
 vi.mock("@/services/ai/gateway", () => ({ getAiReadiness: vi.fn() }));
+const composeFromPrompt = vi.hoisted(() => vi.fn());
 vi.mock("@/services/ai/aiService", () => ({
-  composeFromPrompt: vi.fn(),
+  composeFromPrompt,
   generateReply: vi.fn(),
   transformText: vi.fn(),
+  composeFromPromptStream: async function* (instructions: string) {
+    yield await composeFromPrompt(instructions);
+  },
+  generateReplyStream: async function* () {
+    yield "";
+  },
+  transformTextStream: async function* () {
+    yield "";
+  },
 }));
 
 import { getAiReadiness } from "@/services/ai/gateway";
-import { composeFromPrompt } from "@/services/ai/aiService";
 import { AiError } from "@/services/ai/errors";
 import { AiAssistPanel } from "./AiAssistPanel";
 

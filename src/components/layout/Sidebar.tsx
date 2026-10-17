@@ -1,11 +1,12 @@
 import { FreshdeskViewNav } from "@/components/freshdesk/FreshdeskViewNav";
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, useSyncExternalStore } from "react";
 import { useDroppable } from "@dnd-kit/core";
 import { AccountSwitcher } from "../accounts/AccountSwitcher";
 import { SidebarHeaderActions } from "./SidebarHeaderActions";
 import { LabelForm } from "../labels/LabelForm";
 import { InputDialog } from "../ui/InputDialog";
 import { useUIStore } from "@/stores/uiStore";
+import { getSyncNotice, subscribeSyncNotice } from "@/services/syncNotice";
 import { useAccountStore } from "@/stores/accountStore";
 import { useLabelStore, type Label } from "@/stores/labelStore";
 import { useContextMenuStore } from "@/stores/contextMenuStore";
@@ -684,27 +685,37 @@ export function Sidebar({ collapsed, onAddAccount }: SidebarProps) {
         ]}
       />
 
-      {/* Pending operations indicator */}
-      <PendingOpsIndicator collapsed={collapsed} />
+      <SyncStatusPill collapsed={collapsed} />
     </aside>
   );
 }
 
-function PendingOpsIndicator({ collapsed }: { collapsed: boolean }) {
-  const pendingOpsCount = useUIStore((s) => s.pendingOpsCount);
-  if (pendingOpsCount <= 0) return null;
-
+function SyncStatusPill({ collapsed }: { collapsed: boolean }) {
+  const notice = useSyncExternalStore(subscribeSyncNotice, getSyncNotice, getSyncNotice);
+  const isOnline = useUIStore((s) => s.isOnline);
+  const syncingFolder = useUIStore((s) => s.isSyncingFolder);
+  const pending = useUIStore((s) => s.pendingOpsCount);
+  const failed = notice?.startsWith("Sync failed") ?? false;
+  const syncing = !failed && (syncingFolder || (notice !== null && /syncing|building threads/i.test(notice)));
+  const label = failed
+    ? "Error"
+    : syncing
+      ? "Syncing"
+      : !isOnline
+        ? pending > 0 ? `Offline · ${pending} queued` : "Offline"
+        : pending > 0 ? `Synced · ${pending} pending` : "Synced";
+  const dot = failed ? "bg-status-error" : syncing ? "bg-status-warning" : !isOnline ? "bg-text-tertiary" : "bg-status-success";
   return (
-    <div className="px-3 py-2 border-t border-border-primary">
-      {collapsed ? (
-        <div className="flex justify-center">
-          <span className="bg-accent/20 text-accent text-xs font-medium px-1.5 py-0.5 rounded-full">{pendingOpsCount}</span>
-        </div>
-      ) : (
-        <div className="text-xs text-text-secondary">
-          {pendingOpsCount} pending {pendingOpsCount === 1 ? "change" : "changes"}
-        </div>
-      )}
+    <div className="px-3 py-2 border-t border-separator">
+      <p
+        role="status"
+        title={failed ? notice ?? "Sync failed" : label}
+        className={`inline-flex max-w-full items-center gap-1.5 rounded-full border border-separator bg-surface-subtle px-2 py-0.5 text-meta text-text-secondary ${collapsed ? "justify-center" : ""}`}
+      >
+        <span aria-hidden className={`size-1.5 shrink-0 rounded-full ${dot}`} />
+        {!collapsed && <span className="truncate">{label}</span>}
+        {collapsed && <span className="sr-only">{label}</span>}
+      </p>
     </div>
   );
 }

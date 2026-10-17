@@ -26,6 +26,12 @@ export interface CachedTicket {
   updatedAt: number;
   /** Outside the default scope; fetched because the operator asked for it */
   fetchedOnDemand: boolean;
+  /** Freshdesk ticket type label; null when unset */
+  ticketType: string | null;
+  /** False when this copy omitted `type`, so the stored type is kept */
+  ticketTypeKnown: boolean;
+  /** Custom field values; null when this copy omitted `custom_fields` */
+  customFields: Record<string, string> | null;
 }
 
 interface TicketRow {
@@ -47,6 +53,8 @@ interface TicketRow {
   created_at: number;
   updated_at: number;
   fetched_on_demand: number;
+  ticket_type: string | null;
+  custom_fields_json: string | null;
 }
 
 export type TicketSyncStateName = "idle" | "ok" | "rate_limited" | "auth_error" | "error";
@@ -105,6 +113,21 @@ function parseAddresses(json: string | null): string[] | null {
 
 const jsonOrNull = (list: string[] | null): string | null => (list === null ? null : JSON.stringify(list));
 
+function parseCustomFields(json: string | null): Record<string, string> {
+  if (!json) return {};
+  try {
+    const value: unknown = JSON.parse(json);
+    if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+    const fields: Record<string, string> = {};
+    for (const [name, field] of Object.entries(value)) {
+      if (typeof field === "string") fields[name] = field;
+    }
+    return fields;
+  } catch {
+    return {};
+  }
+}
+
 function toTicket(row: TicketRow): CachedTicket {
   return {
     ticketId: row.ticket_id,
@@ -125,6 +148,9 @@ function toTicket(row: TicketRow): CachedTicket {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     fetchedOnDemand: row.fetched_on_demand === 1,
+    ticketType: row.ticket_type,
+    ticketTypeKnown: true,
+    customFields: parseCustomFields(row.custom_fields_json),
   };
 }
 
@@ -140,8 +166,9 @@ export async function upsertTickets(tenantId: string, tickets: CachedTicket[]): 
       await db.execute(
         `INSERT INTO freshdesk_tickets (tenant_id, ticket_id, subject, status_id, priority_id, requester_id,
            customer_name, customer_email, responder_id, group_id, created_at, updated_at, fetched_on_demand,
-           company_id, tags_json, due_by, cc_emails_json, reply_cc_emails_json, fwd_emails_json)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+           company_id, tags_json, due_by, cc_emails_json, reply_cc_emails_json, fwd_emails_json,
+           ticket_type, custom_fields_json)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
          ON CONFLICT(tenant_id, ticket_id) DO UPDATE SET
            subject = excluded.subject, status_id = excluded.status_id, priority_id = excluded.priority_id,
            requester_id = excluded.requester_id,
@@ -154,6 +181,8 @@ export async function upsertTickets(tenantId: string, tickets: CachedTicket[]): 
            cc_emails_json = COALESCE(excluded.cc_emails_json, freshdesk_tickets.cc_emails_json),
            reply_cc_emails_json = COALESCE(excluded.reply_cc_emails_json, freshdesk_tickets.reply_cc_emails_json),
            fwd_emails_json = COALESCE(excluded.fwd_emails_json, freshdesk_tickets.fwd_emails_json),
+           ticket_type = CASE WHEN $22 = 1 THEN excluded.ticket_type ELSE freshdesk_tickets.ticket_type END,
+           custom_fields_json = COALESCE(excluded.custom_fields_json, freshdesk_tickets.custom_fields_json),
            created_at = excluded.created_at, updated_at = excluded.updated_at,
            fetched_on_demand = MAX(freshdesk_tickets.fetched_on_demand, excluded.fetched_on_demand)`,
         [
@@ -161,6 +190,8 @@ export async function upsertTickets(tenantId: string, tickets: CachedTicket[]): 
           t.customerName, t.customerEmail, t.responderId, t.groupId, t.createdAt, t.updatedAt,
           t.fetchedOnDemand ? 1 : 0, t.companyId, JSON.stringify(t.tags), t.dueBy,
           jsonOrNull(t.ccEmails), jsonOrNull(t.replyCcEmails), jsonOrNull(t.fwdEmails),
+          t.ticketType, t.customFields === null ? null : JSON.stringify(t.customFields),
+          t.ticketTypeKnown ? 1 : 0,
         ],
       );
     }

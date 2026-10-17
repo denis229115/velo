@@ -44,7 +44,7 @@ export function InlineDiff({
         {streaming ? (
           <DiffButton onClick={onStop}>Stop</DiffButton>
         ) : (
-          <DiffButton onClick={onAccept} title="Accept (Cmd+Enter)">
+          <DiffButton onClick={onAccept} title="Accept (Cmd+Enter)" primary>
             {acceptLabel}
           </DiffButton>
         )}
@@ -56,14 +56,27 @@ export function InlineDiff({
   );
 }
 
-function DiffButton({ children, onClick, title }: { children: ReactNode; onClick?: () => void; title?: string }) {
+function DiffButton({
+  children,
+  onClick,
+  title,
+  primary = false,
+}: {
+  children: ReactNode;
+  onClick?: () => void;
+  title?: string;
+  primary?: boolean;
+}) {
+  const tone = primary
+    ? "bg-accent text-white border border-transparent"
+    : "border border-separator text-text-secondary hover:bg-state-hover";
   return (
     <button
       type="button"
       title={title}
       onClick={onClick}
       disabled={!onClick}
-      className="px-2 py-0.5 text-meta rounded-[var(--radius-control-sm)] border border-separator text-text-secondary hover:bg-state-hover disabled:opacity-50"
+      className={`px-2 py-0.5 text-meta rounded-[var(--radius-control-sm)] disabled:opacity-50 ${tone}`}
     >
       {children}
     </button>

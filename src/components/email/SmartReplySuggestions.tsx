@@ -61,14 +61,14 @@ export function SmartReplySuggestions({ threadId, accountId, messages, noReply }
         title="Replies"
         actions={
           replies ? (
-            <button type="button" onClick={handleRefresh} className="p-0.5 text-text-tertiary hover:text-accent" title="Refresh suggestions">
+            <button type="button" onClick={handleRefresh} className="p-0.5 text-text-tertiary hover:text-text-primary" title="Refresh suggestions">
               <RefreshCw size={12} className={loading ? "animate-spin" : ""} />
             </button>
           ) : null
         }
       >
         {!replies && !loading && !failure && (
-          <button type="button" onClick={() => loadReplies()} className="text-xs text-accent hover:underline">
+          <button type="button" onClick={() => loadReplies()} className="text-xs text-text-secondary hover:text-text-primary">
             Generate replies
           </button>
         )}

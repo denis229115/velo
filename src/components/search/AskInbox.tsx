@@ -69,7 +69,7 @@ export function AskInbox({ isOpen, onClose }: AskInboxProps) {
       <div className="relative bg-surface-overlay border border-separator rounded-lg overlay-shadow w-full max-w-lg overflow-hidden flex flex-col max-h-[70vh]">
         {/* Header */}
         <div className="flex items-center gap-2 px-4 py-3 border-b border-border-primary bg-bg-secondary">
-          <Sparkles size={16} className="text-accent" />
+          <Sparkles size={16} className="text-text-secondary" />
           <span className="text-sm font-medium text-text-primary flex-1">Ask My Inbox</span>
           <button
             onClick={onClose}
@@ -144,7 +144,7 @@ export function AskInbox({ isOpen, onClose }: AskInboxProps) {
               {/* Ask again */}
               <button
                 onClick={handleClear}
-                className="text-xs text-accent hover:text-accent-hover transition-colors"
+                className="text-xs text-text-secondary hover:text-text-primary transition-colors"
               >
                 Ask another question
               </button>

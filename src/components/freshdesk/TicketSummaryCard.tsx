@@ -163,8 +163,8 @@ export function TicketSummaryCard({ ticket, view }: { ticket: TicketListItem; vi
 
   if (readiness.status !== "ready") {
     return (
-      <section aria-label="AI summary" className="max-w-4xl mb-4 flex items-start gap-2 rounded-lg border border-border-primary px-3 py-2">
-        <Sparkles size={14} aria-hidden className="shrink-0 mt-0.5 text-text-tertiary" />
+      <section aria-label="AI summary" className="material-pop max-w-4xl mb-4 flex items-start gap-2 rounded-[var(--radius-panel)] border border-separator px-3 py-2">
+        <Sparkles size={14} aria-hidden className="shrink-0 mt-0.5 text-text-secondary" />
         <p className="text-meta text-text-tertiary">
           {readiness.status === "off"
             ? "AI summary is off. Approve the Claude API in Settings to summarise tickets and draft replies."
@@ -210,14 +210,14 @@ export function TicketSummaryCard({ ticket, view }: { ticket: TicketListItem; vi
 
   if (state.kind !== "done") {
     return (
-      <section aria-label="AI summary" className="max-w-4xl mb-4 rounded-lg border border-border-primary px-3 py-2">
+      <section aria-label="AI summary" className="material-pop max-w-4xl mb-4 rounded-[var(--radius-panel)] border border-separator px-3 py-2">
         <div className="flex flex-wrap items-center gap-2">
-          <Sparkles size={14} aria-hidden className="shrink-0 text-accent" />
+          <Sparkles size={14} aria-hidden className="shrink-0 text-text-secondary" />
           <span className="text-preview font-medium text-text-primary">AI summary</span>
           {state.kind === "loading" ? (
             <>
               <span role="status" className="inline-flex items-center gap-1.5 text-meta text-text-tertiary">
-                <span className="w-3 h-3 border-2 border-accent/30 border-t-accent rounded-full animate-spin" aria-hidden />
+                <span className="w-3 h-3 border-2 border-text-tertiary/40 border-t-text-secondary rounded-full animate-spin" aria-hidden />
                 Summarizing…
               </span>
               <Button variant="ghost" size="xs" onClick={cancel}>
@@ -240,14 +240,14 @@ export function TicketSummaryCard({ ticket, view }: { ticket: TicketListItem; vi
   const hint = state.notice ?? (stale && !online ? "Offline: it updates when you are back online." : null);
 
   return (
-    <section aria-label="AI summary" className="max-w-4xl mb-4 rounded-lg border border-accent/30 bg-accent/5 px-4 py-3">
+    <section aria-label="AI summary" className="material-pop max-w-4xl mb-4 rounded-[var(--radius-panel)] border border-separator px-4 py-3">
       <div className="flex flex-wrap items-center gap-2 mb-2">
-        <Sparkles size={14} aria-hidden className="shrink-0 text-accent" />
+        <Sparkles size={14} aria-hidden className="shrink-0 text-text-secondary" />
         <span className="text-preview font-medium text-text-primary">AI summary</span>
         {updating ? (
           <>
             <span role="status" className="inline-flex items-center gap-1.5 text-micro text-text-secondary">
-              <span className="w-3 h-3 border-2 border-accent/30 border-t-accent rounded-full animate-spin" aria-hidden />
+              <span className="w-3 h-3 border-2 border-text-tertiary/40 border-t-text-secondary rounded-full animate-spin" aria-hidden />
               Updating with {APPROVED_PROVIDER_LABEL}…
             </span>
             <Button variant="ghost" size="xs" onClick={cancel}>
