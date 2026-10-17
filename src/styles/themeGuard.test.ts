@@ -58,6 +58,13 @@ describe("theme guard", () => {
     expect(offenders).toEqual([]);
   });
 
+  it("does not clip the aura field by default, so a scrolling consumer can still scroll", () => {
+    // aura.css is unlayered and beats Tailwind utilities such as overflow-y-auto.
+    const css = files.find((file) => file.path === "styles/aura.css")?.text ?? "";
+    const base = css.match(/\.aura-field\s*\{([^}]*)\}/)?.[1] ?? "";
+    expect(base).not.toMatch(/overflow/);
+  });
+
   it("keeps the aura motion to transform and opacity", () => {
     const css = files.find((file) => file.path === "styles/aura.css")?.text ?? "";
     const bodies = keyframeBodies(css);

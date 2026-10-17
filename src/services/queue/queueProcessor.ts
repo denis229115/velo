@@ -18,34 +18,52 @@ import { classifyError } from "@/utils/networkErrors";
 const BATCH_SIZE = 50;
 
 let checker: BackgroundChecker | null = null;
+let recovery: Promise<void> | null = null;
+
+/** Ops a previous run left `executing` (crash or quit mid-dispatch) would otherwise block their
+ * thread forever. Runs once, before any claim, whichever entry point reaches the queue first. */
+function recoverInterruptedOnce(): Promise<void> {
+  recovery ??= resetExecutingOperations().catch((err) => {
+    recovery = null;
+    console.error("[QueueProcessor] could not recover interrupted operations:", err);
+  });
+  return recovery;
+}
+
+/** Test seam: forget that recovery already ran. */
+export function resetQueueRecoveryForTests(): void {
+  recovery = null;
+}
 
 async function handleFailure(op: PendingOperation, err: unknown): Promise<void> {
-    const classified = classifyError(err);
+  const classified = classifyError(err);
 
-    if (classified.isRetryable) {
-      // Increment retry with exponential backoff
-      if (op.retry_count + 1 >= op.max_retries && JSON.parse(op.params).before) {
-        await rollbackQueuedRemoval(op.account_id, JSON.parse(op.params), op.id, classified.message);
-        window.dispatchEvent(new CustomEvent("velo-mail-action-error", { detail: "Email action retries exhausted. Local labels were restored; refresh the mailbox to check the server result." }));
-      } else {
-        await withTransaction(async () => {
-          await incrementRetry(op.id);
-          if (op.retry_count + 1 < op.max_retries) await updateOperationStatus(op.id, "pending", classified.message);
-        });
-      }
+  if (classified.isRetryable) {
+    // Increment retry with exponential backoff
+    if (op.retry_count + 1 >= op.max_retries && JSON.parse(op.params).before) {
+      await rollbackQueuedRemoval(op.account_id, JSON.parse(op.params), op.id, classified.message);
+      window.dispatchEvent(new CustomEvent("velo-mail-action-error", { detail: "Email action retries exhausted. Local labels were restored; refresh the mailbox to check the server result." }));
     } else {
-      // Permanent failure
-      const params = JSON.parse(op.params) as Record<string, unknown>;
-      if (params.before) await rollbackQueuedRemoval(op.account_id, params, op.id, classified.message);
-      else await withTransaction(async () => { await updateOperationStatus(op.id, "failed", classified.message); });
-      window.dispatchEvent(new CustomEvent("velo-mail-action-error", { detail: `Email action failed: ${classified.message}.${params.before ? " The local change was restored." : ""}` }));
-      if (classified.type === "auth") reportAuthExpired(op.account_id);
+      await withTransaction(async () => {
+        await incrementRetry(op.id);
+        if (op.retry_count + 1 < op.max_retries) await updateOperationStatus(op.id, "pending", classified.message);
+      });
     }
+  } else {
+    // Permanent failure
+    const params = JSON.parse(op.params) as Record<string, unknown>;
+    if (params.before) await rollbackQueuedRemoval(op.account_id, params, op.id, classified.message);
+    else await withTransaction(async () => { await updateOperationStatus(op.id, "failed", classified.message); });
+    window.dispatchEvent(new CustomEvent("velo-mail-action-error", { detail: `Email action failed: ${classified.message}.${params.before ? " The local change was restored." : ""}` }));
+    if (classified.type === "auth") reportAuthExpired(op.account_id);
+  }
 }
 
 async function processQueue(): Promise<void> {
   // Skip if offline
   if (!useUIStore.getState().isOnline) return;
+
+  await recoverInterruptedOnce();
 
   // Compact first to eliminate redundant ops
   await withTransaction(async () => { await compactQueue(); });
@@ -93,13 +111,8 @@ async function updatePendingCount(): Promise<void> {
 
 export function startQueueProcessor(): void {
   if (checker) return;
-  const started = createBackgroundChecker("QueueProcessor", processQueue, 30_000);
-  checker = started;
-  // Ops a previous run left `executing` (crash or quit mid-dispatch) would otherwise
-  // block their thread forever, so recover them before the first pass.
-  void resetExecutingOperations()
-    .catch((err) => console.error("[QueueProcessor] could not recover interrupted operations:", err))
-    .finally(() => { if (checker === started) started.start(); });
+  checker = createBackgroundChecker("QueueProcessor", processQueue, 30_000);
+  checker.start();
 }
 
 export function stopQueueProcessor(): void {

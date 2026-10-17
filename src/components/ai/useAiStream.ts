@@ -55,7 +55,8 @@ export function useAiStream() {
         onChunk?.(soFar);
       });
       if (controller.signal.aborted) {
-        setPhase("idle");
+        // A newer run owns the phase after stop(); only the current run may reset it.
+        if (abortRef.current === controller) setPhase("idle");
         return null;
       }
       setText(result);
@@ -67,7 +68,7 @@ export function useAiStream() {
       return result;
     } catch (err) {
       if (controller.signal.aborted) {
-        setPhase("idle");
+        if (abortRef.current === controller) setPhase("idle");
         return null;
       }
       setPhase("error");

@@ -11,7 +11,7 @@ vi.mock("@/router/navigate", () => ({ getSelectedThreadId: () => null, navigateT
 const provider = vi.hoisted(() => ({ archive: vi.fn(), trash: vi.fn(), spam: vi.fn(), moveToFolder: vi.fn(), permanentDelete: vi.fn() }));
 vi.mock("@/services/email/providerFactory", () => ({ getEmailProvider: vi.fn(async () => provider) }));
 import { executeEmailAction, MAIL_UNDO_MS, permanentDeleteThread } from "./emailActions";
-import { triggerQueueFlush, startQueueProcessor, stopQueueProcessor } from "./queue/queueProcessor";
+import { triggerQueueFlush, resetQueueRecoveryForTests } from "./queue/queueProcessor";
 import { peekUndo, clearUndo } from "./undoStack";
 import { useUIStore } from "@/stores/uiStore";
 import { useAccountStore } from "@/stores/accountStore";
@@ -21,7 +21,7 @@ async function labels(account = "a") {
   return (await db.select<{ label_id: string }[]>("SELECT label_id FROM thread_labels WHERE account_id=$1 ORDER BY label_id", [account])).map((r) => r.label_id);
 }
 beforeEach(async () => {
-  vi.useFakeTimers(); vi.clearAllMocks(); clearUndo();
+  vi.useFakeTimers(); vi.clearAllMocks(); clearUndo(); resetQueueRecoveryForTests();
   db = createSqliteTestDb();
   await db.execute(`CREATE TABLE accounts (id TEXT, provider TEXT);
     INSERT INTO accounts VALUES ('a','gmail_api');
@@ -177,15 +177,20 @@ describe("durable removal", () => {
     expect((await executeEmailAction("a", { type: "archive", threadId: "t", messageIds: ["m"] })).success).toBe(true);
   });
 
-  it("recovers an operation a crashed run left executing, then dispatches it once", async () => {
+  it("recovers a removal a crashed run left executing, then dispatches it once", async () => {
     await executeEmailAction("a", { type: "archive", threadId: "t", messageIds: ["m"] });
     await db.execute("UPDATE pending_operations SET status='executing'");
     vi.advanceTimersByTime(MAIL_UNDO_MS + 1000);
-    startQueueProcessor();
-    await vi.advanceTimersByTimeAsync(0);
-    stopQueueProcessor();
     await triggerQueueFlush();
     expect(provider.archive).toHaveBeenCalledExactlyOnceWith("t", ["m"]);
+  });
+
+  it("never resends an email a crashed run had already handed to the provider", async () => {
+    await db.execute(`INSERT INTO pending_operations (id, account_id, operation_type, resource_id, params, status) VALUES ('s','a','sendMessage','t','{"threadId":"t"}','executing')`);
+    await triggerQueueFlush();
+    const row = (await db.select<{ status: string; error_message: string }[]>("SELECT status, error_message FROM pending_operations WHERE id='s'"))[0]!;
+    expect(row.status).toBe("failed");
+    expect(row.error_message).toMatch(/already (have )?gone out|may already/i);
   });
 
   it("offers one Undo that reverts every thread of a multi-select removal", async () => {
@@ -205,5 +210,43 @@ describe("durable removal", () => {
     expect(await db.select("SELECT * FROM pending_operations WHERE operation_type='trash'")).toEqual([]);
     await expect(undo.undo()).rejects.toThrow("already started");
     expect(await labels()).not.toContain("INBOX");
+  });
+
+  it("labels a mixed multi-select honestly, undoes newest first and holds every member to the group deadline", async () => {
+    await db.execute("INSERT INTO thread_labels VALUES ('a','u','INBOX')");
+    await executeEmailAction("a", { type: "archive", threadId: "t", messageIds: ["m"] });
+    const first = (await db.select<{ next_retry_at: number }[]>("SELECT next_retry_at FROM pending_operations"))[0]!.next_retry_at;
+    vi.advanceTimersByTime(500);
+    await executeEmailAction("a", { type: "trash", threadId: "u", messageIds: ["n"] });
+    expect(peekUndo()!.label).toBe("2 conversations updated");
+    await vi.advanceTimersByTimeAsync(0);
+    const deadlines = (await db.select<{ next_retry_at: number }[]>("SELECT next_retry_at FROM pending_operations")).map((row) => row.next_retry_at);
+    expect(new Set(deadlines).size).toBe(1);
+    expect(deadlines[0]).toBeGreaterThanOrEqual(first);
+  });
+
+  it("does not merge two removals that are a moment apart into one Undo", async () => {
+    await db.execute("INSERT INTO thread_labels VALUES ('a','u','INBOX')");
+    await executeEmailAction("a", { type: "archive", threadId: "t", messageIds: ["m"] });
+    vi.advanceTimersByTime(2_000);
+    await executeEmailAction("a", { type: "archive", threadId: "u", messageIds: ["n"] });
+    expect(peekUndo()!.label).toBe("Archived");
+  });
+
+  it("clears the Undo and deletes the Trash copies when an IMAP thread is deleted for good", async () => {
+    await db.execute("UPDATE accounts SET provider='imap'");
+    await db.execute("INSERT INTO labels VALUES ('INBOX','a','INBOX'),('TRASH','a','Trash')");
+    await db.execute("INSERT INTO messages VALUES ('imap-a-Trash-9','a','t','Trash')");
+    await permanentDeleteThread("a", "t", []);
+    expect(provider.permanentDelete).toHaveBeenCalledWith("t", ["imap-a-Trash-9"]);
+  });
+
+  it("reaches a not-yet-dispatched move's messages when that thread is then deleted for good (IMAP)", async () => {
+    await db.execute("UPDATE accounts SET provider='imap'");
+    await db.execute("INSERT INTO labels VALUES ('INBOX','a','INBOX'),('TRASH','a','Trash')");
+    await executeEmailAction("a", { type: "trash", threadId: "t", messageIds: [] });
+    await permanentDeleteThread("a", "t", []);
+    expect(peekUndo()).toBeNull();
+    expect(provider.permanentDelete).toHaveBeenCalledWith("t", ["imap-a-INBOX-1"]);
   });
 });

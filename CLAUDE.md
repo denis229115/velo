@@ -163,13 +163,13 @@ Tailwind CSS v4 — uses `@import "tailwindcss"`, `@theme {}` for custom propert
 
 **Theme token layer** (`src/styles/theme.css`, plain CSS with light values on `:root` and dark values on `.dark`): surfaces `surface-base/sidebar/list/reader/composer/overlay/subtle`, text `text-primary/secondary/muted`, `separator`, states `state-hover/selected/focus`, `link`, `status-success/warning/error`. Exposed as Tailwind utilities in `globals.css` (`bg-surface-list`, `text-text-muted`, `border-separator`, `text-link`, `text-status-error`, …). Older names (`bg-bg-primary/secondary/tertiary/hover/selected`, `text-text-primary/secondary/tertiary`, `border-border-primary/secondary`, `bg-sidebar-bg`, `text-sidebar-text`) are aliases onto these tokens. `bg-accent/accent-hover/accent-light` follow the accent preset; `bg-danger/warning/success` are solid fills for white text. Use `.overlay-shadow` for menus, popovers and dialogs. `useAppearance()` (`src/hooks/useAppearance.ts`) applies theme, accent preset and reduced motion; mount it once per window.
 
-**Glass**: the sidebar (`.glass-sidebar`) and the control layer (popovers, menus, comboboxes, toasts, the AI bar: `.material-pop` / `.material-bar`) are translucent; off macOS and under reduced transparency or increased contrast they resolve to solid fills. Lists, reader, composer and dialogs stay solid. `themeGuard.test.ts` fails on gradients anywhere and on blur outside its allowlist of files.
+**Glass**: the sidebar (`.glass-sidebar`) and the control layer (popovers, menus, comboboxes, toasts, the AI bar: `.material-pop` / `.material-bar`) are translucent; off macOS and under reduced transparency or increased contrast they resolve to solid fills. Lists, reader, composer and dialogs stay solid (an `AuraGlow variant="field"` input inside one, such as the palette search field, carries the glass look). `themeGuard.test.ts` fails on blur outside its allowlist of files and on gradients outside `styles/aura.css`.
 
 **Focus and motion**: an unlayered `:focus-visible` rule in `theme.css` draws the focus ring on every interactive element (Tailwind's `outline-none` can't remove it). `.reduce-motion` on `<html>` (macOS Reduce motion or the in-app setting) disables animations and transitions.
 
 **Color themes**: 9 accent color presets (Blue is the default; Indigo, Rose, Emerald, Amber, Sky, Violet, Orange, Slate) defined in `src/constants/themes.ts`. Each has light & dark variants. Applied via CSS custom properties, independent of light/dark mode.
 
-**Background**: solid `surface-base`; no gradients or animated blobs.
+**Background**: solid `surface-base`; no gradients or animated blobs, except the working-state aura (`src/styles/aura.css`, `AuraGlow`): one glowing field at a time (`auraOwner.ts`) while the AI bar, composer body, thread summary or mail search is busy. Its keyframes animate `transform` and `opacity` only, it stops under `.reduce-motion`, and the error ring pulses three times then holds.
 
 **Icons**: `lucide-react` icon library.
 

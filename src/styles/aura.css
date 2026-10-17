@@ -41,14 +41,16 @@
 .aura-shape-composer { --aura-radius: 14px; }
 .aura-shape-card { --aura-radius: var(--radius-panel); }
 
+/* This sheet is unlayered, so it beats Tailwind utilities. Do not set overflow on the
+   base field: the composer passes overflow-y-auto to make the field its scrollport. */
 .aura-field {
   position: relative;
   z-index: 1;
   border-radius: var(--aura-radius);
-  overflow: hidden;
 }
 
 .aura-field.aura-field-glass {
+  overflow: hidden;
   box-shadow: inset 0 0 0 0.5px var(--glass-edge), inset 0 1px 0 var(--glass-highlight), var(--elev-2);
 }
 
@@ -185,7 +187,7 @@
   pointer-events: none;
   box-shadow: 0 0 0 5px var(--aura-err-ring), 0 0 26px var(--aura-err-glow);
   opacity: 1;
-  animation: aura-err 1.1s ease-in-out infinite;
+  animation: aura-err 1.1s ease-in-out 3;
 }
 
 .aura-shimmer {
@@ -269,3 +271,6 @@ html.reduce-transparency .aura-working .aura-field {
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--c2) 55%, transparent), inset 0 0 0 1px color-mix(in srgb, var(--c1) 70%, transparent);
   }
 }
+
+/* A frozen sheen would sit over the label as a static highlight. */
+.reduce-motion .aura-shimmer-sheen { display: none; }

@@ -257,55 +257,117 @@ async function executeReversibleRemoval(accountId: string, action: EmailAction):
       restoreVisibleRemoval(accountId, before!);
     },
   };
-  offerGroupedUndo(undo, deadline * 1000);
+  offerGroupedUndo({ undo, opId: id, accountId }, deadline * 1000);
   return { success: true, queued: true };
 }
 
-/** Removals started together (multi-select, quick steps) share one Undo that reverts all of them. */
-const UNDO_GROUP_MS = 1_500;
-let undoGroup: { members: UndoAction[]; offered: UndoAction; startedAt: number; expiresAt: number } | null = null;
+/** Removals started together (multi-select, quick steps) share one Undo that reverts all of them.
+ * The window slides: each removal that joins keeps the group open for another moment, so a long
+ * multi-select stays one group while two separate, unhurried keypresses stay separate. */
+const UNDO_GROUP_GAP_MS = 750;
+interface UndoMember { undo: UndoAction; opId: string; accountId: string }
+interface UndoGroup {
+  members: UndoMember[];
+  offered: UndoAction;
+  lastJoinAt: number;
+  expiresAt: number;
+  timer: ReturnType<typeof setTimeout> | null;
+}
+let undoGroup: UndoGroup | null = null;
 
-function offerGroupedUndo(undo: UndoAction, expiresAt: number): void {
+/** One timer per group; it re-arms until the real deadline has passed, whatever the clock did. */
+function armUndoExpiry(group: UndoGroup): void {
+  if (group.timer) clearTimeout(group.timer);
+  group.timer = setTimeout(() => {
+    group.timer = null;
+    if (Date.now() < group.expiresAt) armUndoExpiry(group);
+    else clearUndo(group.offered);
+  }, Math.max(0, group.expiresAt - Date.now()) + 25);
+}
+
+function groupLabel(members: UndoMember[]): string {
+  const labels = new Set(members.map((member) => member.undo.label));
+  return labels.size === 1
+    ? `${members.length} conversations: ${[...labels][0]!.toLowerCase()}`
+    : `${members.length} conversations updated`;
+}
+
+function offerGroupedUndo(member: UndoMember, expiresAt: number): void {
   const now = Date.now();
-  const joinable = undoGroup && peekUndo() === undoGroup.offered && now - undoGroup.startedAt < UNDO_GROUP_MS;
-  if (!undoGroup || !joinable) {
-    undoGroup = { members: [undo], offered: undo, startedAt: now, expiresAt };
-    offerUndo(undo);
-  } else {
-    const group = undoGroup;
-    group.members.push(undo);
-    group.expiresAt = Math.max(group.expiresAt, expiresAt);
-    const members = [...group.members];
-    group.offered = {
-      label: `${members.length} conversations: ${members[0]!.label.toLowerCase()}`,
-      undo: async () => {
-        // One transaction at a time; keep going so a single failure does not strand the rest.
-        let firstError: unknown;
-        for (const member of members) {
-          try { await member.undo(); } catch (error) { firstError ??= error; }
-        }
-        if (firstError) throw firstError;
-      },
-    };
-    offerUndo(group.offered);
+  const group = undoGroup;
+  const joinable = group !== null && peekUndo() === group.offered && now - group.lastJoinAt < UNDO_GROUP_GAP_MS;
+  if (!group || !joinable) {
+    const fresh: UndoGroup = { members: [member], offered: member.undo, lastJoinAt: now, expiresAt, timer: null };
+    undoGroup = fresh;
+    offerUndo(member.undo);
+    armUndoExpiry(fresh);
+    return;
   }
-  const owner = undoGroup;
-  // Each member keeps the group alive until its own deadline passes.
-  setTimeout(() => {
-    if (undoGroup === owner && Date.now() >= owner.expiresAt) clearUndo(owner.offered);
-  }, Math.max(0, expiresAt - now));
+  group.members.push(member);
+  group.lastJoinAt = now;
+  group.expiresAt = Math.max(group.expiresAt, expiresAt);
+  const members = [...group.members];
+  group.offered = {
+    label: groupLabel(members),
+    undo: async () => {
+      // Newest first, so each restore sees the list the way that removal left it.
+      let firstError: unknown;
+      for (const entry of [...members].reverse()) {
+        try { await entry.undo.undo(); } catch (error) { firstError ??= error; }
+      }
+      if (firstError) throw firstError;
+    },
+  };
+  offerUndo(group.offered);
+  armUndoExpiry(group);
+  // No member may reach the server before the group's Undo has expired.
+  const deadline = Math.ceil(group.expiresAt / 1000);
+  void withTransaction(async (db) => {
+    for (const entry of members) {
+      await db.execute("UPDATE pending_operations SET next_retry_at = $1 WHERE id = $2 AND account_id = $3 AND status = 'pending' AND (next_retry_at IS NULL OR next_retry_at < $1)", [deadline, entry.opId, entry.accountId]);
+    }
+  }).catch((error) => console.warn("Could not extend the Undo window for grouped removals:", error));
 }
 
 /** A thread about to be deleted for good must not keep a queued move or a restorable Undo.
- * Deleting the row also makes a later Undo fail safely instead of resurrecting the thread. */
-async function discardPendingRemovals(accountId: string, threadId: string): Promise<void> {
+ * Deleting the row also makes a later Undo fail safely instead of resurrecting the thread.
+ * Returns the message IDs the discarded move would have acted on: they are still in their
+ * source folder on the server, so the delete has to reach them there. */
+async function discardPendingRemovals(accountId: string, threadId: string): Promise<string[]> {
+  const discarded: string[] = [];
   await withTransaction(async (db) => {
     const rows = await db.select<{ id: string; params: string }[]>("SELECT id, params FROM pending_operations WHERE account_id = $1 AND resource_id = $2 AND status = 'pending'", [accountId, threadId]);
     for (const row of rows) {
-      if (!(JSON.parse(row.params) as { before?: unknown }).before) continue;
+      const params = JSON.parse(row.params) as { before?: unknown; messageIds?: string[] };
+      if (!params.before) continue;
       await db.execute("DELETE FROM pending_operations WHERE id = $1 AND status = 'pending'", [row.id]);
+      discarded.push(...(params.messageIds ?? []));
     }
   });
+  if (discarded.length) clearUndo();
+  return discarded;
+}
+
+/** Callers pass [] for a whole thread, which the IMAP provider treats as nothing to do, so the
+ * message would only vanish locally and return on the next sync. Delete the copies in Trash
+ * (and any that a just-discarded move had not yet carried there). */
+async function resolveImapPermanentDelete(accountId: string, action: Extract<EmailAction, { type: "permanentDelete" }>, discarded: string[]): Promise<EmailAction> {
+  if (action.messageIds.length > 0) return action;
+  try {
+    const db = await getDb();
+    const accounts = await db.select<{ provider: string }[]>("SELECT provider FROM accounts WHERE id = $1", [accountId]);
+    if (accounts[0]?.provider !== "imap") return action;
+    const trashed = await db.select<{ id: string }[]>(
+      `SELECT m.id FROM messages m
+       JOIN labels l ON l.account_id = m.account_id AND l.id = 'TRASH' AND l.imap_folder_path = m.imap_folder
+       WHERE m.account_id = $1 AND m.thread_id = $2`,
+      [accountId, action.threadId],
+    );
+    return { ...action, messageIds: [...new Set([...trashed.map((row) => row.id), ...discarded])] };
+  } catch (err) {
+    console.warn("Could not resolve IMAP messages for permanent delete:", err);
+    return action;
+  }
 }
 
 /** Called before retiring a permanently rejected intent, including after restart. */
@@ -512,7 +574,10 @@ export async function executeEmailAction(
   action: EmailAction,
 ): Promise<ActionResult> {
   if (REMOVALS.has(action.type)) return executeReversibleRemoval(accountId, action);
-  if (action.type === "permanentDelete") await discardPendingRemovals(accountId, action.threadId);
+  if (action.type === "permanentDelete") {
+    const discarded = await discardPendingRemovals(accountId, action.threadId);
+    action = await resolveImapPermanentDelete(accountId, action, discarded);
+  }
   const snapshot = captureRemoval(action);
   // 1. Optimistic UI update
   applyOptimisticUpdate(action);

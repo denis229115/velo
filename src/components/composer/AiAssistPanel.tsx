@@ -54,6 +54,8 @@ export function AiAssistPanel({ editor, isReplyMode, threadMessages }: AiAssistP
   const [menu, setMenu] = useState(false);
   const anchorRef = useRef<HTMLButtonElement>(null);
   const busy = useRef(false);
+  // Each run gets a number so a stopped run that settles late cannot clear a newer run's state.
+  const runCounter = useRef(0);
   const setBodyHtml = useComposerStore((s) => s.setBodyHtml);
   const targetRef = useRef<ReturnType<typeof captureRewriteTarget> | null>(null);
   const selectionRef = useRef<ReturnType<typeof captureRewriteTarget> | null>(null);
@@ -135,6 +137,8 @@ export function AiAssistPanel({ editor, isReplyMode, threadMessages }: AiAssistP
     targetRef.current = target;
     const before = target.before;
     busy.current = true;
+    const runId = ++runCounter.current;
+    const current = () => runId === runCounter.current;
     setError(null);
     setCanRetry(false);
     setDiff({ before, after: "", summary: instruction, streaming: true, retry: () => { void lastRun.current?.(); } });
@@ -143,17 +147,19 @@ export function AiAssistPanel({ editor, isReplyMode, threadMessages }: AiAssistP
         setDiff((current) => current && { ...current, after: soFar });
       });
       if (after === null) {
-        setDiff(null);
+        if (current()) setDiff(null);
         return;
       }
+      if (!current()) return;
       setDiff((current) => current && { ...current, after, streaming: false, summary: instruction });
     } catch (err) {
+      if (!current()) return;
       const friendly = friendlyAiError(err);
       setError(friendly.message);
       setCanRetry(friendly.retry);
       setDiff(null);
     } finally {
-      busy.current = false;
+      if (current()) busy.current = false;
     }
   };
 

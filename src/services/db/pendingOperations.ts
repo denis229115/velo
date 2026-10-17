@@ -66,9 +66,21 @@ export async function updateOperationStatus(
   );
 }
 
-/** Recover ops a previous run claimed but never finished (crash or quit mid-dispatch). */
+/** Operations that must never run twice: the provider may have accepted them before the crash. */
+const NOT_REPEATABLE = ["sendMessage", "createDraft"];
+
+/** Recover ops a previous run claimed but never finished (crash or quit mid-dispatch).
+ * Repeatable ones go back to the queue. A send or new draft may already have happened,
+ * so those are parked as failed and the user decides whether to retry. */
 export async function resetExecutingOperations(): Promise<void> {
   const db = await getDb();
+  const placeholders = NOT_REPEATABLE.map((_, i) => `$${i + 1}`).join(", ");
+  await db.execute(
+    `UPDATE pending_operations
+     SET status = 'failed', error_message = 'Interrupted while sending. It may already have gone out; check Sent before retrying.'
+     WHERE status = 'executing' AND operation_type IN (${placeholders})`,
+    NOT_REPEATABLE,
+  );
   await db.execute(`UPDATE pending_operations SET status = 'pending' WHERE status = 'executing'`);
 }
 

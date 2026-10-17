@@ -58,4 +58,28 @@ describe("useAiStream", () => {
     expect(result.current.phase).toBe("idle");
     expect(await run).toBeNull();
   });
+
+  it("keeps the working phase when a stopped run settles after a newer run started", async () => {
+    const { result } = renderHook(() => useAiStream());
+    let releaseOld: (value: string) => void = () => {};
+    const oldPending = new Promise<string>((resolve) => { releaseOld = resolve; });
+    let first: Promise<string | null> = Promise.resolve(null);
+    act(() => {
+      first = result.current.run(async function* () { yield await oldPending; });
+    });
+    act(() => { result.current.stop(); });
+    let releaseNew: (value: string) => void = () => {};
+    const newPending = new Promise<string>((resolve) => { releaseNew = resolve; });
+    let second: Promise<string | null> = Promise.resolve(null);
+    act(() => {
+      second = result.current.run(async function* () { yield await newPending; });
+    });
+    expect(result.current.phase).toBe("working");
+    releaseOld("late");
+    await act(async () => { await first; });
+    expect(result.current.phase).toBe("working");
+    releaseNew("done");
+    await act(async () => { await second; });
+    expect(await second).toBe("done");
+  });
 });
