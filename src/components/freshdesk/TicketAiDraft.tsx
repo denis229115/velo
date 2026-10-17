@@ -92,7 +92,7 @@ export function TicketAiDraft({
   return (
     <div className="mx-3 mt-2 space-y-2">
       <div role="group" aria-label="AI draft tools" className="flex flex-wrap items-center gap-2">
-        <Sparkles size={13} aria-hidden className="shrink-0 text-accent" />
+        <Sparkles size={13} aria-hidden className="shrink-0 text-text-secondary" />
         <label className="inline-flex items-center gap-1.5 text-meta text-text-secondary">
           Tone
           <select
@@ -120,7 +120,7 @@ export function TicketAiDraft({
         {loading ? (
           <span className="ml-auto inline-flex items-center gap-2">
             <span role="status" className="inline-flex items-center gap-1.5 text-meta text-text-tertiary">
-              <span className="w-3 h-3 border-2 border-accent/30 border-t-accent rounded-full animate-spin" aria-hidden />
+              <span className="w-3 h-3 border-2 border-text-tertiary/40 border-t-text-secondary rounded-full animate-spin" aria-hidden />
               {WORKING[state.action]} with {APPROVED_PROVIDER_LABEL}…
             </span>
             <Button
@@ -148,7 +148,7 @@ export function TicketAiDraft({
       )}
 
       {state.kind === "proposal" && (
-        <section aria-label="AI draft" className="rounded-md border border-dashed border-accent/50 bg-accent/5">
+        <section aria-label="AI draft" className="material-pop rounded-[var(--radius-panel)] border border-separator">
           <p className="px-3 pt-2 text-micro font-medium uppercase tracking-wide text-text-tertiary">
             AI draft · check it before you use it; nothing is sent
           </p>

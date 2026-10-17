@@ -257,13 +257,14 @@ describe("ticket header: state pills", () => {
     await opened1001();
 
     const state = within(await reader().findByRole("group", { name: "Ticket state" }));
-    await waitFor(() => expect(state.getByRole("combobox", { name: "Priority" })).toBeEnabled());
+    await waitFor(() => expect(state.getByRole("button", { name: "Priority" })).toBeEnabled());
     // The status pill carries Freshdesk's exact label as text, not colour alone
     expect(state.getByTitle(/^Status: Open/)).toHaveTextContent("Open");
     expect(state.getByTitle("Priority: High")).toHaveTextContent("High");
     expect(state.getByTitle(/^Assignee: /)).toHaveTextContent("Fixture Operator");
     expect(state.getByTitle("Group: Fixture Billing")).toHaveTextContent("Fixture Billing");
-    for (const name of ["Status", "Priority", "Assignee"]) expect(state.getByRole("combobox", { name })).toBeInTheDocument();
+    for (const name of ["Status", "Priority"]) expect(state.getByRole("button", { name })).toBeInTheDocument();
+    expect(state.getByRole("combobox", { name: "Assignee" })).toBeInTheDocument();
   });
 
   it("sample ticket: Sample badge, pills that explain why they cannot change, no Freshdesk link", async () => {
@@ -272,7 +273,8 @@ describe("ticket header: state pills", () => {
     await waitFor(() => expect(header().getByRole("heading", { level: 2 })).toHaveTextContent("Sample ticket: cannot sign in"));
     expect(header().getByText("Sample")).toBeInTheDocument();
     const state = within(reader().getByRole("group", { name: "Ticket state" }));
-    for (const name of ["Status", "Priority", "Assignee"]) expect(state.getByRole("combobox", { name })).toBeDisabled();
+    for (const name of ["Status", "Priority"]) expect(state.getByRole("button", { name })).toBeDisabled();
+    expect(state.getByRole("combobox", { name: "Assignee" })).toBeDisabled();
 
     fireEvent.click(header().getByRole("button", { name: "More actions" }));
     expect(await screen.findByRole("menuitem", { name: "Open in Freshdesk" })).toHaveAttribute("aria-disabled", "true");

@@ -2,6 +2,7 @@ import { useEffect, useMemo } from "react";
 import { useUIStore } from "@/stores/uiStore";
 import { selectCurrentView, selectVisibleTickets, useTicketStore } from "@/stores/ticketStore";
 import { useSelectedTicketId } from "@/hooks/useRouteNavigation";
+import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { TicketList } from "./TicketList";
 import { TicketReader } from "./TicketReader";
 
@@ -54,12 +55,16 @@ export function FreshdeskPage() {
   if (selectCurrentView({ views, selectedViewId }).presentation === "board") {
     return (
       <div className="flex flex-1 min-w-0 flex-row">
-        <TicketList selectedTicketId={selectedTicketId} />
+        <ErrorBoundary name="TicketList">
+          <TicketList selectedTicketId={selectedTicketId} />
+        </ErrorBoundary>
         {selectedTicketId && (
           <>
             <div className="w-px bg-border-primary shrink-0" />
             <div className="flex w-[min(34rem,45%)] shrink-0">
-              <TicketReader ticket={ticket} ticketId={selectedTicketId} />
+              <ErrorBoundary name="TicketReader">
+                <TicketReader ticket={ticket} ticketId={selectedTicketId} />
+              </ErrorBoundary>
             </div>
           </>
         )}
@@ -69,9 +74,13 @@ export function FreshdeskPage() {
 
   return (
     <div className="flex flex-1 min-w-0 flex-row">
-      <TicketList selectedTicketId={selectedTicketId} width={width} />
+      <ErrorBoundary name="TicketList">
+        <TicketList selectedTicketId={selectedTicketId} width={width} />
+      </ErrorBoundary>
       <div className="w-px bg-border-primary shrink-0" />
-      <TicketReader ticket={ticket} ticketId={selectedTicketId} />
+      <ErrorBoundary name="TicketReader">
+        <TicketReader ticket={ticket} ticketId={selectedTicketId} />
+      </ErrorBoundary>
     </div>
   );
 }

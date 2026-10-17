@@ -343,11 +343,15 @@ async function requireReady(): Promise<{ provider: typeof APPROVED_PROVIDER; mod
   }
 }
 
+const STOPPED = "Not sent: the request was stopped.";
+
 /**
- * Send one AI request through the gateway. Returns the provider's text for
- * display; throws AiError when AI is off, refused or failing.
+ * One AI request as restored snapshots. Readiness, redaction, the send preview
+ * and the audit log run before the first chunk. Providers without `stream`
+ * yield a single snapshot from `complete`.
  */
-export async function requestAi(req: AiGatewayRequest): Promise<string> {
+export async function* requestAiStream(req: AiGatewayRequest, signal?: AbortSignal): AsyncGenerator<string> {
+  if (signal?.aborted) throw new AiError("CANCELLED", STOPPED);
   const { provider, model } = await requireReady();
 
   // A secret in the operator's own instruction is refused rather than silently cut out.
@@ -379,7 +383,10 @@ export async function requestAi(req: AiGatewayRequest): Promise<string> {
     : null;
   if (cacheKey && !req.cache?.refresh) {
     const cached = await getAiResult(cacheKey);
-    if (cached !== null) return redaction.restore(cached);
+    if (cached !== null) {
+      yield redaction.restore(cached);
+      return;
+    }
   }
 
   const flagCounts: AiFlagCounts = redaction.categoryCounts();
@@ -397,19 +404,46 @@ export async function requestAi(req: AiGatewayRequest): Promise<string> {
     flagCounts,
   });
 
-  let result: string;
+  const client = await getActiveProvider();
+  const completion = { systemPrompt, userContent, maxTokens: req.maxTokens };
+  let raw = "";
+  let yielded = false;
   try {
-    const client = await getActiveProvider();
-    result = await client.complete({ systemPrompt, userContent, maxTokens: req.maxTokens });
+    if (client.stream) {
+      for await (const delta of client.stream(completion, signal ?? new AbortController().signal)) {
+        if (signal?.aborted) throw new AiError("CANCELLED", STOPPED);
+        raw += delta;
+        yielded = true;
+        yield redaction.restore(raw);
+      }
+    } else {
+      raw = await client.complete(completion);
+    }
   } catch (err) {
     await setAiAuditOutcome(auditId, "error");
+    if (signal?.aborted || (err instanceof AiError && err.code === "CANCELLED")) {
+      throw new AiError("CANCELLED", STOPPED);
+    }
     throw toAiError(err);
   }
+  if (signal?.aborted) {
+    await setAiAuditOutcome(auditId, "error");
+    throw new AiError("CANCELLED", STOPPED);
+  }
   await setAiAuditOutcome(auditId, "ok");
-
   // The cache keeps the placeholders; the originals are restored only for display.
-  if (cacheKey) await setAiResult(cacheKey, result);
-  return redaction.restore(result);
+  if (cacheKey) await setAiResult(cacheKey, raw);
+  if (!yielded) yield redaction.restore(raw);
+}
+
+/**
+ * Send one AI request through the gateway. Returns the provider's text for
+ * display; throws AiError when AI is off, refused or failing.
+ */
+export async function requestAi(req: AiGatewayRequest): Promise<string> {
+  let last = "";
+  for await (const snapshot of requestAiStream(req)) last = snapshot;
+  return last;
 }
 
 /**

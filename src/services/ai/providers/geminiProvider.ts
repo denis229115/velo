@@ -20,6 +20,19 @@ export function createGeminiProvider(apiKey: string, modelId: string): AiProvide
       return result.response.text();
     },
 
+    async *stream(req: AiCompletionRequest, signal: AbortSignal): AsyncGenerator<string> {
+      const model = client.getGenerativeModel({
+        model: modelId,
+        systemInstruction: req.systemPrompt,
+      });
+      const result = await model.generateContentStream(req.userContent, { signal });
+      for await (const chunk of result.stream) {
+        if (signal.aborted) return;
+        const text = chunk.text();
+        if (text) yield text;
+      }
+    },
+
     async testConnection(): Promise<boolean> {
       try {
         const model = client.getGenerativeModel({

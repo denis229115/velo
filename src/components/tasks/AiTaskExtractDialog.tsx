@@ -103,7 +103,7 @@ export function AiTaskExtractDialog({
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-border-secondary">
           <div className="flex items-center gap-2">
-            <Sparkles size={16} className="text-accent" />
+            <Sparkles size={16} className="text-text-secondary" />
             <h3 className="text-sm font-semibold text-text-primary">Create Task from Email</h3>
           </div>
           <button onClick={onClose} className="p-1 text-text-tertiary hover:text-text-primary">
@@ -119,7 +119,7 @@ export function AiTaskExtractDialog({
         <div className="px-5 py-4 space-y-4">
           {loading ? (
             <div className="flex flex-col items-center justify-center py-8 gap-3">
-              <Loader2 size={24} className="animate-spin text-accent" />
+              <Loader2 size={24} className="animate-spin text-text-secondary" />
               <p className="text-sm text-text-secondary">Extracting task from email...</p>
             </div>
           ) : error && !title ? (

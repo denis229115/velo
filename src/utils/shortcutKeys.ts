@@ -65,8 +65,22 @@ export function findShortcutConflicts(
   for (const ids of byBinding.values()) {
     if (ids.length < 2) continue;
     for (const id of ids) {
-      conflicts.set(id, ids.filter((other) => other !== id));
+      const others = ids.filter((other) => other !== id && !contextScoped(id, other));
+      if (others.length > 0) conflicts.set(id, others);
     }
   }
   return conflicts;
+}
+
+/**
+ * Ticket status, priority and assign share s, p and a with mail, but only on
+ * the Freshdesk page. Those pairs are not shown as conflicts.
+ */
+function contextScoped(left: string, right: string): boolean {
+  const pairs = new Set([
+    "ticket.status|action.star",
+    "ticket.priority|action.pin",
+    "ticket.assignee|action.replyAll",
+  ]);
+  return pairs.has(`${left}|${right}`) || pairs.has(`${right}|${left}`);
 }

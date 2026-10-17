@@ -10,6 +10,7 @@ import { TicketSummaryAutoUpdate } from "./TicketSummaryAutoUpdate";
 import { FreshdeskSettings } from "./FreshdeskSettings";
 import { ClickUpSettings } from "./ClickUpSettings";
 import { deleteAccount } from "@/services/db/accounts";
+import { requestConfirm } from "@/components/ui/confirmRequest";
 import { removeClient, reauthorizeAccount } from "@/services/gmail/tokenManager";
 import { triggerSync, forceFullSync, resyncAccount } from "@/services/gmail/syncManager";
 import {
@@ -278,6 +279,16 @@ export function SettingsPage() {
 
   const handleRemoveAccount = useCallback(
     async (accountId: string) => {
+      const account = useAccountStore.getState().accounts.find((item) => item.id === accountId);
+      const ok = await requestConfirm({
+        title: "Remove this account?",
+        message: account
+          ? `${account.email} will be removed from Velo on this Mac.`
+          : "This account will be removed from Velo on this Mac.",
+        confirmLabel: "Remove account",
+        danger: true,
+      });
+      if (!ok) return;
       removeClient(accountId);
       await deleteAccount(accountId);
       removeAccountFromStore(accountId);

@@ -36,6 +36,8 @@ interface ThreadState {
   updateThread: (id: string, updates: Partial<Thread>) => void;
   removeThread: (id: string) => void;
   removeThreads: (ids: string[]) => void;
+  /** Puts a thread back where an optimistic removal took it from. */
+  restoreThread: (thread: Thread, index: number) => void;
   setSearch: (query: string, threadIds: Set<string> | null) => void;
   clearSearch: () => void;
 }
@@ -117,6 +119,15 @@ export const useThreadStore = create<ThreadState>((set, get) => ({
         selectedThreadId: state.selectedThreadId === id ? null : state.selectedThreadId,
         selectedThreadIds: next,
       };
+    }),
+  restoreThread: (thread, index) =>
+    set((state) => {
+      if (state.threads.some((item) => item.id === thread.id)) return state;
+      const threads = state.threads.slice();
+      threads.splice(Math.max(0, Math.min(index, threads.length)), 0, thread);
+      const threadMap = new Map(state.threadMap);
+      threadMap.set(thread.id, thread);
+      return { threads, threadMap };
     }),
   removeThreads: (ids) =>
     set((state) => {

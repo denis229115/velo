@@ -9,6 +9,8 @@ import { useContextMenuStore } from "@/stores/contextMenuStore";
 import { navigateToLabel, navigateToThread, navigateToTicket, navigateBack, getActiveLabel, getSelectedThreadId, getSelectedTicketId } from "@/router/navigate";
 import { selectCurrentView, selectVisibleTickets, useTicketStore } from "@/stores/ticketStore";
 import { archiveThread, trashThread, permanentDeleteThread, starThread, spamThread } from "@/services/emailActions";
+import { peekUndo, undoLast } from "@/services/undoStack";
+import { requestConfirm } from "@/components/ui/confirmRequest";
 import { deleteThread as deleteThreadFromDb, pinThread as pinThreadDb, unpinThread as unpinThreadDb, muteThread as muteThreadDb, unmuteThread as unmuteThreadDb } from "@/services/db/threads";
 import { deleteDraftsForThread } from "@/services/gmail/draftDeletion";
 import { getGmailClient } from "@/services/gmail/tokenManager";
@@ -29,10 +31,13 @@ function buildReverseMap(keyMap: Record<string, string>): {
   singleKey: Map<string, string>;
   twoKeySequences: Map<string, string>; // second key -> action ID (first key is always "g")
   ctrlCombos: Map<string, string>;
+  /** Ticket keys stay off the mail map. s, p and a still star, pin and reply all in mail. */
+  ticketKeys: Map<string, string>;
 } {
   const singleKey = new Map<string, string>();
   const twoKeySequences = new Map<string, string>();
   const ctrlCombos = new Map<string, string>();
+  const ticketKeys = new Map<string, string>();
 
   for (const [id, keys] of Object.entries(keyMap)) {
     // Send now / send later are dispatched by the composer (useComposerShortcuts)
@@ -43,12 +48,14 @@ function buildReverseMap(keyMap: Record<string, string>): {
       twoKeySequences.set(secondKey, id);
     } else if (keys.includes("+")) {
       ctrlCombos.set(id, keys);
+    } else if (id.startsWith("ticket.")) {
+      ticketKeys.set(keys, id);
     } else {
       singleKey.set(keys, id);
     }
   }
 
-  return { singleKey, twoKeySequences, ctrlCombos };
+  return { singleKey, twoKeySequences, ctrlCombos, ticketKeys };
 }
 
 // Cached reverse map to avoid rebuilding on every keypress
@@ -85,6 +92,11 @@ export function useKeyboardShortcuts() {
         target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT" ||
         target.isContentEditable || target.closest("[contenteditable='true']") !== null
       );
+      if (!isInputFocused && e.key.toLowerCase() === "z" && !e.metaKey && !e.ctrlKey && !e.altKey && peekUndo()) {
+        e.preventDefault();
+        undoLast();
+        return;
+      }
       // A dialog owns its keys so the underlying ticket does not react.
       // The hidden-pane reader is the open email thread, so mail shortcuts still apply.
       if (document.querySelector('[role="dialog"]:not([data-mail-reader])')) return;
@@ -94,7 +106,7 @@ export function useKeyboardShortcuts() {
       }
 
       const keyMap = useShortcutStore.getState().keyMap;
-      const { singleKey, twoKeySequences, ctrlCombos } = getCachedReverseMap(keyMap);
+      const { singleKey, twoKeySequences, ctrlCombos, ticketKeys } = getCachedReverseMap(keyMap);
 
       // Modified bindings (including Shift and Alt) use the same matcher as composers.
       if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) {
@@ -168,7 +180,8 @@ export function useKeyboardShortcuts() {
       if (key === "Enter" && target instanceof HTMLElement && target.closest("button, a")) return;
 
       // Single key shortcuts; keep o as an alias only for the default open binding.
-      let actionId = singleKey.get(key);
+      // On a ticket, s / p / a open status, priority and assign instead of mail actions.
+      let actionId = getActiveLabel() === "freshdesk" ? ticketKeys.get(key) ?? singleKey.get(key) : singleKey.get(key);
       if (!actionId && key === "o" && keyMap["nav.open"] === "Enter") actionId = "nav.open";
       // Delete and Backspace always trigger delete action
       if (!actionId && (key === "Delete" || key === "Backspace")) {
@@ -362,6 +375,22 @@ async function executeAction(actionId: string): Promise<void> {
       const multiDeleteIds = useThreadStore.getState().selectedThreadIds;
       if (multiDeleteIds.size > 0 && activeAccountId) {
         const ids = [...multiDeleteIds];
+        if (isTrashView) {
+          const ok = await requestConfirm({
+            title: ids.length > 1 ? `Delete ${ids.length} forever?` : "Delete forever?",
+            message: "This removes the conversation from Velo. It can't be undone.",
+            confirmLabel: "Delete forever",
+            danger: true,
+          });
+          if (!ok) return;
+        } else if (ids.length >= 10) {
+          const ok = await requestConfirm({
+            title: `Move ${ids.length} to trash?`,
+            message: "You can undo this from the toast, or press Z.",
+            confirmLabel: "Move to trash",
+          });
+          if (!ok) return;
+        }
         for (const id of ids) {
           if (isTrashView) {
             await permanentDeleteThread(activeAccountId, id, []);
@@ -380,6 +409,13 @@ async function executeAction(actionId: string): Promise<void> {
         }
       } else if (selectedId && activeAccountId) {
         if (isTrashView) {
+          const ok = await requestConfirm({
+            title: "Delete forever?",
+            message: "This removes the conversation from Velo. It can't be undone.",
+            confirmLabel: "Delete forever",
+            danger: true,
+          });
+          if (!ok) return;
           await permanentDeleteThread(activeAccountId, selectedId, []);
           await deleteThreadFromDb(activeAccountId, selectedId);
         } else if (isDraftsView) {

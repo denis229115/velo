@@ -1,4 +1,5 @@
-import { useEffect, useCallback, useMemo, useRef, useState } from "react";
+import { useEffect, useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { CSSTransition } from "react-transition-group";
 import { ThreadCard } from "../email/ThreadCard";
 import { CategoryTabs } from "../email/CategoryTabs";
@@ -27,6 +28,7 @@ import { ListHeader } from "../list/ListHeader";
 import { ReadFilterTabs } from "../list/ReadFilterTabs";
 import { DateGroupHeader } from "../list/DateGroupHeader";
 import { groupByDate } from "@/utils/dateGroups";
+import { requestConfirm } from "@/components/ui/confirmRequest";
 import {
   InboxClearIllustration,
   NoSearchResultsIllustration,
@@ -160,6 +162,17 @@ export function EmailList({ width, listRef }: { width?: number; listRef?: React.
     if (!activeAccountId || multiSelectCount === 0) return;
     const isTrashView = activeLabel === "trash";
     const ids = [...selectedThreadIds];
+    if (isTrashView || ids.length >= 10) {
+      const ok = await requestConfirm({
+        title: isTrashView ? `Delete ${ids.length} forever?` : `Move ${ids.length} to trash?`,
+        message: isTrashView
+          ? "This removes them from Velo. It can't be undone."
+          : "You can undo a single move from the toast, or press Z.",
+        confirmLabel: isTrashView ? "Delete forever" : "Move to trash",
+        danger: isTrashView,
+      });
+      if (!ok) return;
+    }
     removeThreads(ids);
     try {
       const client = await getGmailClient(activeAccountId);
@@ -242,6 +255,34 @@ export function EmailList({ width, listRef }: { width?: number; listRef?: React.
     const groups = groupByDate(rest, ({ thread }) => thread.lastMessageAt);
     return pinned.length > 0 ? [{ key: "pinned", label: "Pinned", items: pinned }, ...groups] : groups;
   }, [visibleThreads]);
+
+  const threadRows = useMemo(() => {
+    const rows: Array<{ kind: "header"; key: string; label: string } | { kind: "thread"; key: string; thread: Thread; idx: number }> = [];
+    for (const group of threadGroups) {
+      rows.push({ kind: "header", key: `h-${group.key}`, label: group.label });
+      for (const item of group.items) rows.push({ kind: "thread", key: item.thread.id, thread: item.thread, idx: item.idx });
+    }
+    return rows;
+  }, [threadGroups]);
+
+  const [listHeight, setListHeight] = useState(0);
+  useLayoutEffect(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const measure = () => setListHeight(el.clientHeight);
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+  const virtualOn = listHeight > 0 && threadRows.length > 80;
+  const rowVirtualizer = useVirtualizer({
+    count: virtualOn ? threadRows.length : 0,
+    getScrollElement: () => scrollContainerRef.current,
+    estimateSize: (index) => (threadRows[index]?.kind === "header" ? 28 : 72),
+    overscan: 8,
+  });
 
   const mapDbThreads = useCallback(async (dbThreads: Awaited<ReturnType<typeof getThreadsForAccount>>): Promise<Thread[]> => {
     return Promise.all(
@@ -481,8 +522,11 @@ export function EmailList({ width, listRef }: { width?: number; listRef?: React.
     const el = scrollContainerRef.current.querySelector(`[data-thread-id="${CSS.escape(selectedThreadId)}"]`);
     if (el) {
       el.scrollIntoView({ block: "nearest" });
+      return;
     }
-  }, [selectedThreadId]);
+    const index = threadRows.findIndex((row) => row.kind === "thread" && row.thread.id === selectedThreadId);
+    if (index >= 0) rowVirtualizer.scrollToIndex(index, { align: "auto" });
+  }, [selectedThreadId, threadRows, rowVirtualizer]);
 
   // Listen for sync completion to reload (debounced to avoid waterfall from multiple emitters)
   useEffect(() => {
@@ -678,7 +722,41 @@ export function EmailList({ width, listRef }: { width?: number; listRef?: React.
                 </div>
               );
             })}
-            {threadGroups.map((group) => (
+            {virtualOn ? (
+              <div style={{ height: rowVirtualizer.getTotalSize(), position: "relative" }}>
+                {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+                  const row = threadRows[virtualRow.index];
+                  if (!row) return null;
+                  return (
+                    <div
+                      key={row.key}
+                      data-index={virtualRow.index}
+                      ref={rowVirtualizer.measureElement}
+                      style={{ position: "absolute", top: 0, left: 0, width: "100%", transform: `translateY(${virtualRow.start}px)` }}
+                    >
+                      {row.kind === "header" ? (
+                        <div role="group" aria-label={row.label}>
+                          <DateGroupHeader label={row.label} />
+                        </div>
+                      ) : (
+                        <div data-thread-id={row.thread.id}>
+                          <ThreadCard
+                            thread={row.thread}
+                            isSelected={row.thread.id === selectedThreadId}
+                            onClick={handleThreadClick}
+                            onContextMenu={handleThreadContextMenu}
+                            category={categoryMap.get(row.thread.id)}
+                            showCategoryBadge={activeLabel === "inbox" && activeCategory === "All"}
+                            hasFollowUp={followUpThreadIds.has(row.thread.id)}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              threadGroups.map((group) => (
               <div key={group.key} role="group" aria-label={group.label}>
                 <DateGroupHeader label={group.label} />
                 {group.items.map(({ thread, idx }) => (
@@ -700,7 +778,8 @@ export function EmailList({ width, listRef }: { width?: number; listRef?: React.
                   </div>
                 ))}
               </div>
-            ))}
+            ))
+            )}
             {loadingMore && (
               <div className="px-4 py-3 text-center text-xs text-text-tertiary">
                 Loading more...

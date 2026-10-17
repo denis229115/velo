@@ -36,6 +36,7 @@ import { getTemplatesForAccount, type DbTemplate } from "@/services/db/templates
 import { readFileAsBase64 } from "@/utils/fileUtils";
 import { interpolateVariables } from "@/utils/templateVariables";
 import { sanitizeHtml } from "@/utils/sanitize";
+import { loadRecipientZone } from "@/services/recipientZone";
 
 export function Composer() {
   // Individual selectors — only re-render when each specific value changes
@@ -69,6 +70,11 @@ export function Composer() {
   const activeAccount = accounts.find((a) => a.id === activeAccountId);
   const sendingRef = useRef(false);
   const [showSchedule, setShowSchedule] = useState(false);
+  const [recipientZone, setRecipientZone] = useState<{ name: string; offsetMinutes: number | null }>({
+    name: "",
+    offsetMinutes: null,
+  });
+  const scheduleAnchorRef = useRef<HTMLButtonElement>(null);
   const [showAiAssist, setShowAiAssist] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [aliases, setAliases] = useState<SendAsAlias[]>([]);
@@ -184,6 +190,26 @@ export function Composer() {
 
     return () => { cancelled = true; };
   }, [isOpen, activeAccountId]);
+
+  useEffect(() => {
+    if (!showSchedule) return;
+    const email = to[0];
+    if (!email) {
+      setRecipientZone({ name: "", offsetMinutes: null });
+      return;
+    }
+    let cancelled = false;
+    void loadRecipientZone(activeAccountId, email)
+      .then((zone) => {
+        if (!cancelled) setRecipientZone(zone);
+      })
+      .catch(() => {
+        if (!cancelled) setRecipientZone({ name: email.split("@")[0] ?? "Recipient", offsetMinutes: null });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [showSchedule, to, activeAccountId]);
 
   // Start/stop draft auto-save
   useEffect(() => {
@@ -582,8 +608,10 @@ export function Composer() {
                 Send
               </button>
               <button
+                ref={scheduleAnchorRef}
                 onClick={() => setShowSchedule(true)}
                 disabled={to.length === 0}
+                aria-label="Send later"
                 className="px-2 py-1.5 text-white bg-accent hover:bg-accent-hover border-l border-white/20 rounded-r-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 title={sendLaterKeys ? `Send later (${formatShortcut(sendLaterKeys)})` : "Send later"}
               >
@@ -598,6 +626,9 @@ export function Composer() {
         <ScheduleSendDialog
           onSchedule={handleSchedule}
           onClose={() => setShowSchedule(false)}
+          anchorRef={scheduleAnchorRef}
+          recipientName={recipientZone.name}
+          recipientOffsetMinutes={recipientZone.offsetMinutes}
         />
       )}
     </div>

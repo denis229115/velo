@@ -8,4 +8,16 @@ describe("ScheduleSendDialog", () => {
     expect(screen.getByText(/sends when Velo is next open/i)).toBeInTheDocument();
     expect(screen.getByText(/not while your Mac sleeps or Velo is closed/i)).toBeInTheDocument();
   });
+
+  it("names the recipient's morning when their offset is known", () => {
+    render(
+      <ScheduleSendDialog
+        onSchedule={vi.fn()}
+        onClose={vi.fn()}
+        recipientName="Ada"
+        recipientOffsetMinutes={330}
+      />,
+    );
+    expect(screen.getByText("Ada’s morning")).toBeInTheDocument();
+  });
 });

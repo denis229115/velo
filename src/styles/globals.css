@@ -173,7 +173,9 @@ body {
 }
 
 .glass-bar,
-.glass-pop {
+.glass-pop,
+.material-bar,
+.material-pop {
   background-color: var(--glass-bar);
   border: 1px solid var(--glass-edge);
   box-shadow: inset 0 1px 0 var(--glass-highlight), var(--elev-1);
@@ -181,19 +183,46 @@ body {
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
 }
 
-.glass-pop {
+.glass-pop,
+.material-pop {
   background-color: var(--glass-pop);
   box-shadow: inset 0 1px 0 var(--glass-highlight), var(--elev-2);
   -webkit-backdrop-filter: blur(var(--glass-pop-blur)) saturate(var(--glass-saturate));
   backdrop-filter: blur(var(--glass-pop-blur)) saturate(var(--glass-saturate));
 }
 
+.ai-caret {
+  display: inline-block;
+  width: 1.5px;
+  height: 1em;
+  margin-left: 1px;
+  border-radius: 1px;
+  background: var(--text-tertiary);
+  vertical-align: text-bottom;
+  opacity: 0.35;
+}
+
+html:not(.reduce-motion) .ai-caret {
+  animation: ai-caret 1.4s ease-in-out infinite;
+}
+
+@keyframes ai-caret {
+  0%, 100% { opacity: 0.2; }
+  50% { opacity: 0.85; }
+}
+
 html:not(.platform-mac) .glass-bar,
 html:not(.platform-mac) .glass-pop,
+html:not(.platform-mac) .material-bar,
+html:not(.platform-mac) .material-pop,
 html.reduce-transparency .glass-bar,
 html.reduce-transparency .glass-pop,
+html.reduce-transparency .material-bar,
+html.reduce-transparency .material-pop,
 html.increase-contrast .glass-bar,
 html.increase-contrast .glass-pop,
+html.increase-contrast .material-bar,
+html.increase-contrast .material-pop,
 html.reduce-transparency .glass-sidebar {
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
@@ -212,7 +241,9 @@ html.reduce-transparency .glass-sidebar {
 @media (prefers-reduced-transparency: reduce) {
   .glass-sidebar,
   .glass-bar,
-  .glass-pop {
+  .glass-pop,
+  .material-bar,
+  .material-pop {
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
   }

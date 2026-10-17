@@ -22,6 +22,24 @@ export function createClaudeProvider(apiKey: string, model: string): AiProviderC
       return textBlock?.text ?? "";
     },
 
+    async *stream(req: AiCompletionRequest, signal: AbortSignal): AsyncGenerator<string> {
+      const stream = client.messages.stream(
+        {
+          model,
+          max_tokens: req.maxTokens ?? 1024,
+          system: req.systemPrompt,
+          messages: [{ role: "user", content: req.userContent }],
+        },
+        { signal },
+      );
+      for await (const event of stream) {
+        if (signal.aborted) return;
+        if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+          yield event.delta.text;
+        }
+      }
+    },
+
     async testConnection(): Promise<boolean> {
       try {
         await client.messages.create({

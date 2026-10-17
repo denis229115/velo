@@ -153,7 +153,7 @@ Custom window events: `velo-sync-done`, `velo-toggle-command-palette`, `velo-tog
 | `g` then `a` | Go to Attachments |
 | `g` then `l` | Go to Scheduled emails |
 
-Ticket-only defaults in the same registry: `n` Internal note, `z` Summarize, `d` AI draft reply, `Shift+S` Status, `Shift+P` Priority, `Shift+A` Assignee, `b` list/board. Shared reply/send/send-later/search actions keep their email meanings. Ticket actions adapt to visible handlers through `useShortcutAction`; skip them in inputs/selects/editable text, even after a modified rebind.
+Ticket-only defaults in the same registry: `n` Internal note, `z` Summarize, `d` AI draft reply, `s` Status, `p` Priority, `a` Assign, `b` list/board. On a ticket those three keys open the ticket controls; in mail, `s`, `p` and `a` still star, pin and reply all. Shared reply/send/send-later/search actions keep their email meanings. Ticket actions adapt to visible handlers through `useShortcutAction`; skip them in inputs/selects/editable text, even after a modified rebind.
 
 Multi-select: click to toggle, Shift+click for range. All keyboard actions work on multi-selected threads.
 

@@ -86,7 +86,7 @@ describe("Command palette email search", () => {
 
     typeQuery("inbox");
 
-    await screen.findByText("Inbox zero tips");
+    await screen.findByRole("option", { name: /Inbox zero tips/ });
     const threads = screen.getByRole("group", { name: "Threads" });
     expect(within(threads).getAllByRole("option").map((o) => o.textContent)).toEqual([
       "Inbox zero tipsAlice",
@@ -94,7 +94,7 @@ describe("Command palette email search", () => {
       "Show all results for “inbox”",
     ]);
     const commands = screen.getByRole("group", { name: "Commands" });
-    expect(within(commands).getByText("Go to Inbox")).toBeInTheDocument();
+    expect(within(commands).getByRole("option", { name: /Go to Inbox/ })).toBeInTheDocument();
     expect(searchMessages).toHaveBeenCalledWith("inbox", "acc-1", expect.any(Number));
   });
 
@@ -104,7 +104,7 @@ describe("Command palette email search", () => {
     render(<CommandPalette isOpen onClose={onClose} />);
 
     const input = typeQuery("quarterly");
-    await screen.findByText("Quarterly numbers");
+    await screen.findByRole("option", { name: /Quarterly numbers/ });
     fireEvent.keyDown(input, { key: "ArrowDown" });
     fireEvent.keyDown(input, { key: "ArrowUp" });
     fireEvent.keyDown(input, { key: "ArrowDown" });

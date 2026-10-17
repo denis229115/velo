@@ -8,6 +8,11 @@ export interface AiCompletionRequest {
 
 export interface AiProviderClient {
   complete(req: AiCompletionRequest): Promise<string>;
+  /**
+   * Raw text deltas. The gateway restores redaction and yields full snapshots.
+   * Omit it when the API has no stream; the gateway then yields one chunk.
+   */
+  stream?(req: AiCompletionRequest, signal: AbortSignal): AsyncIterable<string>;
   testConnection(): Promise<boolean>;
 }
 

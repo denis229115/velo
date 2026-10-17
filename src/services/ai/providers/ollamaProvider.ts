@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 import { fetch } from "@tauri-apps/plugin-http";
 import type { AiProviderClient, AiCompletionRequest } from "../types";
+import { chatCompletionDeltas } from "./chatStream";
 
 let instance: OpenAI | null = null;
 let cachedKey: string | null = null;
@@ -34,6 +35,10 @@ export function createOllamaProvider(serverUrl: string, model: string): AiProvid
       });
 
       return response.choices[0]?.message?.content ?? "";
+    },
+
+    stream(req: AiCompletionRequest, signal: AbortSignal) {
+      return chatCompletionDeltas(client, model, req, signal);
     },
 
     async testConnection(): Promise<boolean> {

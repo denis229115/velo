@@ -158,16 +158,21 @@ describe("editing a ticket in the reader", () => {
   async function readerOn(ticketId: string) {
     await connectAndSync();
     renderFreshdesk(`/freshdesk/ticket/${ticketId}`);
-    await waitFor(() => expect(within(reader()).getByRole("combobox", { name: "Priority" })).toBeEnabled());
+    await waitFor(() => expect(within(reader()).getByRole("button", { name: "Priority" })).toBeEnabled());
     stub.requests.length = 0;
   }
   const control = (name: string) => within(reader()).getByRole("combobox", { name }) as HTMLSelectElement;
+  const pill = (name: string) => within(reader()).getByRole("button", { name });
+  const choose = async (name: string, item: string) => {
+    fireEvent.click(pill(name));
+    fireEvent.click(await screen.findByRole("menuitem", { name: item }));
+  };
 
   it("changes priority and assignee inline; Freshdesk and the local copy both update", async () => {
     await readerOn("1001");
-    expect(control("Priority").value).toBe("3");
+    expect(pill("Priority")).toHaveTextContent("High");
 
-    fireEvent.change(control("Priority"), { target: { value: "4" } });
+    await choose("Priority", "Urgent");
     await waitFor(() => expect(writes()).toHaveLength(1));
     fireEvent.change(control("Assignee"), { target: { value: String(COLLEAGUE_ID) } });
     await waitFor(() => expect(writes()).toHaveLength(2));
@@ -179,14 +184,14 @@ describe("editing a ticket in the reader", () => {
     expect(within(row).getByTitle("Priority: Urgent")).toBeInTheDocument();
     fireEvent.click(row);
     await waitFor(() => expect(control("Assignee").value).toBe(String(COLLEAGUE_ID)));
-    expect(control("Priority").value).toBe("4");
+    expect(pill("Priority")).toHaveTextContent("Urgent");
   });
 
   it("changes the status inline with the same status write", async () => {
     await readerOn("1001");
-    fireEvent.change(control("Status"), { target: { value: "6" } });
+    await choose("Status", "Fixture: With engineering");
     await waitFor(() => expect(writes()).toEqual([expect.objectContaining({ body: { status: 6 } })]));
-    await waitFor(() => expect(control("Status").value).toBe("6"));
+    await waitFor(() => expect(pill("Status")).toHaveTextContent("Fixture: With engineering"));
   });
 
   it("a rejected change rolls back and shows Freshdesk's reason", async () => {
@@ -200,9 +205,9 @@ describe("editing a ticket in the reader", () => {
     expect(control("Assignee").value).toBe("9000000002");
 
     stub.respondOnce(ALPHA_HOST, "/api/v2/tickets/1001", accessDenied);
-    fireEvent.change(control("Priority"), { target: { value: "1" } });
+    await choose("Priority", "Low");
     await waitFor(() => expect(within(reader()).getByRole("alert")).toHaveTextContent("Priority stays High."));
-    expect(control("Priority").value).toBe("3");
+    expect(pill("Priority")).toHaveTextContent("High");
   });
 
   it("offline, every edit control is disabled with the reason, nothing is sent, and they re-enable on reconnect", async () => {
@@ -210,17 +215,21 @@ describe("editing a ticket in the reader", () => {
     const sent = stub.requests.length;
     act(() => useUIStore.setState({ isOnline: false }));
 
-    for (const name of ["Status", "Priority", "Assignee"]) {
-      expect(control(name)).toBeDisabled();
-      expect(control(name)).toHaveAccessibleDescription("Needs a connection to Freshdesk");
+    for (const name of ["Status", "Priority"]) {
+      expect(pill(name)).toBeDisabled();
+      expect(pill(name)).toHaveAccessibleDescription("Needs a connection to Freshdesk");
     }
+    expect(control("Assignee")).toBeDisabled();
+    expect(control("Assignee")).toHaveAccessibleDescription("Needs a connection to Freshdesk");
     expect(within(reader()).getByRole("status")).toHaveTextContent("Needs a connection to Freshdesk");
-    fireEvent.change(control("Priority"), { target: { value: "1" } });
+    fireEvent.click(pill("Priority"));
+    expect(screen.queryByRole("menuitem", { name: "Low" })).not.toBeInTheDocument();
     expect(writes()).toEqual([]);
     expect(stub.requests.length).toBe(sent);
 
     act(() => useUIStore.setState({ isOnline: true }));
-    for (const name of ["Status", "Priority", "Assignee"]) expect(control(name)).toBeEnabled();
+    for (const name of ["Status", "Priority"]) expect(pill(name)).toBeEnabled();
+    expect(control("Assignee")).toBeEnabled();
     expect(within(reader()).queryByRole("status")).not.toBeInTheDocument();
   });
 
@@ -229,7 +238,8 @@ describe("editing a ticket in the reader", () => {
     act(() =>
       useTicketStore.setState((s) => ({ data: s.data && { ...s.data, sync: { ...s.data.sync, state: "error" as const } } })),
     );
-    for (const name of ["Status", "Priority", "Assignee"]) expect(control(name)).toBeDisabled();
+    for (const name of ["Status", "Priority"]) expect(pill(name)).toBeDisabled();
+    expect(control("Assignee")).toBeDisabled();
     expect(within(reader()).getByRole("status")).toHaveTextContent("Needs a connection to Freshdesk");
   });
 });

@@ -105,6 +105,10 @@ export interface TicketListItem {
   activity: TicketActivity;
   fetchedOnDemand: boolean;
   isSample: boolean;
+  /** Freshdesk ticket type, when the helpdesk has one */
+  ticketType: string | null;
+  /** Custom field values keyed by Freshdesk's field name */
+  customFields: Record<string, string>;
 }
 
 export interface TicketSyncStatus {
@@ -199,6 +203,8 @@ function sampleList(classes: Map<string, StatusClass>): TicketListData {
         activity: sampleActivity(t.id, status.statusClass !== "done", now),
         fetchedOnDemand: false,
         isSample: true,
+        ticketType: null,
+        customFields: {},
       };
     }),
     sync: {
@@ -267,6 +273,8 @@ async function readTicketList(): Promise<TicketListData> {
         activity: activityFrom(stored?.summary ?? null, historyStateOf(t, stored), outstanding),
         fetchedOnDemand: t.fetchedOnDemand,
         isSample: false,
+        ticketType: t.ticketType,
+        customFields: t.customFields ?? {},
       };
     }),
     sync: syncStatusFrom(state, nowS()),

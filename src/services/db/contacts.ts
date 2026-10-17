@@ -9,6 +9,7 @@ export interface DbContact {
   frequency: number;
   last_contacted_at: number | null;
   notes: string | null;
+  timezone_offset_minutes?: number | null;
 }
 
 export interface ContactAttachment {
@@ -98,6 +99,15 @@ export async function upsertContact(
        last_contacted_at = unixepoch(),
        updated_at = unixepoch()`,
     [id, normalizeEmail(email), displayName],
+  );
+}
+
+/** Remembers a Date-header offset on an existing contact. Does not create one. */
+export async function setContactTimezone(email: string, offsetMinutes: number): Promise<void> {
+  const db = await getDb();
+  await db.execute(
+    "UPDATE contacts SET timezone_offset_minutes = $1, updated_at = unixepoch() WHERE email = $2",
+    [offsetMinutes, normalizeEmail(email)],
   );
 }
 

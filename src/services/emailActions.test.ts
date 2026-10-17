@@ -53,6 +53,7 @@ import {
   executeEmailAction,
 } from "./emailActions";
 import { navigateToThread, getSelectedThreadId } from "@/router/navigate";
+import { clearUndo, peekUndo, undoLast } from "./undoStack";
 import { createMockEmailProvider, createMockUIStoreState, createMockThreadStoreState } from "@/test/mocks";
 
 const mockProvider = createMockEmailProvider();
@@ -289,6 +290,53 @@ describe("emailActions", () => {
       });
       expect(result.success).toBe(true);
       expect(mockProvider.createDraft).toHaveBeenCalledWith("base64data", undefined);
+    });
+  });
+
+  describe("optimistic removal rollback", () => {
+    const thread = {
+      id: "t1",
+      accountId: "acct-1",
+      subject: "Hi",
+      snippet: null,
+      lastMessageAt: 1,
+      messageCount: 1,
+      isRead: true,
+      isStarred: false,
+      isPinned: false,
+      isMuted: false,
+      hasAttachments: false,
+      labelIds: ["INBOX"],
+      fromName: "A",
+      fromAddress: "a@b.c",
+    };
+    const restoreThread = vi.fn();
+
+    beforeEach(() => {
+      clearUndo();
+      vi.mocked(useThreadStore.getState).mockReturnValue(createMockThreadStoreState({
+        threads: [thread],
+        updateThread: mockUpdateThread,
+        removeThread: mockRemoveThread,
+        restoreThread,
+      }) as never);
+    });
+
+    it("puts the thread back when archive fails permanently", async () => {
+      mockProvider.archive.mockRejectedValueOnce(new Error("Invalid request"));
+      const result = await archiveThread("acct-1", "t1", ["m1"]);
+      expect(result.success).toBe(false);
+      expect(restoreThread).toHaveBeenCalledWith(expect.objectContaining({ id: "t1", labelIds: ["INBOX"] }), 0);
+      expect(peekUndo()).toBeNull();
+    });
+
+    it("offers undo after a successful archive and restores the thread", async () => {
+      const result = await archiveThread("acct-1", "t1", ["m1"]);
+      expect(result.success).toBe(true);
+      expect(peekUndo()?.label).toBe("Archived");
+      expect(undoLast()).toBe(true);
+      expect(restoreThread).toHaveBeenCalledWith(expect.objectContaining({ id: "t1", labelIds: ["INBOX"] }), 0);
+      expect(peekUndo()).toBeNull();
     });
   });
 });

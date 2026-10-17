@@ -54,12 +54,12 @@ Tickets use the same navigation, reply (`r`), send, send-later and search action
 | `n` | Internal note |
 | `z` | Summarize through the AI send preview |
 | `d` | Open Reply and propose an AI draft; keep existing text |
-| `Shift+S` | Focus Status |
-| `Shift+P` | Focus Priority |
-| `Shift+A` | Focus Assignee |
+| `s` | Open Status |
+| `p` | Open Priority |
+| `a` | Focus Assignee |
 | `b` | Switch the current view between list and board |
 
-Field shortcuts focus the existing control; use its arrow keys and Enter to choose a value. Ticket actions are skipped in inputs, selects and rich text editors, even after rebinding to a modified key. Send and send-later work while composing with command-key bindings. Search keeps its command-key behavior while typing. Settings and shortcuts help both warn about duplicate assignments. On macOS, `Ctrl` bindings use Command and `Alt` uses Option.
+`s`, `p` and `a` apply on a ticket. In mail they still star, pin and reply all, and Settings does not treat those three pairs as conflicts. Status and priority open an anchored menu; arrow keys and Enter choose a value. Assignee focuses the existing control. Ticket actions are skipped in inputs, selects and rich text editors, even after rebinding to a modified key. Send and send-later work while composing with command-key bindings. Search keeps its command-key behavior while typing. Settings and shortcuts help both warn about other duplicate assignments. On macOS, `Ctrl` bindings use Command and `Alt` uses Option.
 
 ## In-thread
 

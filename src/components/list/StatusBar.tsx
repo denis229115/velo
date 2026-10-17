@@ -49,7 +49,7 @@ export function StatusBar({ syncStatus, hints = MAIL_LIST_HINTS }: StatusBarProp
 
   return (
     <footer className="no-select flex items-center justify-between gap-4 h-8 px-3 shrink-0 border-t border-border-secondary text-meta text-text-tertiary">
-      <div role="status" className="flex items-center gap-1.5 min-w-0">
+      <div role="status" className="material-bar flex items-center gap-1.5 min-w-0 rounded-full px-2 py-0.5">
         <span data-tone={tone} aria-hidden className={`w-1.5 h-1.5 rounded-full shrink-0 ${DOT_CLASS[tone]}`} />
         <span className={`truncate ${tone === "error" ? "text-status-error" : ""}`}>{text}</span>
       </div>
