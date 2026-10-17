@@ -66,6 +66,12 @@ export async function updateOperationStatus(
   );
 }
 
+/** Recover ops a previous run claimed but never finished (crash or quit mid-dispatch). */
+export async function resetExecutingOperations(): Promise<void> {
+  const db = await getDb();
+  await db.execute(`UPDATE pending_operations SET status = 'pending' WHERE status = 'executing'`);
+}
+
 export async function deleteOperation(id: string): Promise<void> {
   const db = await getDb();
   await db.execute(`DELETE FROM pending_operations WHERE id = $1`, [id]);

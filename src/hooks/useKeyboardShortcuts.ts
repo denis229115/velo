@@ -92,14 +92,18 @@ export function useKeyboardShortcuts() {
         target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT" ||
         target.isContentEditable || target.closest("[contenteditable='true']") !== null
       );
-      if (!isInputFocused && e.key.toLowerCase() === "z" && !e.metaKey && !e.ctrlKey && !e.altKey && peekUndo()) {
+      // A dialog owns its keys so the underlying ticket does not react.
+      // The hidden-pane reader is the open email thread, so mail shortcuts still apply.
+      if (document.querySelector('[role="dialog"]:not([data-mail-reader])')) return;
+      // Plain z undoes the last mail action. Tickets bind z to Summarize, so they keep it.
+      if (
+        !isInputFocused && e.key === "z" && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey &&
+        getActiveLabel() !== "freshdesk" && peekUndo()
+      ) {
         e.preventDefault();
         undoLast();
         return;
       }
-      // A dialog owns its keys so the underlying ticket does not react.
-      // The hidden-pane reader is the open email thread, so mail shortcuts still apply.
-      if (document.querySelector('[role="dialog"]:not([data-mail-reader])')) return;
       if (isInputFocused) {
         pendingKeyRef.current = null;
         if (pendingTimerRef.current) clearTimeout(pendingTimerRef.current);

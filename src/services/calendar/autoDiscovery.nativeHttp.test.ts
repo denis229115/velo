@@ -31,7 +31,7 @@ beforeEach(() => {
       // Model a 301 followed by an authenticated DAV endpoint: automatic
       // redirects swallow Location and expose only the final 401.
       const manual = config.maxRedirections === 0;
-      const redirect = wellKnownStatus === 301 || wellKnownStatus === 302;
+      const redirect = [301, 302, 307, 308].includes(wellKnownStatus);
       return {
         status: wellKnown ? (redirect && !manual ? 401 : wellKnownStatus) : 401,
         statusText: "",
@@ -48,6 +48,7 @@ beforeEach(() => {
 it.each([
   [301, "https://dav.example.net/calendars/", "https://dav.example.net/calendars/"],
   [302, "/dav/calendars/", "https://example.net/dav/calendars/"],
+  [308, "dav/calendars/", "https://example.net/.well-known/dav/calendars/"],
 ])("preserves a %i Location before DAV authentication", async (status, redirect, expected) => {
   wellKnownStatus = status;
   location = redirect;
@@ -59,6 +60,13 @@ it.each([
   })]);
   expect(result.caldavUrl).toBe(expected);
   expect(result.providerName).toBeNull();
+});
+
+it("never suggests a cleartext http Location, which would receive the user's credentials", async () => {
+  wellKnownStatus = 301;
+  location = "http://dav.example.net/calendars/";
+  const result = await discoverCalDavSettings("user@example.net");
+  expect(result.caldavUrl ?? "").not.toMatch(/^http:/);
 });
 
 it("still accepts a directly served well-known endpoint", async () => {

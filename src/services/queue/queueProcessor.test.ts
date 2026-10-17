@@ -13,6 +13,7 @@ vi.mock("../db/pendingOperations", () => ({
   incrementRetry: vi.fn(() => Promise.resolve()),
   getPendingOpsCount: vi.fn(() => Promise.resolve(0)),
   compactQueue: vi.fn(() => Promise.resolve(0)),
+  resetExecutingOperations: vi.fn(() => Promise.resolve()),
 }));
 
 vi.mock("../db/connection", () => ({ withTransaction: async (fn: (db: unknown) => Promise<void>) => fn({ execute: async () => ({ rowsAffected: 1 }) }) }));

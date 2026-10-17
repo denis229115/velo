@@ -1,7 +1,8 @@
 import { readdirSync, readFileSync, statSync } from "fs";
 import { join, relative, resolve } from "path";
 
-// A18: no gradient backdrop, and glass/blur only on the sidebar. jsdom cannot
+// A18: no gradient backdrop, and glass/blur only on the sidebar and the control layer
+// (menus, popovers, toasts, the AI bar). Lists, reader and composer stay solid. jsdom cannot
 // paint Tailwind classes, so this guards the rendered class vocabulary at source.
 // `--glass-*` custom properties are the Liquid Glass vocabulary and may live in
 // the theme; a glass class or a backdrop filter outside the sidebar may not.
@@ -9,7 +10,7 @@ const SRC = resolve(__dirname, "..");
 
 function appliesGlass(text: string): boolean {
   const withoutTokens = text.replace(/--[\w-]*glass-[\w-]*/g, "");
-  return /glass-|backdrop-blur|backdrop-filter/.test(withoutTokens);
+  return /glass-|material-(?:bar|pop)|backdrop-blur|backdrop-filter/.test(withoutTokens);
 }
 
 function sourceFiles(dir: string): string[] {
@@ -36,8 +37,22 @@ describe("theme guard", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("applies glass/blur only to the sidebar and the window frame it sits on", () => {
-    const allowed = ["styles/globals.css", "components/layout/Sidebar.tsx", "components/layout/AppFrame.tsx"];
+  it("applies glass/blur only to the sidebar, the window frame and the control layer", () => {
+    const allowed = [
+      "styles/globals.css",
+      "components/layout/Sidebar.tsx",
+      "components/layout/AppFrame.tsx",
+      // Control layer: floating surfaces that sit above content.
+      "components/ui/Popover.tsx",
+      "components/ui/Menu.tsx",
+      "components/ui/Combobox.tsx",
+      "components/ui/UndoToast.tsx",
+      "components/ai/AiCard.tsx",
+      "components/composer/AiAssistPanel.tsx",
+      "components/list/StatusBar.tsx",
+      "components/freshdesk/TicketAiDraft.tsx",
+      "components/freshdesk/TicketSummaryCard.tsx",
+    ];
     const offenders = files
       .filter(({ path }) => !allowed.includes(path))
       .filter(({ text }) => appliesGlass(text))

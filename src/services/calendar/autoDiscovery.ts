@@ -102,15 +102,17 @@ async function tryWellKnownDiscovery(domain: string): Promise<string | null> {
       maxRedirections: 0,
     });
 
-    // RFC 6764: server should respond with 301/302 redirect to the CalDAV endpoint
-    if (response.status === 301 || response.status === 302) {
+    // RFC 6764: server should respond with a redirect to the CalDAV endpoint
+    if ([301, 302, 307, 308].includes(response.status)) {
       const location = response.headers.get("Location");
       if (location) {
-        // Handle relative URLs
-        if (location.startsWith("/")) {
-          return `https://${domain}${location}`;
+        // The suggested URL later receives the user's credentials, so it must stay on https.
+        try {
+          const target = new URL(location, `https://${domain}/.well-known/caldav`);
+          if (target.protocol === "https:") return target.toString();
+        } catch {
+          // Unparseable Location: fall through to the other discovery strategies.
         }
-        return location;
       }
     }
 

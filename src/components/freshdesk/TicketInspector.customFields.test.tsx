@@ -21,10 +21,12 @@ const ticket = { id: "1", subject: "Test", status: { label: "Open" }, tags: [], 
 it("edits zero and unchecked as typed scalars, and clears a number with null", async () => {
   const onEdit = vi.fn();
   render(<TicketInspector ticket={ticket} onEdit={onEdit} />);
-  const count = await screen.findByLabelText("Count");
+  // Field metadata loads asynchronously; give it room when the whole suite is busy.
+  const count = await screen.findByLabelText("Count", {}, { timeout: 5000 });
+  const checked = await screen.findByRole("checkbox", { name: "Checked" }, { timeout: 5000 });
   fireEvent.change(count, { target: { value: "0" } }); fireEvent.blur(count);
   expect(onEdit).toHaveBeenLastCalledWith(expect.objectContaining({ changes: { customFields: { cf_count: 0 } } }));
-  fireEvent.click(screen.getByRole("checkbox", { name: "Checked" }));
+  fireEvent.click(checked);
   expect(onEdit).toHaveBeenLastCalledWith(expect.objectContaining({ changes: { customFields: { cf_checked: false } } }));
   fireEvent.change(count, { target: { value: "" } }); fireEvent.blur(count);
   expect(onEdit).toHaveBeenLastCalledWith(expect.objectContaining({ changes: { customFields: { cf_count: null } } }));

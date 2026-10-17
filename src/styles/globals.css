@@ -165,8 +165,9 @@ body {
   -webkit-user-select: none;
 }
 
-/* Translucency is reserved for the sidebar until the restyle. The materials
-   below are for the navigation and control layer and are not applied yet. */
+/* Translucency is for the sidebar and the control layer (menus, popovers, toasts,
+   the AI bar). Lists, the reader and the composer stay solid; themeGuard.test.ts
+   lists the files allowed to use these classes. */
 .glass-sidebar {
   backdrop-filter: blur(var(--sidebar-blur)) saturate(1.4);
   -webkit-backdrop-filter: blur(var(--sidebar-blur)) saturate(1.4);

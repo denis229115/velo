@@ -6,7 +6,7 @@ import { classifyError } from "@/utils/networkErrors";
 import { useAccountStore } from "@/stores/accountStore";
 import { getDb, withTransaction } from "@/services/db/connection";
 import { navigateToThread, getSelectedThreadId } from "@/router/navigate";
-import { clearUndo, offerUndo } from "@/services/undoStack";
+import { clearUndo, offerUndo, peekUndo, type UndoAction } from "@/services/undoStack";
 import { reportAuthExpired } from "@/services/authNotice";
 
 // ---------------------------------------------------------------------------
@@ -160,6 +160,8 @@ function undoLabel(action: EmailAction): string {
 }
 
 export const MAIL_UNDO_MS = 10_000;
+/** IMAP label ids whose messages stay put when a thread is archived, trashed, spammed or moved. */
+const IMAP_KEEP_LABELS = new Set(["SENT", "DRAFT", "all-mail"]);
 interface DurableRemoval {
   labels: string[];
   touched: string[];
@@ -192,15 +194,21 @@ async function executeReversibleRemoval(accountId: string, action: EmailAction):
   let before: DurableRemoval;
   try {
     await withTransaction(async (db) => {
-      const pending = await db.select<{ id: string }[]>("SELECT id FROM pending_operations WHERE account_id = $1 AND resource_id = $2 AND status IN ('pending', 'executing')", [accountId, threadId]);
-      if (pending.length) throw new Error("This thread already has a pending action. Wait for it to finish or Undo it first.");
+      // Only another removal conflicts; queued mark-read, star or send ops on the thread are independent.
+      const pending = await db.select<{ params: string }[]>("SELECT params FROM pending_operations WHERE account_id = $1 AND resource_id = $2 AND status IN ('pending', 'executing')", [accountId, threadId]);
+      if (pending.some((row) => (JSON.parse(row.params) as { before?: unknown }).before)) {
+        throw new Error("This thread already has a pending move. Wait for it to finish or Undo it first.");
+      }
       const labels = await db.select<{ label_id: string }[]>("SELECT label_id FROM thread_labels WHERE account_id = $1 AND thread_id = $2", [accountId, threadId]);
       const touched = action.type === "archive" ? ["INBOX"] : action.type === "trash" ? ["INBOX", "TRASH"] : action.type === "spam" ? ["INBOX", "SPAM"] : action.type === "moveToFolder" ? [action.sourceLabelId ?? "INBOX", action.folderPath] : [];
       before = { labels: labels.map((row) => row.label_id), touched, thread: captureRemoval(action, accountId) };
       const accounts = await db.select<{ provider: string }[]>("SELECT provider FROM accounts WHERE id = $1", [accountId]);
       let imapDestination: string | undefined;
+      // Copies the user keeps on purpose (Sent, Drafts, All Mail) never move with the thread.
+      let protectedPaths = new Set<string>();
       if (accounts[0]?.provider === "imap") {
         const folders = await db.select<{ id: string; imap_folder_path: string | null }[]>("SELECT id, imap_folder_path FROM labels WHERE account_id = $1", [accountId]);
+        protectedPaths = new Set(folders.filter((folder) => folder.imap_folder_path && IMAP_KEEP_LABELS.has(folder.id)).map((folder) => folder.imap_folder_path as string));
         if (action.type === "moveToFolder") {
           const requested = action.folderPath;
           const destination = folders.find((folder) => folder.id === requested || folder.imap_folder_path === requested);
@@ -211,12 +219,16 @@ async function executeReversibleRemoval(accountId: string, action: EmailAction):
           imapDestination = action.type === "archive" ? "archive" : action.type === "trash" ? "TRASH" : action.type === "spam" && action.isSpam ? "SPAM" : "INBOX";
         }
         // IMAP folders are locations; flag labels remain independent.
-        before.touched = [...new Set([...folders.filter((folder) => folder.imap_folder_path && before.labels.includes(folder.id)).map((folder) => folder.id), imapDestination])];
+        before.touched = [...new Set([...folders.filter((folder) => folder.imap_folder_path && before.labels.includes(folder.id) && !IMAP_KEEP_LABELS.has(folder.id)).map((folder) => folder.id), imapDestination])];
       }
       // Callers often pass [] for a whole thread. IMAP needs real message IDs.
       if ("messageIds" in action && action.messageIds.length === 0) {
-        const messages = await db.select<{ id: string }[]>("SELECT id FROM messages WHERE account_id = $1 AND thread_id = $2", [accountId, threadId]);
-        action = { ...action, messageIds: messages.map((row) => row.id) } as EmailAction;
+        const messages = await db.select<{ id: string; imap_folder: string | null }[]>("SELECT id, imap_folder FROM messages WHERE account_id = $1 AND thread_id = $2", [accountId, threadId]);
+        const movable = messages.filter((row) => !row.imap_folder || !protectedPaths.has(row.imap_folder));
+        if (accounts[0]?.provider === "imap" && movable.length === 0) {
+          throw new Error("Nothing to move: this conversation only has Sent, Draft or All Mail copies, which stay where they are.");
+        }
+        action = { ...action, messageIds: movable.map((row) => row.id) } as EmailAction;
       }
       await db.execute(`INSERT INTO pending_operations (id, account_id, operation_type, resource_id, params, next_retry_at)
         VALUES ($1, $2, $3, $4, $5, $6)`, [id, accountId, action.type, threadId, JSON.stringify({ ...actionToParams(action), before: before! }), deadline]);
@@ -228,7 +240,10 @@ async function executeReversibleRemoval(accountId: string, action: EmailAction):
       } else await applyLocalDbUpdate(accountId, action);
     });
   } catch (error) {
-    return { success: false, error: String(error) };
+    // Callers rarely look at the result, so say why nothing happened.
+    const reason = error instanceof Error ? error.message : String(error);
+    window.dispatchEvent(new CustomEvent("velo-mail-action-error", { detail: reason }));
+    return { success: false, error: reason };
   }
   if (useAccountStore.getState().activeAccountId === accountId) applyOptimisticUpdate(action);
   const undo = {
@@ -242,10 +257,55 @@ async function executeReversibleRemoval(accountId: string, action: EmailAction):
       restoreVisibleRemoval(accountId, before!);
     },
   };
-  offerUndo(undo);
-  // Only expire this action; a later action owns its own timer.
-  setTimeout(() => { clearUndo(undo); }, Math.max(0, deadline * 1000 - Date.now()));
+  offerGroupedUndo(undo, deadline * 1000);
   return { success: true, queued: true };
+}
+
+/** Removals started together (multi-select, quick steps) share one Undo that reverts all of them. */
+const UNDO_GROUP_MS = 1_500;
+let undoGroup: { members: UndoAction[]; offered: UndoAction; startedAt: number; expiresAt: number } | null = null;
+
+function offerGroupedUndo(undo: UndoAction, expiresAt: number): void {
+  const now = Date.now();
+  const joinable = undoGroup && peekUndo() === undoGroup.offered && now - undoGroup.startedAt < UNDO_GROUP_MS;
+  if (!undoGroup || !joinable) {
+    undoGroup = { members: [undo], offered: undo, startedAt: now, expiresAt };
+    offerUndo(undo);
+  } else {
+    const group = undoGroup;
+    group.members.push(undo);
+    group.expiresAt = Math.max(group.expiresAt, expiresAt);
+    const members = [...group.members];
+    group.offered = {
+      label: `${members.length} conversations: ${members[0]!.label.toLowerCase()}`,
+      undo: async () => {
+        // One transaction at a time; keep going so a single failure does not strand the rest.
+        let firstError: unknown;
+        for (const member of members) {
+          try { await member.undo(); } catch (error) { firstError ??= error; }
+        }
+        if (firstError) throw firstError;
+      },
+    };
+    offerUndo(group.offered);
+  }
+  const owner = undoGroup;
+  // Each member keeps the group alive until its own deadline passes.
+  setTimeout(() => {
+    if (undoGroup === owner && Date.now() >= owner.expiresAt) clearUndo(owner.offered);
+  }, Math.max(0, expiresAt - now));
+}
+
+/** A thread about to be deleted for good must not keep a queued move or a restorable Undo.
+ * Deleting the row also makes a later Undo fail safely instead of resurrecting the thread. */
+async function discardPendingRemovals(accountId: string, threadId: string): Promise<void> {
+  await withTransaction(async (db) => {
+    const rows = await db.select<{ id: string; params: string }[]>("SELECT id, params FROM pending_operations WHERE account_id = $1 AND resource_id = $2 AND status = 'pending'", [accountId, threadId]);
+    for (const row of rows) {
+      if (!(JSON.parse(row.params) as { before?: unknown }).before) continue;
+      await db.execute("DELETE FROM pending_operations WHERE id = $1 AND status = 'pending'", [row.id]);
+    }
+  });
 }
 
 /** Called before retiring a permanently rejected intent, including after restart. */
@@ -452,6 +512,7 @@ export async function executeEmailAction(
   action: EmailAction,
 ): Promise<ActionResult> {
   if (REMOVALS.has(action.type)) return executeReversibleRemoval(accountId, action);
+  if (action.type === "permanentDelete") await discardPendingRemovals(accountId, action.threadId);
   const snapshot = captureRemoval(action);
   // 1. Optimistic UI update
   applyOptimisticUpdate(action);

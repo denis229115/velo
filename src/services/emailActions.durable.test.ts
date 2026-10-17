@@ -8,10 +8,10 @@ vi.mock("@tauri-apps/plugin-sql", () => ({
   }) },
 }));
 vi.mock("@/router/navigate", () => ({ getSelectedThreadId: () => null, navigateToThread: vi.fn() }));
-const provider = vi.hoisted(() => ({ archive: vi.fn(), trash: vi.fn(), spam: vi.fn(), moveToFolder: vi.fn() }));
+const provider = vi.hoisted(() => ({ archive: vi.fn(), trash: vi.fn(), spam: vi.fn(), moveToFolder: vi.fn(), permanentDelete: vi.fn() }));
 vi.mock("@/services/email/providerFactory", () => ({ getEmailProvider: vi.fn(async () => provider) }));
-import { executeEmailAction, MAIL_UNDO_MS } from "./emailActions";
-import { triggerQueueFlush } from "./queue/queueProcessor";
+import { executeEmailAction, MAIL_UNDO_MS, permanentDeleteThread } from "./emailActions";
+import { triggerQueueFlush, startQueueProcessor, stopQueueProcessor } from "./queue/queueProcessor";
 import { peekUndo, clearUndo } from "./undoStack";
 import { useUIStore } from "@/stores/uiStore";
 import { useAccountStore } from "@/stores/accountStore";
@@ -27,10 +27,11 @@ beforeEach(async () => {
     INSERT INTO accounts VALUES ('a','gmail_api');
     CREATE TABLE labels (id TEXT, account_id TEXT, imap_folder_path TEXT);
     CREATE TABLE thread_labels (account_id TEXT, thread_id TEXT, label_id TEXT, UNIQUE(account_id,thread_id,label_id));
-    CREATE TABLE messages (id TEXT, account_id TEXT, thread_id TEXT);
+    CREATE TABLE threads (id TEXT, account_id TEXT);
+    CREATE TABLE messages (id TEXT, account_id TEXT, thread_id TEXT, imap_folder TEXT);
     CREATE TABLE pending_operations (id TEXT PRIMARY KEY, account_id TEXT, operation_type TEXT, resource_id TEXT, params TEXT, status TEXT DEFAULT 'pending', retry_count INTEGER DEFAULT 0, max_retries INTEGER DEFAULT 5, next_retry_at INTEGER, created_at INTEGER DEFAULT 0, error_message TEXT);
     INSERT INTO thread_labels VALUES ('a','t','INBOX'),('a','t','important'),('b','t','INBOX');
-    INSERT INTO messages VALUES ('imap-a-INBOX-1','a','t');`);
+    INSERT INTO messages VALUES ('imap-a-INBOX-1','a','t','INBOX');`);
   useAccountStore.setState({ activeAccountId: "a" });
   useThreadStore.setState({ threads: [] });
   useUIStore.setState({ isOnline: true });
@@ -140,5 +141,69 @@ describe("durable removal", () => {
     await expect(undo.undo()).rejects.toThrow("already started");
     release(); await flush;
     expect(await labels()).toEqual(["important"]);
+  });
+
+  async function imapAccountWithSentAndAllMail() {
+    await db.execute("UPDATE accounts SET provider='imap'");
+    await db.execute("INSERT INTO labels VALUES ('INBOX','a','INBOX'),('SENT','a','Sent'),('DRAFT','a','Drafts'),('all-mail','a','All Mail')");
+    await db.execute("INSERT INTO thread_labels VALUES ('a','t','SENT'),('a','t','all-mail')");
+  }
+
+  it("never moves or relabels Sent, Drafts or All Mail copies of an IMAP thread", async () => {
+    await imapAccountWithSentAndAllMail();
+    await db.execute("INSERT INTO messages VALUES ('imap-a-Sent-2','a','t','Sent'),('imap-a-Drafts-3','a','t','Drafts'),('imap-a-All Mail-4','a','t','All Mail')");
+    expect((await executeEmailAction("a", { type: "trash", threadId: "t", messageIds: [] })).success).toBe(true);
+    const params = JSON.parse((await db.select<{ params: string }[]>("SELECT params FROM pending_operations"))[0]!.params);
+    expect(params.messageIds).toEqual(["imap-a-INBOX-1"]);
+    expect(await labels()).toEqual(["SENT", "TRASH", "all-mail", "important"]);
+    await peekUndo()!.undo();
+    expect(await labels()).toEqual(["INBOX", "SENT", "all-mail", "important"]);
+  });
+
+  it("refuses, with a visible reason, when an IMAP thread has nothing movable", async () => {
+    await imapAccountWithSentAndAllMail();
+    await db.execute("DELETE FROM messages");
+    await db.execute("INSERT INTO messages VALUES ('imap-a-Sent-2','a','t','Sent')");
+    const reasons: string[] = [];
+    window.addEventListener("velo-mail-action-error", (event) => reasons.push((event as CustomEvent<string>).detail), { once: true });
+    expect((await executeEmailAction("a", { type: "spam", threadId: "t", messageIds: [], isSpam: true })).success).toBe(false);
+    expect(reasons[0]).toMatch(/Nothing to move/);
+    expect(await db.select("SELECT * FROM pending_operations")).toEqual([]);
+    expect(await labels()).toEqual(["INBOX", "SENT", "all-mail", "important"]);
+  });
+
+  it("is not blocked by an unrelated queued mark-read on the same thread", async () => {
+    await db.execute(`INSERT INTO pending_operations (id, account_id, operation_type, resource_id, params) VALUES ('r','a','markRead','t','{"threadId":"t","read":true}')`);
+    expect((await executeEmailAction("a", { type: "archive", threadId: "t", messageIds: ["m"] })).success).toBe(true);
+  });
+
+  it("recovers an operation a crashed run left executing, then dispatches it once", async () => {
+    await executeEmailAction("a", { type: "archive", threadId: "t", messageIds: ["m"] });
+    await db.execute("UPDATE pending_operations SET status='executing'");
+    vi.advanceTimersByTime(MAIL_UNDO_MS + 1000);
+    startQueueProcessor();
+    await vi.advanceTimersByTimeAsync(0);
+    stopQueueProcessor();
+    await triggerQueueFlush();
+    expect(provider.archive).toHaveBeenCalledExactlyOnceWith("t", ["m"]);
+  });
+
+  it("offers one Undo that reverts every thread of a multi-select removal", async () => {
+    await db.execute("INSERT INTO thread_labels VALUES ('a','u','INBOX')");
+    await executeEmailAction("a", { type: "archive", threadId: "t", messageIds: ["m"] });
+    await executeEmailAction("a", { type: "archive", threadId: "u", messageIds: ["n"] });
+    expect(peekUndo()!.label).toMatch(/^2 conversations/);
+    await peekUndo()!.undo();
+    expect((await db.select("SELECT * FROM thread_labels WHERE label_id='INBOX' AND account_id='a'")).length).toBe(2);
+    expect(await db.select("SELECT * FROM pending_operations")).toEqual([]);
+  });
+
+  it("drops a queued removal when the thread is deleted for good, so Undo cannot resurrect it", async () => {
+    await executeEmailAction("a", { type: "trash", threadId: "t", messageIds: ["m"] });
+    const undo = peekUndo()!;
+    await permanentDeleteThread("a", "t", ["m"]);
+    expect(await db.select("SELECT * FROM pending_operations WHERE operation_type='trash'")).toEqual([]);
+    await expect(undo.undo()).rejects.toThrow("already started");
+    expect(await labels()).not.toContain("INBOX");
   });
 });

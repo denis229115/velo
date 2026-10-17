@@ -14,6 +14,15 @@ export function UndoToast() {
       window.removeEventListener("velo-mail-action-error", failed);
     };
   }, []);
+  // A fresh Undo offer supersedes an old error; errors also fade on their own.
+  useEffect(() => {
+    if (action) setError(null);
+  }, [action]);
+  useEffect(() => {
+    if (!error) return;
+    const timer = setTimeout(() => setError(null), 8_000);
+    return () => clearTimeout(timer);
+  }, [error]);
   if (error) {
     return (
       <div

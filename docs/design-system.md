@@ -48,7 +48,7 @@ Bar and sidebar share `blur(24px) saturate(180%)`. Popovers use `blur(32px) satu
 
 The highlight is `transparent` in those fallbacks, so a solid control does not pretend to be lit glass. The 1px edge stays.
 
-`.glass-bar` and `.glass-pop` in `globals.css` are the only implementations of this recipe. They are not applied to product surfaces yet. The current sidebar still uses `.glass-sidebar` and `--surface-sidebar`.
+`.glass-bar` / `.glass-pop` (and their `.material-bar` / `.material-pop` aliases) in `globals.css` are the only implementations of this recipe. They are applied to the control layer only (popovers, menus, toasts, the AI bar); `themeGuard.test.ts` lists the files allowed to use them. The sidebar still uses `.glass-sidebar` and `--surface-sidebar`.
 
 ## Palette
 
