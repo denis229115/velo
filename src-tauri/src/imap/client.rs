@@ -253,11 +253,12 @@ pub async fn fetch_messages(
         mailbox.uid_next.unwrap_or(0),
     );
 
-    // Try UID FETCH first; if the stream is empty, fall back to sequence-number FETCH.
-    // Some IMAP servers return empty streams for UID FETCH despite valid UIDs.
+    // The data items must be wrapped in parentheses (RFC 3501): strict servers answer a bare
+    // multi-item list with a tagged BAD, which async-imap swallows as an empty stream. Only if
+    // the stream is still empty do we fall back to the raw TCP fetch.
     let fetches = tokio::time::timeout(IMAP_FETCH_TIMEOUT, async {
         let stream = session
-            .uid_fetch(uid_range, "UID FLAGS INTERNALDATE BODY.PEEK[]")
+            .uid_fetch(uid_range, "(UID FLAGS INTERNALDATE BODY.PEEK[])")
             .await
             .map_err(|e| format!("UID FETCH {folder} uids={uid_range} failed: {e}"))?;
         Ok::<_, String>(stream.collect::<Vec<_>>().await)
@@ -336,7 +337,7 @@ pub async fn fetch_message_body(
     let uid_str = uid.to_string();
     let fetches: Vec<_> = tokio::time::timeout(IMAP_FETCH_TIMEOUT, async {
         let stream = session
-            .uid_fetch(&uid_str, "UID FLAGS BODY.PEEK[]")
+            .uid_fetch(&uid_str, "(UID FLAGS BODY.PEEK[])")
             .await
             .map_err(|e| format!("UID FETCH failed: {e}"))?;
         Ok::<_, String>(stream.collect::<Vec<_>>().await)
@@ -861,7 +862,7 @@ pub async fn sync_folder(
 
         let fetches = tokio::time::timeout(IMAP_FETCH_TIMEOUT, async {
             let stream = session
-                .uid_fetch(&uid_set, "UID FLAGS INTERNALDATE BODY.PEEK[]")
+                .uid_fetch(&uid_set, "(UID FLAGS INTERNALDATE BODY.PEEK[])")
                 .await
                 .map_err(|e| format!("UID FETCH {folder} uids={uid_set} failed: {e}"))?;
             Ok::<_, String>(stream.collect::<Vec<_>>().await)
@@ -1843,5 +1844,115 @@ fn format_address_list(addr: Option<&mail_parser::Address>) -> Option<String> {
         None
     } else {
         Some(parts.join(", "))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::net::TcpListener;
+
+    const FOLDER: &str = "INBOX.Archive";
+
+    fn synthetic_message(n: u32) -> String {
+        format!(
+            "From: Sender <sender{n}@example.com>\r\nTo: me@example.com\r\nSubject: Message {n}\r\n\
+             Message-ID: <m{n}@example.com>\r\nDate: Mon, 16 Feb 2026 12:00:00 +0000\r\n\
+             Content-Type: text/plain; charset=utf-8\r\n\r\nBody {n}\r\n"
+        )
+    }
+
+    /// A fake IMAP server that follows RFC 3501 for FETCH: several data items
+    /// must be wrapped in parentheses, otherwise the command is rejected with a
+    /// tagged BAD (what Dovecot-style servers do). Serves UIDs 1..=3.
+    async fn spawn_strict_server() -> u16 {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut reader = BufReader::new(stream);
+            reader.get_mut().write_all(b"* OK IMAP ready\r\n").await.unwrap();
+            let mut line = String::new();
+            loop {
+                line.clear();
+                if reader.read_line(&mut line).await.unwrap() == 0 {
+                    return;
+                }
+                let cmd = line.trim_end().to_string();
+                let (tag, rest) = cmd.split_once(' ').unwrap();
+                let out = if rest.starts_with("LOGIN") {
+                    format!("{tag} OK LOGIN done\r\n")
+                } else if rest.starts_with("SELECT") {
+                    format!(
+                        "* 3 EXISTS\r\n* 0 RECENT\r\n* OK [UIDVALIDITY 7] ok\r\n\
+                         * OK [UIDNEXT 4] ok\r\n{tag} OK [READ-WRITE] SELECT done\r\n"
+                    )
+                } else if let Some(args) = rest.strip_prefix("UID FETCH ") {
+                    let (set, items) = args.split_once(' ').unwrap();
+                    let multiple = items.split_whitespace().count() > 1;
+                    if multiple && !(items.starts_with('(') && items.ends_with(')')) {
+                        format!("{tag} BAD Error in IMAP command UID FETCH: Invalid arguments.\r\n")
+                    } else {
+                        let mut resp = String::new();
+                        for (i, uid) in set.split(',').map(|u| u.parse::<u32>().unwrap()).enumerate() {
+                            let msg = synthetic_message(uid);
+                            resp.push_str(&format!(
+                                "* {} FETCH (UID {uid} FLAGS (\\Seen) INTERNALDATE \"16-Feb-2026 12:00:00 +0000\" BODY[] {{{}}}\r\n{msg})\r\n",
+                                i + 1,
+                                msg.len()
+                            ));
+                        }
+                        resp.push_str(&format!("{tag} OK UID FETCH done\r\n"));
+                        resp
+                    }
+                } else if rest.starts_with("LOGOUT") {
+                    format!("* BYE bye\r\n{tag} OK LOGOUT done\r\n")
+                } else {
+                    format!("{tag} BAD unsupported\r\n")
+                };
+                reader.get_mut().write_all(out.as_bytes()).await.unwrap();
+            }
+        });
+        port
+    }
+
+    fn config(port: u16) -> ImapConfig {
+        ImapConfig {
+            host: "127.0.0.1".into(),
+            port,
+            security: "none".into(),
+            username: "user".into(),
+            password: "pw".into(),
+            auth_method: "password".into(),
+            accept_invalid_certs: false,
+        }
+    }
+
+    #[tokio::test]
+    async fn fetch_messages_gets_messages_from_a_strict_server_without_the_raw_fallback() {
+        let port = spawn_strict_server().await;
+        let mut session = connect(&config(port)).await.unwrap();
+
+        let result = fetch_messages(&mut session, FOLDER, "1,2,3")
+            .await
+            .expect("primary async-imap path must not hand off to the raw TCP fallback");
+
+        let uids: Vec<u32> = result.messages.iter().map(|m| m.uid).collect();
+        assert_eq!(uids, vec![1, 2, 3]);
+        assert_eq!(result.messages[0].subject.as_deref(), Some("Message 1"));
+        assert!(result.messages[0].is_read);
+    }
+
+    #[tokio::test]
+    async fn fetch_message_body_finds_the_message_on_a_strict_server() {
+        let port = spawn_strict_server().await;
+        let mut session = connect(&config(port)).await.unwrap();
+
+        let msg = fetch_message_body(&mut session, FOLDER, 2)
+            .await
+            .expect("single-message fetch must work on a strict server");
+
+        assert_eq!(msg.uid, 2);
+        assert_eq!(msg.subject.as_deref(), Some("Message 2"));
     }
 }
