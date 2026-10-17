@@ -227,6 +227,44 @@ pub async fn list_folders(session: &mut ImapSession) -> Result<Vec<ImapFolder>, 
     Ok(folders)
 }
 
+/// Run `UID FETCH <uid_set> (UID FLAGS INTERNALDATE BODY.PEEK[])` and collect the responses.
+///
+/// async-imap ends the stream at the tagged reply and drops its status, so a tagged NO/BAD looks
+/// exactly like "no messages". An empty result for a non-empty UID set is therefore logged as a
+/// rejected fetch, never as a successful empty one; callers decide whether to fall back.
+async fn collect_fetches(
+    session: &mut ImapSession,
+    folder: &str,
+    uid_set: &str,
+) -> Result<Vec<async_imap::types::Fetch>, String> {
+    let raw = tokio::time::timeout(IMAP_FETCH_TIMEOUT, async {
+        let stream = session
+            .uid_fetch(uid_set, "(UID FLAGS INTERNALDATE BODY.PEEK[])")
+            .await
+            .map_err(|e| format!("UID FETCH {folder} uids={uid_set} failed: {e}"))?;
+        Ok::<_, String>(stream.collect::<Vec<_>>().await)
+    })
+    .await
+    .map_err(|_| format!("UID FETCH {folder} timed out after {}s — check your server settings or network connection", IMAP_FETCH_TIMEOUT.as_secs()))??;
+
+    let mut fetches = Vec::new();
+    let mut fetch_err = 0u32;
+    for r in raw {
+        match r {
+            Ok(f) => fetches.push(f),
+            Err(e) => { fetch_err += 1; log::warn!("IMAP fetch stream error in {folder}: {e}"); }
+        }
+    }
+    log::debug!("IMAP FETCH {folder}: {} ok, {fetch_err} errors from uid_fetch", fetches.len());
+    if fetches.is_empty() && !uid_set.is_empty() {
+        log::warn!(
+            "IMAP FETCH {folder}: fetch returned no data for UIDs {uid_set} ({fetch_err} stream errors), \
+             treating as rejected (async-imap hides the server's tagged NO/BAD status)"
+        );
+    }
+    Ok(fetches)
+}
+
 /// Fetch messages from a folder by UID range (e.g. "1:100" or "500:*").
 pub async fn fetch_messages(
     session: &mut ImapSession,
@@ -256,32 +294,12 @@ pub async fn fetch_messages(
     // The data items must be wrapped in parentheses (RFC 3501): strict servers answer a bare
     // multi-item list with a tagged BAD, which async-imap swallows as an empty stream. Only if
     // the stream is still empty do we fall back to the raw TCP fetch.
-    let fetches = tokio::time::timeout(IMAP_FETCH_TIMEOUT, async {
-        let stream = session
-            .uid_fetch(uid_range, "(UID FLAGS INTERNALDATE BODY.PEEK[])")
-            .await
-            .map_err(|e| format!("UID FETCH {folder} uids={uid_range} failed: {e}"))?;
-        Ok::<_, String>(stream.collect::<Vec<_>>().await)
-    })
-    .await
-    .map_err(|_| format!("UID FETCH {folder} timed out after {}s — check your server settings or network connection", IMAP_FETCH_TIMEOUT.as_secs()))?;
+    let fetches = collect_fetches(session, folder, uid_range).await?;
 
-    let raw_fetches: Vec<_> = fetches?;
-    let mut fetch_ok = 0u32;
-    let mut fetch_err = 0u32;
-    let mut fetches = Vec::new();
-    for r in raw_fetches {
-        match r {
-            Ok(f) => { fetch_ok += 1; fetches.push(f); }
-            Err(e) => { fetch_err += 1; log::warn!("IMAP fetch stream error in {folder}: {e}"); }
-        }
-    }
-    log::info!("IMAP FETCH {folder}: {fetch_ok} ok, {fetch_err} errors from uid_fetch");
-
-    // If async-imap returned nothing but messages exist, fallback to raw TCP fetch
+    // If async-imap returned nothing but messages exist, the fetch was rejected (or unparseable):
+    // hand over to the raw TCP fetch, which does see the tagged status.
     if fetches.is_empty() && mailbox.exists > 0 {
         log::warn!("IMAP {folder}: async-imap returned 0 items but exists={}. Falling back to raw TCP fetch...", mailbox.exists);
-        // Return early with raw fetch result — caller doesn't need to know about the fallback
         return Err(format!("ASYNC_IMAP_EMPTY:{folder}"));
     }
 
@@ -321,6 +339,26 @@ pub async fn fetch_messages(
         messages,
         folder_status,
     })
+}
+
+/// `fetch_messages` on a fresh connection, retrying through the raw TCP path when async-imap
+/// got nothing back. If both fail the error carries the server's tagged reply from the raw path.
+pub async fn fetch_messages_with_fallback(
+    config: &ImapConfig,
+    folder: &str,
+    uid_set: &str,
+) -> Result<ImapFetchResult, String> {
+    let mut session = connect(config).await?;
+    let result = fetch_messages(&mut session, folder, uid_set).await;
+    let _ = session.logout().await;
+
+    match result {
+        Err(e) if e.starts_with("ASYNC_IMAP_EMPTY:") => {
+            log::info!("Falling back to raw TCP fetch for folder {folder}");
+            raw_fetch_messages(config, folder, uid_set).await
+        }
+        other => other,
+    }
 }
 
 /// Fetch a single message body by UID.
@@ -802,6 +840,7 @@ pub async fn search_folder(
 /// many folders.
 pub async fn sync_folder(
     session: &mut ImapSession,
+    config: &ImapConfig,
     folder: &str,
     batch_size: u32,
     since_date: Option<String>,
@@ -860,42 +899,46 @@ pub async fn sync_folder(
             .collect::<Vec<_>>()
             .join(",");
 
-        let fetches = tokio::time::timeout(IMAP_FETCH_TIMEOUT, async {
-            let stream = session
-                .uid_fetch(&uid_set, "(UID FLAGS INTERNALDATE BODY.PEEK[])")
-                .await
-                .map_err(|e| format!("UID FETCH {folder} uids={uid_set} failed: {e}"))?;
-            Ok::<_, String>(stream.collect::<Vec<_>>().await)
-        })
-        .await
-        .map_err(|_| format!("UID FETCH {folder} timed out after {}s — check your server settings or network connection", IMAP_FETCH_TIMEOUT.as_secs()))?;
-
-        let raw_fetches: Vec<_> = fetches?;
-        for r in raw_fetches {
-            match r {
-                Ok(f) => {
-                    let uid = match f.uid {
-                        Some(u) => u,
-                        None => { log::warn!("IMAP sync_folder {folder}: response missing UID"); continue; }
-                    };
-                    let raw = match f.body() {
-                        Some(b) => b,
-                        None => { log::warn!("IMAP sync_folder {folder}: UID {uid} has no body"); continue; }
-                    };
-                    let raw_size = raw.len() as u32;
-                    let flags: Vec<_> = f.flags().collect();
-                    let is_read = flags.iter().any(|fl| matches!(fl, Flag::Seen));
-                    let is_starred = flags.iter().any(|fl| matches!(fl, Flag::Flagged));
-                    let is_draft = flags.iter().any(|fl| matches!(fl, Flag::Draft));
-                    let internal_date = f.internal_date().map(|dt| dt.timestamp());
-
-                    match parse_message(&parser, raw, uid, folder, raw_size, is_read, is_starred, is_draft, internal_date) {
-                        Ok(msg) => all_messages.push(msg),
-                        Err(e) => log::warn!("sync_folder: failed to parse UID {uid}: {e}"),
+        let fetches = collect_fetches(session, folder, &uid_set).await?;
+        if fetches.is_empty() {
+            // Rejected or unparseable for async-imap: retry this batch over the raw path. If that
+            // fails too, fail the whole folder so the caller never records it as synced.
+            log::warn!("IMAP sync_folder {folder}: retrying UIDs {uid_set} through the raw TCP path");
+            match raw_fetch_messages(config, folder, &uid_set).await {
+                Ok(r) => {
+                    if r.messages.is_empty() {
+                        log::warn!("IMAP sync_folder {folder}: raw fetch also returned no messages for UIDs {uid_set}");
                     }
+                    all_messages.extend(r.messages);
+                    continue;
                 }
-                Err(e) => log::warn!("IMAP sync_folder fetch stream error in {folder}: {e}"),
+                Err(e) => {
+                    return Err(format!(
+                        "IMAP sync_folder {folder}: fetch of UIDs {uid_set} was rejected or returned no data, and the raw fallback failed: {e}"
+                    ));
+                }
             }
+        }
+        for f in fetches {
+        let uid = match f.uid {
+            Some(u) => u,
+            None => { log::warn!("IMAP sync_folder {folder}: response missing UID"); continue; }
+        };
+        let raw = match f.body() {
+            Some(b) => b,
+            None => { log::warn!("IMAP sync_folder {folder}: UID {uid} has no body"); continue; }
+        };
+        let raw_size = raw.len() as u32;
+        let flags: Vec<_> = f.flags().collect();
+        let is_read = flags.iter().any(|fl| matches!(fl, Flag::Seen));
+        let is_starred = flags.iter().any(|fl| matches!(fl, Flag::Flagged));
+        let is_draft = flags.iter().any(|fl| matches!(fl, Flag::Draft));
+        let internal_date = f.internal_date().map(|dt| dt.timestamp());
+
+        match parse_message(&parser, raw, uid, folder, raw_size, is_read, is_starred, is_draft, internal_date) {
+            Ok(msg) => all_messages.push(msg),
+            Err(e) => log::warn!("sync_folder: failed to parse UID {uid}: {e}"),
+        }
         }
     }
 
@@ -966,13 +1009,18 @@ pub async fn raw_fetch_messages(
         let b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, xoauth2.as_bytes());
         format!("a1 AUTHENTICATE XOAUTH2 {b64}\r\n")
     } else {
-        format!("a1 LOGIN \"{}\" \"{}\"\r\n", config.username, config.password)
+        String::new()
     };
-    raw_send_and_wait(&mut reader, login_cmd.as_bytes(), "a1").await?;
+    if config.auth_method == "oauth2" {
+        raw_send_and_wait(&mut reader, login_cmd.as_bytes(), "a1").await?;
+    } else {
+        raw_send_command(&mut reader, "a1", "LOGIN", &[&config.username, &config.password]).await?;
+        raw_wait(&mut reader, "a1").await?;
+    }
 
     // SELECT
-    let select_cmd = format!("a2 SELECT \"{folder}\"\r\n");
-    let select_response = raw_send_and_wait(&mut reader, select_cmd.as_bytes(), "a2").await?;
+    raw_send_command(&mut reader, "a2", "SELECT", &[folder]).await?;
+    let select_response = raw_wait(&mut reader, "a2").await?;
 
     // Parse SELECT response for UIDVALIDITY, EXISTS, UNSEEN
     let mut exists = 0u32;
@@ -1064,7 +1112,12 @@ pub async fn raw_fetch_diagnostic(
     }
 
     // LOGIN
-    let login_cmd = format!("a1 LOGIN \"{}\" \"{}\"\r\n", config.username, config.password);
+    // Diagnostic only: escape, and drop CR/LF a quoted string cannot carry.
+    let login_cmd = format!(
+        "a1 LOGIN \"{}\" \"{}\"\r\n",
+        escape_quoted(&config.username.replace(['\r', '\n'], "")),
+        escape_quoted(&config.password.replace(['\r', '\n'], ""))
+    );
     stream.write_all(login_cmd.as_bytes()).await.map_err(|e| format!("LOGIN: {e}"))?;
     let n = stream.read(&mut buf).await.map_err(|e| format!("LOGIN read: {e}"))?;
     output.push_str(&format!("S: {}", String::from_utf8_lossy(&buf[..n])));
@@ -1153,6 +1206,60 @@ async fn raw_connect_starttls(config: &ImapConfig) -> Result<ImapStream, String>
     Ok(ImapStream::Tls(tls))
 }
 
+/// Escape `\` and `"` for use inside an IMAP quoted-string (RFC 3501 §4.3).
+fn escape_quoted(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        if c == '\\' || c == '"' {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out
+}
+
+/// Encode as an IMAP quoted-string, or `None` when it can't be one: quoted strings are 7-bit
+/// and cannot carry CR, LF or NUL, so those arguments must be sent as literals.
+fn imap_quoted(s: &str) -> Option<String> {
+    if s.bytes().all(|b| (1..=0x7f).contains(&b) && b != b'\r' && b != b'\n') {
+        Some(format!("\"{}\"", escape_quoted(s)))
+    } else {
+        None
+    }
+}
+
+/// Write `<tag> <verb> <args...>\r\n`, quoting each argument (RFC 3501 quoted-string) and
+/// sending it as a synchronising literal when a quoted string cannot carry it.
+async fn raw_send_command(
+    reader: &mut tokio::io::BufReader<ImapStream>,
+    tag: &str,
+    verb: &str,
+    args: &[&str],
+) -> Result<(), String> {
+    let mut buf = format!("{tag} {verb}").into_bytes();
+    for arg in args {
+        buf.push(b' ');
+        match imap_quoted(arg) {
+            Some(q) => buf.extend_from_slice(q.as_bytes()),
+            None => {
+                buf.extend_from_slice(format!("{{{}}}\r\n", arg.len()).as_bytes());
+                reader.get_mut().write_all(&buf).await.map_err(|e| format!("{tag} write: {e}"))?;
+                buf.clear();
+                let mut cont = String::new();
+                match tokio::time::timeout(IMAP_CMD_TIMEOUT, reader.read_line(&mut cont)).await {
+                    Ok(Ok(n)) if n > 0 && cont.starts_with('+') => {}
+                    Ok(Ok(_)) => return Err(format!("{tag} {verb} failed: server refused the literal: {}", cont.trim_end())),
+                    Ok(Err(e)) => return Err(format!("{tag} read: {e}")),
+                    Err(_) => return Err(format!("{tag}: timeout waiting for literal continuation")),
+                }
+                buf.extend_from_slice(arg.as_bytes());
+            }
+        }
+    }
+    buf.extend_from_slice(b"\r\n");
+    reader.get_mut().write_all(&buf).await.map_err(|e| format!("{tag} write: {e}"))
+}
+
 /// Send a command and read all response lines until the tagged response (e.g. "a1 OK ...").
 async fn raw_send_and_wait(
     reader: &mut tokio::io::BufReader<ImapStream>,
@@ -1161,7 +1268,15 @@ async fn raw_send_and_wait(
 ) -> Result<String, String> {
     reader.get_mut().write_all(cmd).await
         .map_err(|e| format!("{tag} write: {e}"))?;
+    raw_wait(reader, tag).await
+}
 
+/// Read response lines until the tagged response; a tagged NO/BAD becomes an error carrying
+/// the server's text.
+async fn raw_wait(
+    reader: &mut tokio::io::BufReader<ImapStream>,
+    tag: &str,
+) -> Result<String, String> {
     let mut response = String::new();
     let tag_ok = format!("{tag} OK");
     let tag_no = format!("{tag} NO");
@@ -1926,6 +2041,235 @@ mod tests {
             auth_method: "password".into(),
             accept_invalid_certs: false,
         }
+    }
+
+    // ---- Configurable fake server (several connections, LOGIN verification, rejected FETCH) ----
+
+    #[derive(Clone)]
+    struct FakeOpts {
+        /// The password LOGIN must carry after unquoting (quoted-string or literal).
+        password: String,
+        /// The first N connections answer every UID FETCH with a tagged NO; async-imap
+        /// swallows that as an empty stream, the raw TCP path reports it.
+        reject_fetch_on_first: usize,
+        /// Serves UIDs 1..=messages.
+        messages: u32,
+    }
+
+    impl Default for FakeOpts {
+        fn default() -> Self {
+            FakeOpts { password: "pw".into(), reject_fetch_on_first: 0, messages: 3 }
+        }
+    }
+
+    /// Parses `"quoted \" and \\ escapes"` or `{n}` literals (with the `+` continuation) from a
+    /// command line, the way a conforming server reads LOGIN arguments.
+    async fn read_astring(
+        reader: &mut BufReader<TcpStream>,
+        rest: &mut String,
+    ) -> Option<String> {
+        *rest = rest.trim_start().to_string();
+        if let Some(body) = rest.strip_prefix('"') {
+            let mut out = String::new();
+            let mut chars = body.char_indices();
+            while let Some((i, c)) = chars.next() {
+                match c {
+                    '\\' => out.push(chars.next()?.1),
+                    '"' => {
+                        *rest = body[i + 1..].to_string();
+                        return Some(out);
+                    }
+                    c => out.push(c),
+                }
+            }
+            None
+        } else if rest.starts_with('{') {
+            let end = rest.find('}')?;
+            let n: usize = rest[1..end].trim_end_matches('+').parse().ok()?;
+            reader.get_mut().write_all(b"+ go ahead\r\n").await.ok()?;
+            let mut data = vec![0u8; n];
+            reader.read_exact(&mut data).await.ok()?;
+            let mut tail = String::new();
+            reader.read_line(&mut tail).await.ok()?;
+            *rest = tail.trim_end().to_string();
+            String::from_utf8(data).ok()
+        } else {
+            None
+        }
+    }
+
+    async fn spawn_fake(opts: FakeOpts) -> u16 {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let connections = Arc::new(AtomicUsize::new(0));
+        tokio::spawn(async move {
+            loop {
+                let (stream, _) = listener.accept().await.unwrap();
+                let idx = connections.fetch_add(1, Ordering::SeqCst);
+                let opts = opts.clone();
+                tokio::spawn(async move {
+                    let mut reader = BufReader::new(stream);
+                    reader.get_mut().write_all(b"* OK IMAP ready\r\n").await.unwrap();
+                    let mut line = String::new();
+                    loop {
+                        line.clear();
+                        if reader.read_line(&mut line).await.unwrap_or(0) == 0 {
+                            return;
+                        }
+                        let cmd = line.trim_end().to_string();
+                        let (tag, rest) = cmd.split_once(' ').unwrap();
+                        let out = if let Some(args) = rest.strip_prefix("LOGIN ") {
+                            let mut args = args.to_string();
+                            let user = read_astring(&mut reader, &mut args).await;
+                            let pass = read_astring(&mut reader, &mut args).await;
+                            if user.as_deref() == Some("user") && pass.as_deref() == Some(opts.password.as_str()) {
+                                format!("{tag} OK LOGIN done\r\n")
+                            } else {
+                                format!("{tag} NO [AUTHENTICATIONFAILED] Authentication failed.\r\n")
+                            }
+                        } else if rest.starts_with("SELECT") {
+                            format!(
+                                "* {} EXISTS\r\n* 0 RECENT\r\n* OK [UIDVALIDITY 7] ok\r\n\
+                                 * OK [UIDNEXT {}] ok\r\n{tag} OK [READ-WRITE] SELECT done\r\n",
+                                opts.messages,
+                                opts.messages + 1
+                            )
+                        } else if rest.starts_with("UID SEARCH") {
+                            let all: Vec<String> = (1..=opts.messages).map(|u| u.to_string()).collect();
+                            format!("* SEARCH {}\r\n{tag} OK SEARCH done\r\n", all.join(" "))
+                        } else if let Some(args) = rest.strip_prefix("UID FETCH ") {
+                            let (set, items) = args.split_once(' ').unwrap();
+                            if !(items.starts_with('(') && items.ends_with(')')) {
+                                format!("{tag} BAD Invalid arguments.\r\n")
+                            } else if idx < opts.reject_fetch_on_first {
+                                format!("{tag} NO [SERVERBUG] Fetch temporarily refused.\r\n")
+                            } else {
+                                let mut resp = String::new();
+                                for (i, uid) in set.split(',').map(|u| u.parse::<u32>().unwrap()).enumerate() {
+                                    let msg = synthetic_message(uid);
+                                    resp.push_str(&format!(
+                                        "* {} FETCH (UID {uid} FLAGS (\\Seen) INTERNALDATE \"16-Feb-2026 12:00:00 +0000\" BODY[] {{{}}}\r\n{msg})\r\n",
+                                        i + 1,
+                                        msg.len()
+                                    ));
+                                }
+                                resp.push_str(&format!("{tag} OK UID FETCH done\r\n"));
+                                resp
+                            }
+                        } else if rest.starts_with("LOGOUT") {
+                            format!("* BYE bye\r\n{tag} OK LOGOUT done\r\n")
+                        } else {
+                            format!("{tag} BAD unsupported\r\n")
+                        };
+                        if reader.get_mut().write_all(out.as_bytes()).await.is_err() {
+                            return;
+                        }
+                    }
+                });
+            }
+        });
+        port
+    }
+
+    fn config_with_password(port: u16, password: &str) -> ImapConfig {
+        ImapConfig { password: password.into(), ..config(port) }
+    }
+
+    // ---- 3. LOGIN quoting on the raw path ----
+
+    #[test]
+    fn imap_quoted_escapes_quote_and_backslash() {
+        assert_eq!(imap_quoted("plain").as_deref(), Some("\"plain\""));
+        assert_eq!(imap_quoted("a\"b\\c").as_deref(), Some("\"a\\\"b\\\\c\""));
+    }
+
+    #[test]
+    fn imap_quoted_refuses_what_a_quoted_string_cannot_carry() {
+        assert_eq!(imap_quoted("line\r\nbreak"), None);
+        assert_eq!(imap_quoted("nul\0byte"), None);
+        assert_eq!(imap_quoted("päss"), None);
+    }
+
+    #[tokio::test]
+    async fn raw_fetch_logs_in_with_quote_and_backslash_in_the_password() {
+        let password = r#"pa"ss\word"#;
+        let port = spawn_fake(FakeOpts { password: password.into(), ..Default::default() }).await;
+
+        let result = raw_fetch_messages(&config_with_password(port, password), FOLDER, "1,2,3")
+            .await
+            .expect("raw LOGIN must escape \" and \\ in the password");
+
+        assert_eq!(result.messages.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn raw_fetch_logs_in_with_a_password_a_quoted_string_cannot_carry() {
+        let password = "pa\r\nss\"wörd";
+        let port = spawn_fake(FakeOpts { password: password.into(), ..Default::default() }).await;
+
+        let result = raw_fetch_messages(&config_with_password(port, password), FOLDER, "1,2,3")
+            .await
+            .expect("raw LOGIN must send CR/LF and non-ASCII as a literal");
+
+        assert_eq!(result.messages.len(), 3);
+    }
+
+    // ---- 1. A rejected FETCH must not look like an empty folder ----
+
+    #[tokio::test]
+    async fn fetch_messages_reports_a_rejected_fetch_instead_of_an_empty_folder() {
+        let port = spawn_fake(FakeOpts { reject_fetch_on_first: usize::MAX, ..Default::default() }).await;
+        let mut session = connect(&config(port)).await.unwrap();
+
+        let err = fetch_messages(&mut session, FOLDER, "1,2,3").await.unwrap_err();
+
+        assert!(err.starts_with("ASYNC_IMAP_EMPTY:"), "got: {err}");
+    }
+
+    #[tokio::test]
+    async fn fetch_with_fallback_recovers_through_the_raw_path() {
+        let port = spawn_fake(FakeOpts { reject_fetch_on_first: 1, ..Default::default() }).await;
+
+        let result = fetch_messages_with_fallback(&config(port), FOLDER, "1,2,3").await.unwrap();
+
+        assert_eq!(result.messages.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn fetch_with_fallback_surfaces_the_servers_tagged_status_when_both_paths_fail() {
+        let port = spawn_fake(FakeOpts { reject_fetch_on_first: usize::MAX, ..Default::default() }).await;
+
+        let err = fetch_messages_with_fallback(&config(port), FOLDER, "1,2,3").await.unwrap_err();
+
+        assert!(err.contains("Fetch temporarily refused"), "got: {err}");
+    }
+
+    // ---- 2. sync_folder: fallback and a per-folder error ----
+
+    #[tokio::test]
+    async fn sync_folder_falls_back_to_the_raw_path_when_the_fetch_is_rejected() {
+        let port = spawn_fake(FakeOpts { reject_fetch_on_first: 1, ..Default::default() }).await;
+        let cfg = config(port);
+        let mut session = connect(&cfg).await.unwrap();
+
+        let result = sync_folder(&mut session, &cfg, FOLDER, 2, None).await.unwrap();
+
+        let uids: Vec<u32> = result.messages.iter().map(|m| m.uid).collect();
+        assert_eq!(result.uids, vec![1, 2, 3]);
+        assert_eq!(uids, vec![1, 2, 3]);
+    }
+
+    #[tokio::test]
+    async fn sync_folder_fails_the_folder_when_both_paths_fail() {
+        let port = spawn_fake(FakeOpts { reject_fetch_on_first: usize::MAX, ..Default::default() }).await;
+        let cfg = config(port);
+        let mut session = connect(&cfg).await.unwrap();
+
+        let err = sync_folder(&mut session, &cfg, FOLDER, 2, None).await.unwrap_err();
+
+        assert!(err.contains(FOLDER) && err.contains("1,2"), "got: {err}");
     }
 
     #[tokio::test]

@@ -79,7 +79,7 @@ import { upsertMessage, updateMessageThreadIds } from "../db/messages";
 import { upsertThread, setThreadLabels, deleteThread } from "../db/threads";
 import { upsertAttachment } from "../db/attachments";
 import { getPendingOpsForResource } from "../db/pendingOperations";
-import { getAllFolderSyncStates } from "../db/folderSyncState";
+import { getAllFolderSyncStates, upsertFolderSyncState } from "../db/folderSyncState";
 
 describe("imapMessageToParsedMessage", () => {
   it("converts basic IMAP message to ParsedMessage format", () => {
@@ -311,6 +311,27 @@ describe("imapInitialSync", () => {
     expect(secondCallArgs.threadId).toBe(secondCallArgs.id);
   });
 
+  it("holds last_uid below a chunk that failed instead of recording the later chunks' UIDs", async () => {
+    const uids = Array.from({ length: 250 }, (_, i) => i + 1);
+    mockImapListFolders.mockResolvedValue([
+      createMockImapFolder({ path: "INBOX", raw_path: "INBOX", exists: uids.length }),
+    ]);
+    mockImapSearchFolder.mockResolvedValue({
+      uids,
+      folder_status: createMockImapFolderStatus({ exists: uids.length }),
+    });
+    const late = createMockImapMessage({ uid: 250, message_id: "<m250@test>", date: Math.floor(Date.now() / 1000) });
+    mockImapFetchMessages
+      .mockRejectedValueOnce(new Error("fetch of UIDs 1..200 was rejected"))
+      .mockResolvedValueOnce(createMockImapFetchResult([late]));
+
+    await imapInitialSync("acc-1");
+
+    expect(upsertFolderSyncState).toHaveBeenCalledWith(
+      expect.objectContaining({ folder_path: "INBOX", last_uid: 0 }),
+    );
+  });
+
   it("creates placeholder thread before each message to satisfy FK constraint", async () => {
     const msg1 = createMockImapMessage({ uid: 1, message_id: "<m1@test>", subject: "Hello", date: Math.floor(Date.now() / 1000) });
     const msg2 = createMockImapMessage({ uid: 2, message_id: "<m2@test>", subject: "World", date: Math.floor(Date.now() / 1000) });
@@ -534,7 +555,7 @@ describe("imapInitialSync", () => {
     expect(mockWithTransaction).toHaveBeenCalledTimes(2);
   });
 
-  it("continues to next chunk on fetch error", async () => {
+  it("raises an error and keeps last_uid at 0 when the only chunk fails", async () => {
     const msg1 = createMockImapMessage({ uid: 1, message_id: "<m1@test>", date: Math.floor(Date.now() / 1000) });
     const msg2 = createMockImapMessage({ uid: 201, message_id: "<m2@test>", date: Math.floor(Date.now() / 1000) });
 
@@ -568,11 +589,14 @@ describe("imapInitialSync", () => {
     mockImapFetchMessages.mockRejectedValueOnce(new Error("chunk fetch failed"));
 
     const syncPromise = imapInitialSync("acc-1");
+    const outcome = expect(syncPromise).rejects.toThrow(/chunk\(s\) failed to fetch/);
     await vi.runAllTimersAsync();
-    const result = await syncPromise;
+    await outcome;
 
-    // Sync should complete without throwing
-    expect(result.messages).toEqual([]);
+    // The error is raised, and last_uid stays at 0 so the next delta cycle refetches the chunk
+    expect(upsertFolderSyncState).toHaveBeenCalledWith(
+      expect.objectContaining({ folder_path: "INBOX", last_uid: 0 }),
+    );
   });
 
   it("circuit breaker skips remaining folders after 5 consecutive connection failures", async () => {
@@ -844,5 +868,39 @@ describe("imapDeltaSync", () => {
       "Archive",
       null,
     );
+  });
+
+  it("does not record last_uid when the fetch is rejected", async () => {
+    mockImapListFolders.mockResolvedValue([
+      createMockImapFolder({ path: "Archive", raw_path: "Archive", name: "Archive", exists: 2 }),
+    ]);
+    mockImapSearchFolder.mockResolvedValue({
+      uids: [11, 12],
+      folder_status: createMockImapFolderStatus({ exists: 2 }),
+    });
+    vi.mocked(imapFetchMessages).mockRejectedValue(
+      new Error("IMAP sync: fetch of UIDs 11,12 was rejected"),
+    );
+
+    await expect(imapDeltaSync("acc-1", 365)).rejects.toThrow(/rejected/);
+
+    expect(upsertFolderSyncState).not.toHaveBeenCalled();
+  });
+
+  it("reports what the cycle did: folders checked, messages fetched, per-folder errors", async () => {
+    mockImapListFolders.mockResolvedValue([
+      createMockImapFolder({ path: "Archive", raw_path: "Archive", name: "Archive", exists: 1 }),
+    ]);
+    mockImapSearchFolder.mockResolvedValue({
+      uids: [11],
+      folder_status: createMockImapFolderStatus({ exists: 1 }),
+    });
+    vi.mocked(imapFetchMessages).mockResolvedValue(
+      createMockImapFetchResult([createMockImapMessage({ uid: 11, folder: "Archive" })]),
+    );
+
+    const result = await imapDeltaSync("acc-1", 365);
+
+    expect(result.stats).toEqual({ foldersChecked: 1, messagesFetched: 1, errors: [] });
   });
 });

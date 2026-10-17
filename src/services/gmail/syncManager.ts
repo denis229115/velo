@@ -4,7 +4,8 @@ import { getAccount, clearAccountHistoryId } from "../db/accounts";
 import { getSetting } from "../db/settings";
 import { getThreadCountForAccount, deleteAllThreadsForAccount } from "../db/threads";
 import { deleteAllMessagesForAccount } from "../db/messages";
-import { imapInitialSync, imapDeltaSync } from "../imap/imapSync";
+import { imapInitialSync, imapDeltaSync, type ImapDeltaStats } from "../imap/imapSync";
+import { logSyncCycle } from "../syncCycleLog";
 import { clearAllFolderSyncStates, getAllFolderSyncStates } from "../db/folderSyncState";
 import { ensureFreshToken } from "../oauth/oauthTokenManager";
 import { hasCalendarSupport, getCalendarProvider } from "../calendar/providerFactory";
@@ -82,7 +83,9 @@ async function syncGmailAccount(accountId: string): Promise<void> {
 /**
  * Run a sync for a single IMAP account (initial or delta).
  */
-async function syncImapAccount(accountId: string): Promise<void> {
+async function syncImapAccount(
+  accountId: string,
+): Promise<{ kind: "delta" | "initial"; stats?: ImapDeltaStats }> {
   const account = await getAccount(accountId);
 
   if (!account) {
@@ -103,6 +106,7 @@ async function syncImapAccount(accountId: string): Promise<void> {
   if (account.history_id || folderStates.length > 0) {
     // Delta sync — IMAP uses folder-level UID tracking
     const result = await imapDeltaSync(accountId, syncDays);
+    let kind: "delta" | "initial" = "delta";
 
     // Recovery: if delta sync found nothing new but the DB has no threads,
     // the previous initial sync likely failed or stored data incorrectly.
@@ -120,8 +124,10 @@ async function syncImapAccount(accountId: string): Promise<void> {
             total: progress.total,
           });
         });
+        kind = "initial";
       }
     }
+    return { kind, stats: result.stats };
   } else {
     // First time — full initial sync
     await imapInitialSync(accountId, syncDays, (progress) => {
@@ -131,6 +137,7 @@ async function syncImapAccount(accountId: string): Promise<void> {
         total: progress.total,
       });
     });
+    return { kind: "initial" };
   }
 }
 
@@ -213,6 +220,11 @@ async function syncCalendarForAccount(accountId: string): Promise<void> {
  * Routes to Gmail or IMAP sync based on account provider.
  */
 async function syncAccountInternal(accountId: string): Promise<void> {
+  const startedAt = Date.now();
+  let provider = "unknown";
+  let kind = "sync";
+  let stats: ImapDeltaStats | undefined;
+  const errors: string[] = [];
   try {
     const account = await getAccount(accountId);
 
@@ -220,12 +232,14 @@ async function syncAccountInternal(accountId: string): Promise<void> {
       throw new Error("Account not found");
     }
 
+    provider = account.provider;
     statusCallback?.(accountId, "syncing");
 
     console.log(`[syncManager] Syncing account ${accountId} (provider=${account.provider}, history_id=${account.history_id ?? "null"})`);
 
     if (account.provider === "caldav") {
       // CalDAV-only accounts — skip email sync, only sync calendar
+      kind = "calendar";
       await syncCalendarForAccount(accountId);
       statusCallback?.(accountId, "done");
       return;
@@ -238,7 +252,10 @@ async function syncAccountInternal(accountId: string): Promise<void> {
     });
 
     if (account.provider === "imap") {
-      await syncImapAccount(accountId);
+      const outcome = await syncImapAccount(accountId);
+      kind = outcome.kind;
+      stats = outcome.stats;
+      if (stats) errors.push(...stats.errors);
     } else {
       await syncGmailAccount(accountId);
     }
@@ -250,7 +267,18 @@ async function syncAccountInternal(accountId: string): Promise<void> {
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err ?? "Unknown error");
     console.error(`[syncManager] Sync failed for account ${accountId}:`, message);
+    errors.unshift(message);
     statusCallback?.(accountId, "error", undefined, message);
+  } finally {
+    logSyncCycle({
+      accountId,
+      provider,
+      kind,
+      durationMs: Date.now() - startedAt,
+      foldersChecked: stats?.foldersChecked,
+      messagesFetched: stats?.messagesFetched,
+      errors,
+    });
   }
 }
 
