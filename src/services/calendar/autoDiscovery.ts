@@ -98,7 +98,8 @@ async function tryWellKnownDiscovery(domain: string): Promise<string | null> {
   try {
     const response = await tauriFetch(`https://${domain}/.well-known/caldav`, {
       method: "GET",
-      redirect: "manual",
+      // Request.redirect is not serialized by the native HTTP plugin.
+      maxRedirections: 0,
     });
 
     // RFC 6764: server should respond with 301/302 redirect to the CalDAV endpoint
