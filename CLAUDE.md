@@ -153,7 +153,7 @@ Custom window events: `velo-sync-done`, `velo-toggle-command-palette`, `velo-tog
 | `g` then `a` | Go to Attachments |
 | `g` then `l` | Go to Scheduled emails |
 
-Ticket-only defaults in the same registry: `n` Internal note, `z` Summarize, `d` AI draft reply, `Shift+S` Status, `Shift+P` Priority, `Shift+A` Assignee, `b` list/board. Shared reply/send/send-later/search actions keep their email meanings. Ticket actions adapt to visible handlers through `useShortcutAction`; skip them in inputs/selects/editable text, even after a modified rebind.
+Ticket-only defaults in the same registry: `n` Internal note, `z` Summarize, `d` AI draft reply, `s` Status, `p` Priority, `a` Assign, `b` list/board. On a ticket those three keys open the ticket controls; in mail, `s`, `p` and `a` still star, pin and reply all. Shared reply/send/send-later/search actions keep their email meanings. Ticket actions adapt to visible handlers through `useShortcutAction`; skip them in inputs/selects/editable text, even after a modified rebind.
 
 Multi-select: click to toggle, Shift+click for range. All keyboard actions work on multi-selected threads.
 
@@ -163,13 +163,13 @@ Tailwind CSS v4 — uses `@import "tailwindcss"`, `@theme {}` for custom propert
 
 **Theme token layer** (`src/styles/theme.css`, plain CSS with light values on `:root` and dark values on `.dark`): surfaces `surface-base/sidebar/list/reader/composer/overlay/subtle`, text `text-primary/secondary/muted`, `separator`, states `state-hover/selected/focus`, `link`, `status-success/warning/error`. Exposed as Tailwind utilities in `globals.css` (`bg-surface-list`, `text-text-muted`, `border-separator`, `text-link`, `text-status-error`, …). Older names (`bg-bg-primary/secondary/tertiary/hover/selected`, `text-text-primary/secondary/tertiary`, `border-border-primary/secondary`, `bg-sidebar-bg`, `text-sidebar-text`) are aliases onto these tokens. `bg-accent/accent-hover/accent-light` follow the accent preset; `bg-danger/warning/success` are solid fills for white text. Use `.overlay-shadow` for menus, popovers and dialogs. `useAppearance()` (`src/hooks/useAppearance.ts`) applies theme, accent preset and reduced motion; mount it once per window.
 
-**Glass**: only the sidebar is translucent (`.glass-sidebar`). Lists, reader, composer, menus and dialogs use solid surfaces; `themeGuard.test.ts` fails on blur or gradients elsewhere.
+**Glass**: the sidebar (`.glass-sidebar`) and the control layer (popovers, menus, comboboxes, toasts, the AI bar: `.material-pop` / `.material-bar`) are translucent; off macOS and under reduced transparency or increased contrast they resolve to solid fills. Lists, reader, composer and dialogs stay solid (an `AuraGlow variant="field"` input inside one, such as the palette search field, carries the glass look). `themeGuard.test.ts` fails on blur outside its allowlist of files and on gradients outside `styles/aura.css`.
 
 **Focus and motion**: an unlayered `:focus-visible` rule in `theme.css` draws the focus ring on every interactive element (Tailwind's `outline-none` can't remove it). `.reduce-motion` on `<html>` (macOS Reduce motion or the in-app setting) disables animations and transitions.
 
 **Color themes**: 9 accent color presets (Blue is the default; Indigo, Rose, Emerald, Amber, Sky, Violet, Orange, Slate) defined in `src/constants/themes.ts`. Each has light & dark variants. Applied via CSS custom properties, independent of light/dark mode.
 
-**Background**: solid `surface-base`; no gradients or animated blobs.
+**Background**: solid `surface-base`; no gradients or animated blobs, except the working-state aura (`src/styles/aura.css`, `AuraGlow`): one glowing field at a time (`auraOwner.ts`) while the AI bar, composer body, thread summary or mail search is busy. Its keyframes animate `transform` and `opacity` only, it stops under `.reduce-motion`, and the error ring pulses three times then holds.
 
 **Icons**: `lucide-react` icon library.
 

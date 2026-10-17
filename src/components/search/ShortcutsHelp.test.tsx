@@ -51,8 +51,8 @@ it("shows ticket defaults and warns when a rebound ticket action conflicts", () 
   for (const [desc, key] of [
     ["Open thread / ticket", "Enter"], ["Ticket: Summarize", "z"], ["Ticket: AI draft reply", "d"],
     ["Create / link ClickUp task", "t"], ["Create Velo to-do from email (AI)", "Shift+T"],
-    ["Ticket: Change status", "Shift+S"], ["Ticket: Change priority", "Shift+P"],
-    ["Ticket: Change assignee", "Shift+A"], ["Ticket: Switch list / board", "b"],
+    ["Ticket: Change status", "s"], ["Ticket: Change priority", "p"],
+    ["Ticket: Change assignee", "a"], ["Ticket: Switch list / board", "b"],
   ]) {
     expect(screen.getByText(desc!).closest("[data-shortcut-row]")).toHaveTextContent(key!);
   }

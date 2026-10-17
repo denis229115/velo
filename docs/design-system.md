@@ -48,7 +48,7 @@ Bar and sidebar share `blur(24px) saturate(180%)`. Popovers use `blur(32px) satu
 
 The highlight is `transparent` in those fallbacks, so a solid control does not pretend to be lit glass. The 1px edge stays.
 
-`.glass-bar` and `.glass-pop` in `globals.css` are the only implementations of this recipe. They are not applied to product surfaces yet. The current sidebar still uses `.glass-sidebar` and `--surface-sidebar`.
+`.glass-bar` / `.glass-pop` (and their `.material-bar` / `.material-pop` aliases) in `globals.css` are the only implementations of this recipe. They are applied to the control layer only (popovers, menus, toasts, the AI bar); `themeGuard.test.ts` lists the files allowed to use them. The sidebar still uses `.glass-sidebar` and `--surface-sidebar`.
 
 ## Palette
 
@@ -70,13 +70,13 @@ macOS system colours. These do not replace `--text-primary`, `--separator` or `-
 | `--system-warning` | `#FF9500` | `#FF9F0A` |
 | `--system-danger` | `#FF3B30` | `#FF453A` |
 | `--system-success-soft` | `rgba(52, 199, 89, 0.14)` | `rgba(48, 209, 88, 0.18)` |
-| `--system-ai` | `#AF52DE` | `#BF5AF2` |
+| `--system-ai` | `#6E6E73` | `#98989D` |
 | `--system-kbd` | `rgba(0, 0, 0, 0.05)` | `rgba(255, 255, 255, 0.08)` |
 | `--system-kbd-edge` | `rgba(0, 0, 0, 0.12)` | `rgba(255, 255, 255, 0.16)` |
 
 `--system-accent` uses the CSS system colour `AccentColor` when the engine supports it, including in dark appearance. The hex values are the fallback. `--system-accent-soft` is a 12% wash of the light blue and a 22% wash of the dark blue. When a non-blue system accent is active, mix the same percentage of `--system-accent` rather than keeping the blue wash.
 
-`--system-ai` is only for the assistant: the brief, the streaming caret and the spark. It is not a second theme accent.
+`--system-ai` is the assistant's monochrome mark: the same secondary label grey in light and dark. It is not a second theme accent, and it is not a tint on the card. Accent blue is reserved for Accept.
 
 Label tertiary is for timestamps, placeholders and empty counts. It is too light for body text. Secondary is for previews, metadata and inactive tabs. Primary label is for names, subjects and message text.
 
@@ -204,7 +204,7 @@ Avatars are 32px circles. The initials colour is a darkened label hue; the fill 
 
 Title is 17px, 600, tracking `-0.012em`. Chips are 16px tall, fully round, 11px and 600. A label chip uses the label colour at 15% with a 6px dot. A neutral chip uses `--system-hover`.
 
-The brief is a 14px-radius card. Its fill is a quiet gradient from the accent wash to the AI wash, with a 1px edge. The heading is 12px, 600, accent, with the spark icon. Bullets use the label colour; markers use tertiary.
+The brief is a 14px-radius card. Its fill is the neutral material surface with a 1px hairline, and no coloured wash. The heading is 12px, 600, in the label colour, with a monochrome spark icon in the secondary label colour. Bullets use the label colour; markers use tertiary. Accent blue appears only on Accept.
 
 Collapsed messages are a single 24px-avatar row on a separator, name at 500, preview truncated, time tertiary.
 
@@ -260,9 +260,39 @@ Accept and Discard are available for the whole change. There is no per-word acce
 
 ### Streaming
 
-New text appears at the caret as it arrives. The caret is a 2px rounded bar, 16px tall, filled with a gradient from `--system-accent` to `--system-ai`. The bar's label switches from the instruction to the result line when the stream finishes. Discard during a stream aborts it and restores the previous text. Accept enables when the stream finishes. Reduced motion shows the text without a blinking or glowing caret.
+New text appears at the caret as it arrives. The caret is a 1.5px hairline in `--text-tertiary`, one em tall, whose opacity eases between faint and visible. It is not a gradient. The bar's label switches from the instruction to the result line when the stream finishes. Discard during a stream aborts it and restores the previous text. Accept enables when the stream finishes and is the only accent control. Reduced motion shows the text without a pulsing caret.
 
 The brief at the top of a thread is a separate surface: three bullets, accent heading, a source line in tertiary ("Claude · redacted"). It is not an editor.
+
+## Working aura
+
+A field that is doing work draws a soft colour behind it. The colour is four (light) or three (dark) radial blobs on eased paths. They drift. They do not rotate. The paths are 8s, 8s, 4s and 8s, and the group breathes over 8s. Blur radius is a static filter: about 44px in light, with about 100px of visible spread, and about 26px in dark, with about 48px of spread. Dark blobs are saturated, have near-white centres, and blend with `plus-lighter` at about 0.9 opacity (pearl stays at 0.55). Motion is transform and opacity only.
+
+The blobs sit in a mask that is punched out of the field shape, so the field keeps its own glass blur. A glass field also gets a grain overlay and a hairline edge. Placeholder text carries a slow sheen, again transform and opacity.
+
+| Token | Light | Dark |
+| --- | --- | --- |
+| `--aura-blur` | `44px` | `26px` |
+| `--aura-spread` | `100px` | `48px` |
+| `--aura-room` | `140px` | `140px` |
+| `--aura-opacity` | `0.62` | `0.9` |
+| Halo `--aura-halo-1…4` | `#8FB8FF`, `#D7E3F7`, `#5D9BFF`, `#C3CFE2` | `#3D86FF`, `#8FC0FF`, `#1F6FFF` |
+| Intelligence `--aura-intel-1…4` | `#F2A77A`, `#6FB3E6`, `#EC8FA1`, `#8FCDB0` | `#FF9A5C`, `#38A8F0`, `#FF6F8E` |
+| Pearl `--aura-pearl-1…4` | `#C9CED8`, `#FFFFFF`, `#B3BAC6`, `#E2E5EA` | `#D8DDE6`, `#FFFFFF`, `#AAB3C2` |
+
+Intelligence is peach, sky, rose and mint. It has no purple.
+
+Palettes:
+
+- **Halo**, silver-blue, on the ⌘J bar while the assistant has been asked and no text has arrived yet.
+- **Intelligence** only while the assistant is writing: the composer body, the inline diff, and the thread brief.
+- **Pearl** while ⌘K is loading mail search.
+
+States on the field: idle, focus (a soft blue ring on the ⌘J bar and the search field), working (the aura), success (a one-shot green flash of about 1.4s), and error (a red pulse). Only one field glows at a time. The composer body outranks the diff and the brief, which outrank ⌘K, which outranks the ⌘J bar. When the work ends the blobs fade out. A newer claim of the same priority replaces the older one.
+
+Reduced motion drops the drift, the breath, the sheen and the pulses, because animations and transitions are already none. Reduced transparency hides the blobs and the sheen and draws a static soft ring instead.
+
+The reference is `docs/glow-inputs.html`, with `docs/glow-inputs-v3.mp4`. `docs/glow-inputs-v3.png` is a frame of that video, so it shows the working fields and not the idle, focus, success, and error row.
 
 ## Accessibility
 
@@ -282,27 +312,38 @@ Do not rely on colour alone for unread state: the dot is paired with a heavier n
 
 ## What is wired today
 
-Shipped with this foundation:
+The token foundation:
 
 - The tokens in `theme.css`, in light and dark.
 - Tailwind aliases: `bg-system-*`, `text-system-*`, `bg-glass-*`, `shadow-e0`–`shadow-e3`, `ease-glass`, `rounded-window`, `rounded-shell`, `rounded-panel`, `rounded-menu`, `rounded-control`, `font-ui`, `text-callout`, `text-headline`. Durations are the `--motion-*` variables; `duration-160`, `duration-220` and `duration-280` match them.
-- `.glass-bar` and `.glass-pop`, unused by product components.
+- `.glass-bar` and `.glass-pop`, and the same recipes as `.material-bar` and `.material-pop` for product components.
 - Solid fallbacks for non-macOS, reduced transparency and increased contrast.
 - Radius updates on `Button`, `TextField`, `Modal` and `ContextMenu`. `Kbd` uses the key-chip colours.
+
+Product surfaces on those tokens:
+
+- Anchored schedule, snooze and follow-up pickers. `DateTimePickerDialog` stays for its existing contract.
+- A sticky Freshdesk header with an SLA chip and a ⌘I inspector. Status and priority are property pills with anchored menus. Group, type, tags and custom fields save through Freshdesk. Assignee stays a searchable combobox. On a ticket, s, p and a open status, priority and assign.
+- Command palette fuzzy ranking, Move to and Snooze pages, and Ask AI on Tab.
+- Mail-list virtualisation past 80 rows, undo for optimistic removals, confirm sheets, and an auth-expired banner.
+- The AI brief, reply chips, ⌘J prompt bar, selection rewrite and inline diff. Cards are a neutral material surface. Claude, OpenAI, Gemini, Ollama and Copilot stream through the gateway; a provider without `stream` still yields one snapshot. The working aura follows that stream, and ⌘K mail search, with one field glowing at a time.
 
 Not done, on purpose:
 
 - Restyling the sidebar, list, reader, composer or settings onto these tokens.
 - Switching `body` to `--font-ui`.
 - Replacing `--color-accent` or the AA-safe `--status-*` colours.
-- Building the ⌘J bar, selection menu, inline diff or streaming caret.
+- A full restyle of every remaining surface onto the neutral assistant tokens.
 
 ## File map
 
 | File | Holds |
 | --- | --- |
-| `src/styles/theme.css` | Token values, platform and accessibility overrides |
-| `src/styles/globals.css` | Tailwind aliases, `.glass-bar`, `.glass-pop`, `.glass-sidebar` |
+| `src/styles/theme.css` | Token values, platform and accessibility overrides, aura colours |
+| `src/styles/globals.css` | Tailwind aliases, `.glass-bar`, `.glass-pop`, `.material-bar`, `.material-pop`, `.glass-sidebar` |
+| `src/styles/aura.css` | Working-aura mask, blobs, grain, sheen and state rings |
+| `src/components/ui/AuraGlow.tsx` | Field wrapper. One working glow at a time |
 | `src/hooks/useAppearance.ts` | `platform-mac`, `reduce-transparency`, `increase-contrast`, plus theme and reduced motion |
 | `docs/velo.html` | Static mockup |
 | `docs/velo-light.png`, `docs/velo-dark.png` | Renders of that mockup |
+| `docs/glow-inputs.html`, `docs/glow-inputs-v3.png`, `docs/glow-inputs-v3.mp4` | Approved working-aura reference |

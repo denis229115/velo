@@ -65,7 +65,34 @@
   --system-warning: #ff9500;
   --system-danger: #ff3b30;
   --system-success-soft: rgba(52, 199, 89, 0.14);
-  --system-ai: #af52de;
+  --system-ai: #6e6e73;
+
+  /* Working-state aura. Blur and spread are static; only transform and opacity animate. */
+  --aura-blur: 44px;
+  --aura-spread: 100px;
+  --aura-room: 140px;
+  --aura-opacity: 0.62;
+  --aura-halo-1: #8fb8ff;
+  --aura-halo-2: #d7e3f7;
+  --aura-halo-3: #5d9bff;
+  --aura-halo-4: #c3cfe2;
+  --aura-intel-1: #f2a77a;
+  --aura-intel-2: #6fb3e6;
+  --aura-intel-3: #ec8fa1;
+  --aura-intel-4: #8fcdb0;
+  --aura-pearl-1: #c9ced8;
+  --aura-pearl-2: #ffffff;
+  --aura-pearl-3: #b3bac6;
+  --aura-pearl-4: #e2e5ea;
+  --aura-focus-edge: rgba(0, 122, 255, 0.6);
+  --aura-focus-ring: rgba(0, 122, 255, 0.18);
+  --aura-ok: rgba(60, 170, 100, 0.75);
+  --aura-ok-ring: rgba(60, 170, 100, 0.16);
+  --aura-ok-glow: rgba(60, 170, 100, 0.22);
+  --aura-err: rgba(220, 80, 70, 0.75);
+  --aura-err-ring: rgba(220, 80, 70, 0.15);
+  --aura-err-glow: rgba(220, 80, 70, 0.2);
+
   --system-kbd: rgba(0, 0, 0, 0.05);
   --system-kbd-edge: rgba(0, 0, 0, 0.12);
 
@@ -168,7 +195,26 @@
   --system-warning: #ff9f0a;
   --system-danger: #ff453a;
   --system-success-soft: rgba(48, 209, 88, 0.18);
-  --system-ai: #bf5af2;
+  --system-ai: #98989d;
+
+  /* Dark aura is tighter: 26px blur, about 48px of visible spread, three blobs. */
+  --aura-blur: 26px;
+  --aura-spread: 48px;
+  --aura-room: 140px;
+  --aura-opacity: 0.9;
+  --aura-halo-1: #3d86ff;
+  --aura-halo-2: #8fc0ff;
+  --aura-halo-3: #1f6fff;
+  --aura-halo-4: transparent;
+  --aura-intel-1: #ff9a5c;
+  --aura-intel-2: #38a8f0;
+  --aura-intel-3: #ff6f8e;
+  --aura-intel-4: transparent;
+  --aura-pearl-1: #d8dde6;
+  --aura-pearl-2: #ffffff;
+  --aura-pearl-3: #aab3c2;
+  --aura-pearl-4: transparent;
+
   --system-kbd: rgba(255, 255, 255, 0.08);
   --system-kbd-edge: rgba(255, 255, 255, 0.16);
 

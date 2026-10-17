@@ -46,12 +46,16 @@ function ResizableEmailLayout() {
 
   return (
     <div ref={containerRef} className="flex flex-1 min-w-0 flex-row">
-      <EmailList width={emailListWidth} listRef={listRef} />
+      <ErrorBoundary name="EmailList">
+        <EmailList width={emailListWidth} listRef={listRef} />
+      </ErrorBoundary>
       <div
         onMouseDown={handleMouseDown}
         className="relative w-px cursor-col-resize bg-border-primary hover:bg-accent/50 active:bg-accent transition-colors shrink-0 after:absolute after:inset-y-0 after:-inset-x-1 after:content-['']"
       />
-      <ReadingPane />
+      <ErrorBoundary name="ReadingPane">
+        <ReadingPane />
+      </ErrorBoundary>
     </div>
   );
 }
@@ -145,11 +149,7 @@ export function MailLayout() {
   const readingPanePosition = useUIStore((s) => s.readingPanePosition);
 
   if (readingPanePosition === "right") {
-    return (
-      <ErrorBoundary name="EmailLayout">
-        <ResizableEmailLayout />
-      </ErrorBoundary>
-    );
+    return <ResizableEmailLayout />;
   }
 
   return (

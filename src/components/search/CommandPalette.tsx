@@ -20,8 +20,17 @@ import { parseTicketIdQuery, searchTickets } from "@/services/freshdesk/ticketSe
 import { TicketPriorityBadge, TicketStatusBadge } from "@/components/freshdesk/TicketBadges";
 import { coverageText } from "@/components/freshdesk/TicketSyncBar";
 import { SampleBadge } from "@/components/ui/SampleBadge";
+import { AuraGlow, AuraShimmer } from "@/components/ui/AuraGlow";
 import { formatShortcut } from "@/utils/shortcutLabel";
 import { Kbd } from "@/components/list/Kbd";
+import { HighlightedText } from "@/components/ai/HighlightedText";
+import { commandRank } from "@/utils/fuzzyMatch";
+import { useLabelStore } from "@/stores/labelStore";
+import { moveThread } from "@/services/emailActions";
+import { snoozeThread } from "@/services/snooze/snoozeManager";
+import { buildSchedulePresets } from "@/utils/schedulePresets";
+import { askMyInbox, type AskInboxResult } from "@/services/ai/askInbox";
+import { friendlyAiError } from "@/services/ai/friendlyError";
 
 interface Command {
   id: string;
@@ -50,6 +59,8 @@ interface PaletteGroup {
   items: PaletteItem[];
   /** Says what the group searched; the group is shown even without matches */
   note?: string;
+  /** A group whose rows are still loading. */
+  loading?: boolean;
   /** The outcome of an action that kept the palette open, such as a failed lookup */
   status?: string;
 }
@@ -73,16 +84,26 @@ const SEARCH_DEBOUNCE_MS = 150;
 const NON_MAIL_PAGES = new Set(["settings", "attachments", "scheduled", "tasks", "calendar", "help", "freshdesk"]);
 
 /** Local search hits grouped to one entry per thread, best match first. */
-function useThreadSearch(query: string, accountId: string | null, enabled: boolean): SearchResult[] {
+const recentCommandIds: string[] = [];
+
+function rememberCommand(id: string): void {
+  const next = [id, ...recentCommandIds.filter((item) => item !== id)].slice(0, 5);
+  recentCommandIds.splice(0, recentCommandIds.length, ...next);
+}
+
+function useThreadSearch(query: string, accountId: string | null, enabled: boolean): { hits: SearchResult[]; loading: boolean } {
   const [hits, setHits] = useState<SearchResult[]>([]);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     const q = query.trim();
     if (!enabled || q.length < 2) {
       setHits([]);
+      setLoading(false);
       return;
     }
     let cancelled = false;
+    setLoading(true);
     const timer = setTimeout(() => {
       searchMessages(q, accountId ?? undefined, 50)
         .then((results) => {
@@ -96,9 +117,13 @@ function useThreadSearch(query: string, accountId: string | null, enabled: boole
             if (threads.length === MAX_THREAD_RESULTS) break;
           }
           setHits(threads);
+          setLoading(false);
         })
         .catch(() => {
-          if (!cancelled) setHits([]);
+          if (!cancelled) {
+            setHits([]);
+            setLoading(false);
+          }
         });
     }, SEARCH_DEBOUNCE_MS);
     return () => {
@@ -107,7 +132,7 @@ function useThreadSearch(query: string, accountId: string | null, enabled: boole
     };
   }, [query, accountId, enabled]);
 
-  return hits;
+  return { hits, loading };
 }
 
 /** The downloaded tickets (or the sample tickets), read from the local cache each time the palette opens. */
@@ -137,6 +162,9 @@ function openFullResults(query: string) {
 export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
   const [query, setQuery] = useState("");
   const [selectedIdx, setSelectedIdx] = useState(0);
+  const [page, setPage] = useState<null | "move" | "snooze">(null);
+  const [askMode, setAskMode] = useState(false);
+  const labels = useLabelStore((s) => s.labels);
   const inputRef = useRef<HTMLInputElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
   const toggleSidebar = useUIStore((s) => s.toggleSidebar);
@@ -165,6 +193,8 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
 
     // Actions
     { id: "compose", label: "Compose New Email", shortcut: "c", category: "Actions", action: () => { openComposer(); onClose(); } },
+    { id: "page-move", label: "Move to", category: "Actions", action: () => setPage("move") },
+    { id: "page-snooze", label: "Snooze", category: "Actions", action: () => setPage("snooze") },
     { id: "deselect", label: "Close Thread", shortcut: "Esc", category: "Actions", action: () => { navigateBack(); onClose(); } },
     { id: "spam", label: activeLabel === "spam" ? "Not Spam" : "Report Spam", shortcut: "!", category: "Actions", action: async () => {
       onClose();
@@ -235,7 +265,8 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
   ], [onClose, openComposer, activeLabel, toggleSidebar, setTheme, templates, smartFolders, keyMap]);
 
   const trimmed = query.trim();
-  const threadHits = useThreadSearch(query, activeAccountId, isOpen);
+  const threadSearch = useThreadSearch(query, activeAccountId, isOpen && !askMode);
+  const threadHits = threadSearch.hits;
   const ticketData = useTicketData(isOpen);
   const [lookup, setLookup] = useState<TicketLookup | null>(null);
 
@@ -257,14 +288,58 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
   }, [lookup, onClose]);
 
   const groups: PaletteGroup[] = useMemo(() => {
+    if (page === "snooze") {
+      const selected = getSelectedThreadId();
+      const presets = buildSchedulePresets(new Date());
+      return [{
+        name: "Snooze",
+        note: selected ? "Commands › Snooze" : "Open a thread to snooze it",
+        items: selected ? presets.filter((preset) => !trimmed || commandRank(preset.label, preset.detail ?? "", trimmed.toLowerCase(), -1) > 0).map((preset) => ({
+          id: `snooze-${preset.id}`,
+          label: preset.label,
+          detail: preset.detail,
+          action: () => {
+            if (!activeAccountId) return;
+            void snoozeThread(activeAccountId, selected, preset.timestamp).then(() => {
+              useThreadStore.getState().removeThread(selected);
+              onClose();
+            });
+          },
+        })) : [],
+      }];
+    }
+    if (page === "move") {
+      const selected = getSelectedThreadId();
+      return [{
+        name: "Move to",
+        note: "Commands › Move to",
+        items: selected ? labels.filter((label) => !trimmed || commandRank(label.name, "", trimmed.toLowerCase(), -1) > 0).map((label) => ({
+          id: `move-${label.id}`,
+          label: label.name,
+          action: () => {
+            if (!selected || !activeAccountId) return;
+            const source = labels.find((item) => item.id === activeLabel)?.id ?? ({ inbox: "INBOX", trash: "TRASH", spam: "SPAM" } as Record<string, string>)[activeLabel];
+            void moveThread(activeAccountId, selected, [], label.id, source);
+            onClose();
+          },
+        })) : [],
+      }];
+    }
     if (!trimmed) {
       const categories = [...new Set(commands.map((c) => c.category))];
-      return categories.map((name) => ({ name, items: commands.filter((c) => c.category === name) }));
+      const grouped = categories.map((name) => ({ name, items: commands.filter((c) => c.category === name) }));
+      const recent = recentCommandIds
+        .map((id) => commands.find((command) => command.id === id))
+        .filter((command): command is Command => command !== undefined)
+        .map((command) => ({ id: command.id, label: command.label, shortcut: command.shortcut, action: command.action }));
+      return recent.length > 0 ? [{ name: "Recents", items: recent }, ...grouped] : grouped;
     }
     const q = trimmed.toLowerCase();
-    const matching = commands.filter(
-      (c) => c.label.toLowerCase().includes(q) || c.category.toLowerCase().includes(q),
-    );
+    const matching = commands
+      .map((command) => ({ command, score: commandRank(command.label, command.category, q, recentCommandIds.indexOf(command.id)) }))
+      .filter((row) => row.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .map((row) => row.command);
     const threads: PaletteItem[] = threadHits.map((hit) => ({
       id: `thread-${hit.thread_id}`,
       label: hit.subject || "(no subject)",
@@ -284,14 +359,14 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
       else threads.push(allResults);
     }
     const commandGroup: PaletteGroup = { name: "Commands", items: matching };
-    const threadGroup: PaletteGroup = { name: "Threads", items: threads };
+    const threadGroup: PaletteGroup = { name: "Threads", items: threads, loading: threadSearch.loading && threads.length === 0 };
     const ticketGroup = ticketData ? buildTicketGroup(ticketData, trimmed, onClose, lookup, lookUpTicket) : null;
     // The page decides which source comes first: tickets on the Freshdesk page, mail elsewhere
     const ordered = activeLabel === "freshdesk"
       ? [ticketGroup, commandGroup, threadGroup]
       : [commandGroup, threadGroup, ticketGroup];
     return ordered.filter((g): g is PaletteGroup => g !== null && (g.items.length > 0 || g.note !== undefined));
-  }, [trimmed, commands, threadHits, ticketData, activeLabel, onClose, lookup, lookUpTicket]);
+  }, [trimmed, commands, threadHits, threadSearch.loading, ticketData, activeLabel, onClose, lookup, lookUpTicket, page, labels, activeAccountId]);
 
   const items = useMemo(() => groups.flatMap((g) => g.items), [groups]);
   const activeIdx = Math.min(selectedIdx, Math.max(items.length - 1, 0));
@@ -301,6 +376,8 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
       setQuery("");
       setSelectedIdx(0);
       setLookup(null);
+      setPage(null);
+      setAskMode(false);
     }
   }, [isOpen]);
 
@@ -319,15 +396,28 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
       } else if (e.key === "ArrowUp") {
         e.preventDefault();
         setSelectedIdx(Math.max(activeIdx - 1, 0));
+      } else if (e.key === "Enter" && askMode) {
+        e.preventDefault();
+        window.dispatchEvent(new Event("velo-palette-ask"));
       } else if (e.key === "Enter" && items[activeIdx]) {
         e.preventDefault();
+        rememberCommand(items[activeIdx].id);
         items[activeIdx].action();
+      } else if (e.key === "Backspace" && !query && page) {
+        e.preventDefault();
+        setPage(null);
+      } else if (e.key === "Tab" && !e.shiftKey) {
+        e.preventDefault();
+        setAskMode((value) => !value);
+        setPage(null);
       } else if (e.key === "Escape") {
         e.preventDefault();
-        onClose();
+        if (page) setPage(null);
+        else if (askMode) setAskMode(false);
+        else onClose();
       }
     },
-    [items, activeIdx, onClose],
+    [items, activeIdx, onClose, askMode, page, query],
   );
 
   const optionId = (item: PaletteItem) => `palette-option-${item.id}`;
@@ -337,9 +427,17 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
     <CSSTransition nodeRef={overlayRef} in={isOpen} timeout={200} classNames="modal" unmountOnExit>
     <div ref={overlayRef} className="fixed inset-0 z-[60] flex items-start justify-center pt-[15vh]">
       <div className="absolute inset-0 bg-black/30" onClick={onClose} />
-      <div className="relative bg-surface-overlay border border-separator rounded-lg overlay-shadow w-full max-w-lg overflow-hidden modal-panel">
-        {/* Input */}
-        <div className="flex items-center gap-2.5 px-4 py-3 border-b border-border-primary">
+      <div className="relative bg-surface-overlay border border-separator rounded-lg overlay-shadow w-full max-w-lg overflow-visible modal-panel">
+        {/* Input. Pearl while mail search is loading; the glow has to escape the panel. */}
+        <AuraGlow
+          palette="pearl"
+          phase={threadSearch.loading ? "working" : "idle"}
+          priority={20}
+          shape="search"
+          variant="field"
+          className="border-b border-border-primary"
+          fieldClassName="flex items-center gap-2.5 px-4 py-3"
+        >
           <Search size={15} className="shrink-0 text-text-tertiary" aria-hidden />
           <input
             ref={inputRef}
@@ -357,16 +455,19 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
               setSelectedIdx(0);
             }}
             onKeyDown={handleKeyDown}
-            placeholder="Search mail and tickets or type a command… (#123, from:, has:attachment)"
+            placeholder={askMode ? "Ask about your mail…" : page ? "Filter this list…" : "Search mail and tickets or type a command… (#123, from:, has:attachment)"}
             // The caret marks focus here; the global focus ring would box the whole field
             style={{ outline: "none" }}
-            className="w-full bg-transparent text-sm text-text-primary placeholder:text-text-tertiary"
+            className="min-w-0 flex-1 bg-transparent text-sm text-text-primary placeholder:text-text-tertiary"
           />
-        </div>
+          {threadSearch.loading && <AuraShimmer>Searching…</AuraShimmer>}
+        </AuraGlow>
 
         {/* Results */}
         <div ref={listRef} id="command-palette-results" role="listbox" aria-label="Results" className="max-h-96 overflow-y-auto py-1">
-          {groups.length === 0 ? (
+          {askMode ? (
+            <PaletteAsk accountId={activeAccountId} question={query} onNavigate={onClose} />
+          ) : groups.length === 0 ? (
             <div className="px-4 py-6 text-center text-sm text-text-tertiary">
               {trimmed.length >= 2 ? "No matching commands or mail" : "No commands found"}
             </div>
@@ -380,6 +481,12 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
                   {group.name}
                 </div>
                 {group.note && <div className="px-4 pb-1 text-micro text-text-tertiary">{group.note}</div>}
+                {group.loading && (
+                  <div className="px-4 py-2 space-y-1.5" aria-hidden>
+                    <div className="h-3 rounded-full bg-bg-hover animate-pulse" />
+                    <div className="h-3 w-2/3 rounded-full bg-bg-hover animate-pulse" />
+                  </div>
+                )}
                 {group.items.map((item) => {
                   flatIdx += 1;
                   const idx = flatIdx;
@@ -392,7 +499,10 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
                       aria-selected={selected}
                       onMouseDown={(e) => e.preventDefault()}
                       onMouseMove={() => { if (!selected) setSelectedIdx(idx); }}
-                      onClick={item.action}
+                      onClick={() => {
+                        rememberCommand(item.id);
+                        item.action();
+                      }}
                       className={`mx-1 px-3 py-1.5 rounded-md flex items-center gap-2.5 cursor-pointer text-sm ${
                         selected ? "bg-bg-hover" : ""
                       }`}
@@ -405,13 +515,13 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
                         <span className="min-w-0 flex-1 flex flex-col gap-0.5">
                           <span className="flex items-center gap-2 min-w-0">
                             {item.prefix && <span className="shrink-0 text-xs tabular-nums text-text-tertiary">{item.prefix}</span>}
-                            <span className="min-w-0 truncate text-text-primary">{item.label}</span>
+                            <span className="min-w-0 truncate text-text-primary"><HighlightedText text={item.label} query={trimmed} /></span>
                           </span>
                           <span className="flex items-center gap-1.5 min-w-0">{item.badges}</span>
                         </span>
                       ) : (
                         <span className={`min-w-0 flex-1 truncate ${item.icon === "all-results" ? "text-accent" : "text-text-primary"}`}>
-                          {item.label}
+                          <HighlightedText text={item.label} query={trimmed} />
                         </span>
                       )}
                       {item.detail && (
@@ -437,7 +547,9 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
         <div className="flex items-center gap-3 px-4 py-2 border-t border-border-secondary text-micro text-text-tertiary">
           <span className="inline-flex items-center gap-1"><Kbd keys="ArrowUp" /><Kbd keys="ArrowDown" /> navigate</span>
           <span className="inline-flex items-center gap-1"><Kbd keys="Enter" /> open</span>
-          <span className="inline-flex items-center gap-1"><Kbd keys="Escape" /> close</span>
+          <span className="inline-flex items-center gap-1"><Kbd keys="Escape" /> {page || askMode ? "back" : "close"}</span>
+          <span className="inline-flex items-center gap-1"><Kbd keys="Tab" /> Ask AI</span>
+          {page && <span>Commands › {page === "move" ? "Move to" : "Snooze"}</span>}
         </div>
       </div>
     </div>
@@ -487,4 +599,63 @@ function buildTicketGroup(
     ? "Sample tickets only. Connect a helpdesk in Settings → Freshdesk to search real tickets."
     : `Searched downloaded tickets only (${coverageText(data.sync)})`;
   return { name: "Tickets", items, note, status: current?.message ?? undefined };
+}
+
+function PaletteAsk({ accountId, question, onNavigate }: { accountId: string | null; question: string; onNavigate: () => void }) {
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<AskInboxResult | null>(null);
+  const [failure, setFailure] = useState<string | null>(null);
+
+  const ask = useCallback(async () => {
+    if (!question.trim() || !accountId || loading) return;
+    setLoading(true);
+    setFailure(null);
+    setResult(null);
+    try {
+      setResult(await askMyInbox(question.trim(), accountId));
+    } catch (err) {
+      setFailure(friendlyAiError(err).message);
+    } finally {
+      setLoading(false);
+    }
+  }, [question, accountId, loading]);
+
+  useEffect(() => {
+    const onAsk = () => void ask();
+    window.addEventListener("velo-palette-ask", onAsk);
+    return () => window.removeEventListener("velo-palette-ask", onAsk);
+  }, [ask]);
+
+  return (
+    <div className="px-4 py-3 space-y-3">
+      <p className="text-meta text-text-tertiary">Ask AI · Enter to ask</p>
+      {loading && <div className="h-3 rounded-full bg-bg-hover animate-pulse" />}
+      {failure && (
+        <div className="flex items-center gap-2">
+          <p className="text-row text-text-secondary flex-1">{failure}</p>
+          <button type="button" className="text-preview text-accent" onClick={() => void ask()}>Retry</button>
+        </div>
+      )}
+      {result && (
+        <>
+          <p className="text-row text-text-primary whitespace-pre-wrap">{result.answer}</p>
+          <div className="flex flex-wrap gap-1.5">
+            {result.sourceMessages.slice(0, 5).map((msg) => (
+              <button
+                key={msg.message_id}
+                type="button"
+                className="rounded-full border border-separator px-2.5 py-1 text-meta text-text-secondary hover:bg-state-hover"
+                onClick={() => {
+                  navigateToLabel("all", { threadId: msg.thread_id });
+                  onNavigate();
+                }}
+              >
+                {msg.from_name ?? msg.from_address ?? "Unknown"}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
 }

@@ -7,12 +7,19 @@ import { FreshdeskError, freshdeskGet, freshdeskPut } from "./client";
 import { currentCredentials, currentTenantId, refreshMetadataAfterInvalidValue } from "./connection";
 import { decodeTicket } from "./tickets";
 
-/** The fields Velo edits on a ticket; group, tags and custom fields stay in Freshdesk. IDs are Freshdesk's. */
+/** The fields Velo edits on a ticket. IDs are Freshdesk's. Omit a field to leave it unchanged. */
 export interface TicketChanges {
   statusId?: string;
   priorityId?: string;
   /** null unassigns */
   assigneeId?: string | null;
+  /** null clears the group */
+  groupId?: string | null;
+  /** null clears the type */
+  ticketType?: string | null;
+  tags?: string[];
+  /** Custom fields keyed by Freshdesk's name. null clears one field. */
+  customFields?: Record<string, string | number | boolean | null>;
 }
 
 /** A field Freshdesk demands before it accepts the change (for example one required for closure) */
@@ -36,24 +43,41 @@ export type TicketEditResult =
 export const OFFLINE_MESSAGE = "Changing a ticket needs a connection to Freshdesk.";
 export const SAMPLE_MESSAGE = "Sample tickets can't be changed. Connect a helpdesk to change tickets.";
 
+function sameList(left: string[], right: string[]): boolean {
+  return left.length === right.length && left.every((item, index) => item === right[index]);
+}
+
 function payloadFor(changes: TicketChanges, requiredFields: Record<string, string>): Record<string, unknown> {
   const payload: Record<string, unknown> = {};
   if (changes.statusId !== undefined) payload.status = Number(changes.statusId);
   if (changes.priorityId !== undefined) payload.priority = Number(changes.priorityId);
   if (changes.assigneeId !== undefined) payload.responder_id = changes.assigneeId === null ? null : Number(changes.assigneeId);
+  if (changes.groupId !== undefined) payload.group_id = changes.groupId === null ? null : Number(changes.groupId);
+  if (changes.ticketType !== undefined) payload.type = changes.ticketType;
+  if (changes.tags !== undefined) payload.tags = changes.tags;
   // Freshdesk names custom fields cf_*; they travel under custom_fields
-  const custom = Object.entries(requiredFields).filter(([name]) => name.startsWith("cf_"));
-  for (const [name, value] of Object.entries(requiredFields)) if (!name.startsWith("cf_")) payload[name] = value;
-  if (custom.length > 0) payload.custom_fields = Object.fromEntries(custom);
+  const custom: Record<string, string | number | boolean | null> = { ...(changes.customFields ?? {}) };
+  for (const [name, value] of Object.entries(requiredFields)) {
+    if (name.startsWith("cf_")) custom[name] = value;
+    else payload[name] = value;
+  }
+  if (Object.keys(custom).length > 0) payload.custom_fields = custom;
   return payload;
 }
 
 /** True when the ticket as Freshdesk now has it carries every change */
 function applied(ticket: CachedTicket, changes: TicketChanges): boolean {
+  const customOk =
+    changes.customFields === undefined ||
+    Object.entries(changes.customFields).every(([name, value]) => (ticket.customFields?.[name] ?? null) === value);
   return (
     (changes.statusId === undefined || ticket.statusId === changes.statusId) &&
     (changes.priorityId === undefined || ticket.priorityId === changes.priorityId) &&
-    (changes.assigneeId === undefined || ticket.responderId === changes.assigneeId)
+    (changes.assigneeId === undefined || ticket.responderId === changes.assigneeId) &&
+    (changes.groupId === undefined || ticket.groupId === changes.groupId) &&
+    (changes.ticketType === undefined || ticket.ticketType === changes.ticketType) &&
+    (changes.tags === undefined || sameList(ticket.tags, changes.tags)) &&
+    customOk
   );
 }
 
@@ -106,7 +130,7 @@ function sameHelpdesk(
 }
 
 /**
- * Changes a ticket's status, priority or assignee in Freshdesk (a remote write,
+ * Changes a ticket in Freshdesk (a remote write,
  * journalled), then updates the local copy with what Freshdesk returns. Nothing
  * is written locally unless Freshdesk confirms, so a rejection needs no undo here.
  * `requiredFields` carries values the operator gave after a `needs_fields` result.

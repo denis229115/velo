@@ -46,6 +46,7 @@ export interface ImapMessage {
   list_unsubscribe: string | null;
   list_unsubscribe_post: string | null;
   auth_results: string | null;
+  date_header?: string | null;
   attachments: ImapAttachment[];
 }
 

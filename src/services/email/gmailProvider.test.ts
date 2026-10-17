@@ -16,6 +16,18 @@ describe("GmailApiProvider", () => {
     expect(provider.type).toBe("gmail_api");
   });
 
+  it("moves from the source label in one provider mutation", async () => {
+    await provider.moveToFolder("t", [], "Work", "Source");
+    expect(mockClient.modifyThread).toHaveBeenCalledWith("t", ["Work"], ["Source"]);
+  });
+
+  it("moves out of Inbox by default and keeps a same-label move intact", async () => {
+    await provider.moveToFolder("t", [], "Work");
+    expect(mockClient.modifyThread).toHaveBeenLastCalledWith("t", ["Work"], ["INBOX"]);
+    await provider.moveToFolder("t", [], "INBOX");
+    expect(mockClient.modifyThread).toHaveBeenLastCalledWith("t", ["INBOX"], undefined);
+  });
+
   describe("listFolders", () => {
     it("maps Gmail labels to EmailFolder format", async () => {
       vi.mocked(mockClient.listLabels).mockResolvedValue({

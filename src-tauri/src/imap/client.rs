@@ -1590,11 +1590,12 @@ fn parse_message(
 
     let message_id = message.message_id().map(|s| s.to_string());
     let subject = message.subject().map(|s| s.to_string());
-    let date = message
-        .date()
+    let parsed_date = message.date();
+    let date = parsed_date
         .map(|d| d.to_timestamp())
         .or(internal_date)
         .unwrap_or(0);
+    let date_header = parsed_date.map(format_date_offset);
 
     // In-Reply-To
     let in_reply_to = match message.in_reply_to() {
@@ -1730,8 +1731,18 @@ fn parse_message(
         list_unsubscribe,
         list_unsubscribe_post,
         auth_results,
+        date_header,
         attachments,
     })
+}
+
+/// An offset `offsetFromDateHeader` can read: `Z`, `+0530`, or `-0700`.
+fn format_date_offset(date: &mail_parser::DateTime) -> String {
+    if date.tz_hour == 0 && date.tz_minute == 0 {
+        return "Z".to_string();
+    }
+    let sign = if date.tz_before_gmt { '-' } else { '+' };
+    format!("{sign}{:02}{:02}", date.tz_hour, date.tz_minute)
 }
 
 /// Build a mapping from mail-parser part index → IMAP MIME section path string.

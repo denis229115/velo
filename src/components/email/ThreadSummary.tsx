@@ -1,9 +1,13 @@
 import { useState, useCallback, useRef, useEffect } from "react";
-import { Sparkles, ChevronDown, ChevronUp, RefreshCw } from "lucide-react";
+import { ChevronDown, ChevronUp, Copy, RefreshCw } from "lucide-react";
 import { getAiReadiness, type AiReadiness } from "@/services/ai/gateway";
-import { summarizeThread } from "@/services/ai/aiService";
+import { summarizeThreadStream } from "@/services/ai/aiService";
 import { AiError } from "@/services/ai/errors";
+import { useAiStream } from "@/components/ai/useAiStream";
 import { AiSendNote } from "@/components/ai/AiSendPreview";
+import { AiCard, AiFailure, AiSkeleton } from "@/components/ai/AiCard";
+import { StreamingCaret } from "@/components/ai/InlineDiff";
+import { AuraGlow, AuraShimmer } from "@/components/ui/AuraGlow";
 import type { DbMessage } from "@/services/db/messages";
 
 // The gateway refused or the operator cancelled: nothing left Velo, so say so
@@ -16,14 +20,24 @@ interface ThreadSummaryProps {
   messages: DbMessage[];
 }
 
+function bulletsOf(summary: string): string[] {
+  const lines = summary
+    .split(/\n+/)
+    .map((line) => line.replace(/^[-*•]\s*/, "").trim())
+    .filter(Boolean);
+  const parts = lines.length >= 2 ? lines : summary.split(/(?<=[.!?])\s+/).map((line) => line.trim()).filter(Boolean);
+  const bullets = (parts.length > 0 ? parts : [summary]).slice(0, 3);
+  return bullets;
+}
+
 export function ThreadSummary({ threadId, accountId, messages }: ThreadSummaryProps) {
   const [summary, setSummary] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [readiness, setReadiness] = useState<AiReadiness | null>(null);
   const [failed, setFailed] = useState(false);
   const [notSent, setNotSent] = useState<string | null>(null);
   const checkedRef = useRef(false);
+  const stream = useAiStream();
 
   useEffect(() => {
     if (checkedRef.current) return;
@@ -32,90 +46,122 @@ export function ThreadSummary({ threadId, accountId, messages }: ThreadSummaryPr
     getAiReadiness().then(setReadiness);
   }, [messages.length]);
 
-  const loadingRef = useRef(false);
   const loadSummary = useCallback(async (refresh = false) => {
-    if (loadingRef.current) return;
-    loadingRef.current = true;
-    setLoading(true);
     setFailed(false);
     setNotSent(null);
-    if (refresh) setSummary(null);
+    if (refresh) setSummary("");
     try {
-      const result = await summarizeThread(threadId, accountId, messages, { refresh });
-      setSummary(result);
+      const text = await stream.run(
+        (signal) => summarizeThreadStream(threadId, accountId, messages, { refresh }, signal),
+        (soFar) => setSummary(soFar),
+      );
+      if (text === null) return;
+      setSummary(text);
     } catch (err) {
       console.error("Failed to summarize thread:", err);
       setSummary(null);
       setFailed(true);
       if (err instanceof AiError && NOT_SENT_CODES.has(err.code)) setNotSent(err.message);
-    } finally {
-      loadingRef.current = false;
-      setLoading(false);
     }
-  }, [threadId, accountId, messages]);
+  }, [threadId, accountId, messages, stream.run]);
+
+  const working = stream.phase === "working";
 
   const handleRefresh = useCallback(() => loadSummary(true), [loadSummary]);
+  const copySummary = useCallback(() => {
+    if (!summary) return;
+    void navigator.clipboard?.writeText(summary).catch(() => {});
+  }, [summary]);
 
   if (messages.length < 2 || !readiness || readiness.status === "off") return null;
 
-  // AI is configured but may not receive email content: say why, send nothing.
   if (readiness.status === "refused" || readiness.status === "needs_approval") {
     return (
       <div className="mx-4 my-2 p-3 rounded-lg bg-bg-secondary border border-border-primary flex items-start gap-2">
-        <Sparkles size={14} className="text-text-tertiary shrink-0 mt-0.5" />
         <p className="text-xs text-text-secondary">{readiness.message}</p>
       </div>
     );
   }
 
+  const bullets = summary ? bulletsOf(summary) : [];
+
+  const auraPhase = working ? "working" : failed ? "error" : stream.phase === "success" ? "success" : "idle";
+
   return (
-    <div className="mx-4 my-2 p-3 rounded-lg bg-accent/5 border border-accent/20">
-      <button
-        onClick={() => setCollapsed(!collapsed)}
-        className="flex items-center gap-2 w-full text-left"
-      >
-        <Sparkles size={14} className="text-accent shrink-0" />
-        <span className="text-xs font-medium text-accent flex-1">AI Summary</span>
-        {summary && (
-          <span
-            role="button"
-            tabIndex={0}
-            onClick={(e) => { e.stopPropagation(); handleRefresh(); }}
-            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); e.preventDefault(); handleRefresh(); } }}
-            className="p-0.5 text-text-tertiary hover:text-accent transition-colors cursor-pointer"
-            title="Refresh summary"
-          >
-            <RefreshCw size={12} className={loading ? "animate-spin" : ""} />
-          </span>
-        )}
-        {collapsed ? <ChevronDown size={14} className="text-text-tertiary" /> : <ChevronUp size={14} className="text-text-tertiary" />}
-      </button>
-      {!collapsed && (
-        <div className="mt-2 text-sm text-text-secondary">
-          {!summary && !loading && (
+    <AuraGlow
+      palette="intelligence"
+      phase={auraPhase}
+      priority={30}
+      shape="card"
+      variant="plain"
+      className="mx-4 my-2"
+    >
+      <AiCard
+        title="Brief"
+        footnote={summary ? "Claude · redacted" : undefined}
+        actions={
+          <>
+            {summary && (
+              <span
+                role="button"
+                tabIndex={0}
+                onClick={handleRefresh}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleRefresh(); } }}
+                className="p-0.5 text-text-tertiary hover:text-text-primary transition-colors cursor-pointer"
+                title="Refresh summary"
+              >
+                <RefreshCw size={12} className={working ? "animate-spin" : ""} />
+              </span>
+            )}
+            {summary && (
+              <button type="button" title="Copy summary" onClick={copySummary} className="p-0.5 text-text-tertiary hover:text-text-primary">
+                <Copy size={12} />
+              </button>
+            )}
             <button
               type="button"
-              onClick={() => loadSummary()}
-              className="text-xs text-accent hover:underline"
+              aria-expanded={!collapsed}
+              aria-label={collapsed ? "Show brief" : "Hide brief"}
+              onClick={() => setCollapsed((value) => !value)}
+              className="p-0.5 text-text-tertiary hover:text-text-primary"
             >
-              Summarize
+              {collapsed ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
             </button>
-          )}
-          {loading && !summary && (
-            <div className="flex items-center gap-2 text-text-tertiary">
-              <div className="w-3 h-3 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />
-              <span className="text-xs">Generating summary...</span>
+          </>
+        }
+      >
+        {!collapsed && (
+          <div className="text-sm text-text-secondary">
+            {!summary && !working && (
+              <button type="button" onClick={() => loadSummary()} className="text-xs text-text-secondary hover:text-text-primary">
+                Summarize
+              </button>
+            )}
+            {working && !summary && (
+              <>
+                <AuraShimmer>Summarising…</AuraShimmer>
+                <AiSkeleton />
+              </>
+            )}
+            {bullets.length > 0 && (
+              <ul className="list-disc pl-4 space-y-1">
+                {bullets.map((bullet) => (
+                  <li key={bullet} className="text-xs leading-relaxed text-text-secondary">
+                    {bullet}
+                    {working && bullet === bullets[bullets.length - 1] && <StreamingCaret />}
+                  </li>
+                ))}
+              </ul>
+            )}
+            {failed && !working && !summary && (
+              <AiFailure message={notSent ?? "Summary unavailable right now."} onRetry={notSent ? undefined : () => loadSummary()} />
+            )}
+            <div className="mt-2">
+              <AiSendNote features={["thread_summary"]} onPreview={handleRefresh} />
             </div>
-          )}
-          {summary && <p className="text-xs leading-relaxed">{summary}</p>}
-          {failed && !loading && !summary && (
-            <p className="text-xs text-text-tertiary">{notSent ?? "Summary unavailable right now."}</p>
-          )}
-          <div className="mt-2">
-            <AiSendNote features={["thread_summary"]} onPreview={handleRefresh} />
           </div>
-        </div>
-      )}
-    </div>
+        )}
+      </AiCard>
+    </AuraGlow>
   );
 }

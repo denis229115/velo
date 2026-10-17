@@ -71,6 +71,7 @@ export interface EmailProvider {
     threadId: string,
     messageIds: string[],
     folderPath: string,
+    sourceLabelId?: string,
   ): Promise<void>;
   addLabel(threadId: string, labelId: string): Promise<void>;
   removeLabel(threadId: string, labelId: string): Promise<void>;

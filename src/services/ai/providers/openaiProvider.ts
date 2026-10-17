@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 import type { AiProviderClient, AiCompletionRequest } from "../types";
 import { createProviderFactory } from "../providerFactory";
+import { chatCompletionDeltas } from "./chatStream";
 
 const factory = createProviderFactory(
   (apiKey) => new OpenAI({ apiKey, dangerouslyAllowBrowser: true }),
@@ -21,6 +22,10 @@ export function createOpenAIProvider(apiKey: string, model: string): AiProviderC
       });
 
       return response.choices[0]?.message?.content ?? "";
+    },
+
+    stream(req: AiCompletionRequest, signal: AbortSignal) {
+      return chatCompletionDeltas(client, model, req, signal);
     },
 
     async testConnection(): Promise<boolean> {

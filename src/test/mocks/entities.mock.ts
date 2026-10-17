@@ -40,6 +40,7 @@ export function createMockParsedMessage(
     listUnsubscribePost: null,
     authResults: null,
     ...overrides,
+    dateHeader: overrides.dateHeader ?? null,
   };
 }
 

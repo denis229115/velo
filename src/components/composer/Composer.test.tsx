@@ -150,7 +150,7 @@ describe("Composer scheduling", () => {
     });
 
     pressInEditor({ key: "L", metaKey: true, shiftKey: true });
-    fireEvent.click(await screen.findByText("Tomorrow morning"));
+    fireEvent.click(await screen.findByText("Tomorrow 8am"));
 
     await waitFor(() => expect(useComposerStore.getState().isOpen).toBe(false));
     const rows = await db.select<{ subject: string; status: string; attachment_paths: string }[]>(
@@ -175,7 +175,7 @@ describe("Composer scheduling from a send-as alias", () => {
     act(() => useComposerStore.getState().setFromEmail("support@acme.com"));
 
     pressInEditor({ key: "L", metaKey: true, shiftKey: true });
-    fireEvent.click(await screen.findByText("Tomorrow morning"));
+    fireEvent.click(await screen.findByText("Tomorrow 8am"));
 
     await waitFor(() => expect(useComposerStore.getState().isOpen).toBe(false));
     const rows = await db.select<{ from_email: string | null }[]>("SELECT from_email FROM scheduled_emails");

@@ -52,9 +52,9 @@ export const SHORTCUTS: ShortcutCategory[] = [
     { id: "ticket.aiDraft", keys: "d", desc: "Ticket: AI draft reply" },
     { id: "ticket.summarize", keys: "z", desc: "Ticket: Summarize" },
     { id: "ticket.note", keys: "n", desc: "Ticket: Internal note" },
-    { id: "ticket.status", keys: "Shift+S", desc: "Ticket: Change status" },
-    { id: "ticket.priority", keys: "Shift+P", desc: "Ticket: Change priority" },
-    { id: "ticket.assignee", keys: "Shift+A", desc: "Ticket: Change assignee" },
+    { id: "ticket.status", keys: "s", desc: "Ticket: Change status" },
+    { id: "ticket.priority", keys: "p", desc: "Ticket: Change priority" },
+    { id: "ticket.assignee", keys: "a", desc: "Ticket: Change assignee" },
     { id: "ticket.presentation", keys: "b", desc: "Ticket: Switch list / board" },
   ]},
   { category: "Composer", items: [

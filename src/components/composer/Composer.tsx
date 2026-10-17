@@ -11,6 +11,8 @@ import { AddressInput } from "./AddressInput";
 import { EditorToolbar } from "./EditorToolbar";
 import { TaskReplyDraft } from "@/components/clickup/TaskReplyDraft";
 import { AiAssistPanel } from "./AiAssistPanel";
+import { useComposerAura } from "@/components/ai/composerAura";
+import { AuraGlow } from "@/components/ui/AuraGlow";
 import { AttachmentPicker } from "./AttachmentPicker";
 import { ScheduleSendDialog } from "./ScheduleSendDialog";
 import { SignatureSelector } from "./SignatureSelector";
@@ -36,6 +38,7 @@ import { getTemplatesForAccount, type DbTemplate } from "@/services/db/templates
 import { readFileAsBase64 } from "@/utils/fileUtils";
 import { interpolateVariables } from "@/utils/templateVariables";
 import { sanitizeHtml } from "@/utils/sanitize";
+import { loadRecipientZone } from "@/services/recipientZone";
 
 export function Composer() {
   // Individual selectors — only re-render when each specific value changes
@@ -50,6 +53,7 @@ export function Composer() {
   const fromEmail = useComposerStore((s) => s.fromEmail);
   const viewMode = useComposerStore((s) => s.viewMode);
   const signatureHtml = useComposerStore((s) => s.signatureHtml);
+  const composerAura = useComposerAura();
   const isSaving = useComposerStore((s) => s.isSaving);
   const lastSavedAt = useComposerStore((s) => s.lastSavedAt);
   // Note: bodyHtml intentionally NOT subscribed — TipTap manages its own editor state.
@@ -69,6 +73,11 @@ export function Composer() {
   const activeAccount = accounts.find((a) => a.id === activeAccountId);
   const sendingRef = useRef(false);
   const [showSchedule, setShowSchedule] = useState(false);
+  const [recipientZone, setRecipientZone] = useState<{ name: string; offsetMinutes: number | null }>({
+    name: "",
+    offsetMinutes: null,
+  });
+  const scheduleAnchorRef = useRef<HTMLButtonElement>(null);
   const [showAiAssist, setShowAiAssist] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [aliases, setAliases] = useState<SendAsAlias[]>([]);
@@ -184,6 +193,26 @@ export function Composer() {
 
     return () => { cancelled = true; };
   }, [isOpen, activeAccountId]);
+
+  useEffect(() => {
+    if (!showSchedule) return;
+    const email = to[0];
+    if (!email) {
+      setRecipientZone({ name: "", offsetMinutes: null });
+      return;
+    }
+    let cancelled = false;
+    void loadRecipientZone(activeAccountId, email)
+      .then((zone) => {
+        if (!cancelled) setRecipientZone(zone);
+      })
+      .catch(() => {
+        if (!cancelled) setRecipientZone({ name: email.split("@")[0] ?? "Recipient", offsetMinutes: null });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [showSchedule, to, activeAccountId]);
 
   // Start/stop draft auto-save
   useEffect(() => {
@@ -535,8 +564,16 @@ export function Composer() {
           item={{ kind: "email", accountId: activeAccountId, threadId }}
           editor={editor}
         />}
-        {/* Editor */}
-        <div className="flex-1 overflow-y-auto">
+        {/* Editor. The scrollport is the field so the aura mask can extend past it. */}
+        <AuraGlow
+          palette="intelligence"
+          phase={composerAura}
+          priority={32}
+          shape="composer"
+          variant="plain"
+          className="flex-1 min-h-0 flex flex-col"
+          fieldClassName="flex-1 min-h-0 overflow-y-auto"
+        >
           <EditorContent editor={editor} />
           {signatureHtml && (
             <div
@@ -544,7 +581,7 @@ export function Composer() {
               dangerouslySetInnerHTML={{ __html: sanitizeHtml(signatureHtml) }}
             />
           )}
-        </div>
+        </AuraGlow>
 
         {/* Attachments */}
         <div className="border-t border-border-secondary">
@@ -582,8 +619,10 @@ export function Composer() {
                 Send
               </button>
               <button
+                ref={scheduleAnchorRef}
                 onClick={() => setShowSchedule(true)}
                 disabled={to.length === 0}
+                aria-label="Send later"
                 className="px-2 py-1.5 text-white bg-accent hover:bg-accent-hover border-l border-white/20 rounded-r-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 title={sendLaterKeys ? `Send later (${formatShortcut(sendLaterKeys)})` : "Send later"}
               >
@@ -598,6 +637,9 @@ export function Composer() {
         <ScheduleSendDialog
           onSchedule={handleSchedule}
           onClose={() => setShowSchedule(false)}
+          anchorRef={scheduleAnchorRef}
+          recipientName={recipientZone.name}
+          recipientOffsetMinutes={recipientZone.offsetMinutes}
         />
       )}
     </div>

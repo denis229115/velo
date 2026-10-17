@@ -8,6 +8,7 @@ import { useComposerStore } from "@/stores/composerStore";
 import { useUIStore } from "@/stores/uiStore";
 import { useComposerShortcuts } from "@/hooks/useComposerShortcuts";
 import { sendEmail, archiveThread } from "@/services/emailActions";
+import { escapeHtml } from "@/utils/sanitize";
 import { buildRawEmail } from "@/utils/emailBuilder";
 import { upsertContact } from "@/services/db/contacts";
 import { getSetting } from "@/services/db/settings";
@@ -18,6 +19,7 @@ import {
   regenerateAutoDraft,
   type AutoDraftMode,
 } from "@/services/ai/writingStyleService";
+import { Button } from "@/components/ui/Button";
 import { TaskReplyDraft } from "@/components/clickup/TaskReplyDraft";
 import { AiSendNote } from "@/components/ai/AiSendPreview";
 import type { DbMessage } from "@/services/db/messages";
@@ -40,6 +42,8 @@ export function InlineReply({ thread, messages, accountId, noReply, onSent }: In
   const [autoDraftLoading, setAutoDraftLoading] = useState(false);
   const [hasAutoDraft, setHasAutoDraft] = useState(false);
   const [autoDraftOn, setAutoDraftOn] = useState(false);
+  const [pendingDraft, setPendingDraft] = useState<string | null>(null);
+  const [reviewDraft, setReviewDraft] = useState(false);
   const accounts = useAccountStore((s) => s.accounts);
   const activeAccount = accounts.find((a) => a.id === accountId);
   const openComposer = useComposerStore((s) => s.openComposer);
@@ -118,8 +122,25 @@ export function InlineReply({ thread, messages, accountId, noReply, onSent }: In
       }
     };
     window.addEventListener("velo-inline-reply", handler);
-    return () => window.removeEventListener("velo-inline-reply", handler);
-  }, [activateMode]);
+    const onDraft = (event: Event) => {
+      const text = (event as CustomEvent<{ text?: string }>).detail?.text;
+      if (!text || !editor) return;
+      autoDraftAbortRef.current = true;
+      setMode("reply");
+      setReviewDraft(true);
+      setHasAutoDraft(false);
+      setAutoDraftLoading(false);
+      setPendingDraft(null);
+      const html = `<p>${escapeHtml(text)}</p>`;
+      if (editor.isEmpty) editor.commands.setContent(html);
+      else setPendingDraft(text);
+    };
+    window.addEventListener("velo-insert-reply-draft", onDraft);
+    return () => {
+      window.removeEventListener("velo-inline-reply", handler);
+      window.removeEventListener("velo-insert-reply-draft", onDraft);
+    };
+  }, [activateMode, editor]);
 
   // Scroll into view when activated
   useEffect(() => {
@@ -301,6 +322,7 @@ export function InlineReply({ thread, messages, accountId, noReply, onSent }: In
         e.preventDefault();
         editor?.commands.setContent("");
         setMode(null);
+        setPendingDraft(null);
         setHasAutoDraft(false);
         autoDraftAbortRef.current = true;
       }
@@ -375,7 +397,7 @@ export function InlineReply({ thread, messages, accountId, noReply, onSent }: In
           )}
         </div>
         <button
-          onClick={() => setMode(null)}
+          onClick={() => { setMode(null); setPendingDraft(null); }}
           className="text-xs text-text-tertiary hover:text-text-primary transition-colors"
         >
           Cancel
@@ -388,8 +410,22 @@ export function InlineReply({ thread, messages, accountId, noReply, onSent }: In
         editor={editor}
         disabled={sending || autoDraftLoading}
       />}
+      {pendingDraft !== null && (
+        <section aria-label="Proposed reply draft" className="px-3 py-2 space-y-2 border-b border-border-secondary">
+          <p className="text-xs text-text-secondary">Choose how to use this draft. Your edits are kept until you choose.</p>
+          <div className="text-sm text-text-primary">{pendingDraft}</div>
+          <div className="flex gap-2 text-xs">
+            <Button size="xs" variant="secondary" type="button" onClick={() => { editor?.commands.setContent(`<p>${escapeHtml(pendingDraft)}</p>`); setPendingDraft(null); }}>Replace</Button>
+            <Button size="xs" variant="secondary" type="button" onClick={() => { editor?.chain().focus().insertContentAt(editor.state.doc.content.size, `<p>${escapeHtml(pendingDraft)}</p>`).run(); setPendingDraft(null); }}>Insert</Button>
+            <Button size="xs" variant="secondary" type="button" onClick={() => setPendingDraft(null)}>Discard</Button>
+          </div>
+        </section>
+      )}
       {/* Editor */}
       <div className="relative">
+        {reviewDraft && (
+          <p className="px-3 pt-2 text-meta text-text-tertiary">Review this draft before sending.</p>
+        )}
         <EditorContent editor={editor} />
         {autoDraftLoading && (
           <div className="absolute inset-0 flex items-center justify-center bg-bg-primary/60">

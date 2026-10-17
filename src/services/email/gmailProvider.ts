@@ -199,8 +199,9 @@ export class GmailApiProvider implements EmailProvider {
     threadId: string,
     _messageIds: string[],
     folderPath: string,
+    sourceLabelId = "INBOX",
   ): Promise<void> {
-    await this.client.modifyThread(threadId, [folderPath], undefined);
+    await this.client.modifyThread(threadId, [folderPath], folderPath === sourceLabelId ? undefined : [sourceLabelId]);
   }
 
   async addLabel(threadId: string, labelId: string): Promise<void> {

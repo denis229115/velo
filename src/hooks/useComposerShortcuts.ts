@@ -1,6 +1,7 @@
 import { useEffect, useRef, type RefObject } from "react";
 import { useShortcutStore } from "@/stores/shortcutStore";
 import { hasCommandModifier, matchesKey } from "@/utils/shortcutKeys";
+import { takeComposerEnter } from "@/components/ai/composerEnter";
 
 interface ComposerShortcutHandlers {
   onSend?: () => void;
@@ -48,6 +49,7 @@ export function useComposerShortcuts(handlers: ComposerShortcutHandlers, enabled
         if (!hasCommandModifier(binding) && isTypingTarget(e.target)) continue;
         e.preventDefault();
         e.stopPropagation();
+        if (binding === keyMap["app.send"] && takeComposerEnter()) return;
         handler();
         return;
       }

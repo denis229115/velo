@@ -95,7 +95,7 @@ export function EditorToolbar({ editor, onToggleAiAssist, aiAssistOpen, allowIma
           onClick={onToggleAiAssist}
           title="AI Assist"
           className={`px-1.5 py-1 text-xs rounded hover:bg-bg-hover transition-colors flex items-center gap-1 ${
-            aiAssistOpen ? "bg-accent/10 text-accent font-semibold" : "text-text-secondary"
+            aiAssistOpen ? "bg-state-selected text-text-primary font-semibold" : "text-text-secondary"
           }`}
         >
           <Sparkles size={12} />

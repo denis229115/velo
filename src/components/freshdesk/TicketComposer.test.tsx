@@ -558,11 +558,11 @@ describe("scheduling a reply", () => {
 
     pressSendLater();
 
-    const picker = within(await screen.findByRole("group", { name: "Schedule reply" }));
+    const picker = within(await screen.findByRole("dialog", { name: "Schedule reply" }));
     expect(picker.getByText(/sends through Freshdesk when Velo is next open/)).toBeInTheDocument();
     expect(picker.getByText(/not while your Mac sleeps or Velo is closed/)).toBe(picker.getByText(/next open/));
     fireEvent.change(picker.getByLabelText("Then set status"), { target: { value: "4" } });
-    fireEvent.click(picker.getByRole("button", { name: /Tomorrow morning/ }));
+    fireEvent.click(picker.getByRole("button", { name: /Tomorrow 8am/ }));
 
     expect(await reply.findByText(/Reply scheduled for/)).toBeInTheDocument();
     const [scheduled] = await listScheduledReplies();
@@ -594,7 +594,7 @@ describe("scheduling a reply", () => {
     expect(send.parentElement).toBe(later.parentElement);
 
     fireEvent.click(later);
-    expect(await screen.findByRole("group", { name: "Schedule reply" })).toBeInTheDocument();
+    expect(await screen.findByRole("dialog", { name: "Schedule reply" })).toBeInTheDocument();
   });
 
   it("offers Send later only for a reply, and not while offline: nothing is queued", async () => {
@@ -608,7 +608,7 @@ describe("scheduling a reply", () => {
     expect(reply.getByRole("button", { name: "Send later" })).toBeDisabled();
     pressSendLater();
 
-    expect(screen.queryByRole("group", { name: "Schedule reply" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "Schedule reply" })).not.toBeInTheDocument();
     expect(await listScheduledReplies()).toEqual([]);
   });
 });
@@ -642,9 +642,9 @@ it("uses a rebound send-later shortcut from the ticket reply editor", async () =
   act(() => useShortcutStore.getState().setKey("app.sendLater", "Alt+K"));
   const editor = reply.getByRole("textbox", { name: "Reply text" });
   fireEvent.keyDown(editor, { key: "L", metaKey: true, shiftKey: true });
-  expect(screen.queryByRole("group", { name: "Schedule reply" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("dialog", { name: "Schedule reply" })).not.toBeInTheDocument();
   fireEvent.keyDown(editor, { key: "k", altKey: true });
-  expect(await screen.findByRole("group", { name: "Schedule reply" })).toBeVisible();
+  expect(await screen.findByRole("dialog", { name: "Schedule reply" })).toBeVisible();
   expect(writes()).toEqual([]);
 });
 
@@ -662,7 +662,7 @@ it("gives the full email composer precedence over a ticket reply for send keys",
     fireEvent.keyDown(window, { key: "L", metaKey: true, shiftKey: true });
   });
   expect(writes()).toEqual([]);
-  expect(screen.queryByRole("group", { name: "Schedule reply" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("dialog", { name: "Schedule reply" })).not.toBeInTheDocument();
   expect(reply.getByText("Ticket reply stays here")).toBeVisible();
   act(() => useComposerStore.getState().closeComposer());
 });
@@ -680,6 +680,6 @@ it("keeps the ticket reply untouched when send keys are pressed in a ClickUp dra
   fireEvent.keyDown(input, { key: "L", metaKey: true, shiftKey: true });
   await act(async () => {});
   expect(writes()).toEqual([]);
-  expect(screen.queryByRole("group", { name: "Schedule reply" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("dialog", { name: "Schedule reply" })).not.toBeInTheDocument();
   expect(reply.getByText("Keep this reply")).toBeVisible();
 });

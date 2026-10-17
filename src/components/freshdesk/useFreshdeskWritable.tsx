@@ -18,8 +18,9 @@ export interface FreshdeskWritable {
 
 /**
  * Whether the operator may change anything in Freshdesk right now. Tickets are
- * shared with colleagues, so a write is never queued or shown optimistically:
- * while the app is offline, or the helpdesk connection is known to be down
+ * shared with colleagues, so a write is never queued. While online, the ticket
+ * list shows the change at once and rolls it back if Freshdesk refuses it.
+ * While the app is offline, or the helpdesk connection is known to be down
  * (unreachable or rejecting the saved key), every write control is disabled and
  * says why. Every Freshdesk write control takes its state from here, so it
  * re-enables on reconnect without a reload.

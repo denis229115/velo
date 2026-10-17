@@ -1,4 +1,4 @@
-import { requestAi, senderDomain, testAiConnection, type AiSourceItem } from "./gateway";
+import { requestAi, requestAiStream, senderDomain, testAiConnection, type AiSourceItem } from "./gateway";
 import type { DbMessage } from "@/services/db/messages";
 import {
   SUMMARIZE_PROMPT,
@@ -7,6 +7,8 @@ import {
   IMPROVE_PROMPT,
   SHORTEN_PROMPT,
   FORMALIZE_PROMPT,
+  WARM_PROMPT,
+  NEUTRAL_PROMPT,
   CATEGORIZE_PROMPT,
   SMART_REPLY_PROMPT,
   ASK_INBOX_PROMPT,
@@ -27,50 +29,95 @@ export function threadItems(messages: DbMessage[]): AiSourceItem[] {
   }));
 }
 
+function summaryRequest(
+  threadId: string,
+  accountId: string,
+  messages: DbMessage[],
+  options: { refresh?: boolean } = {},
+) {
+  return {
+    feature: "thread_summary" as const,
+    systemPrompt: SUMMARIZE_PROMPT,
+    items: threadItems(messages),
+    cache: { scope: accountId, sourceId: threadId, refresh: options.refresh },
+  };
+}
+
+export function summarizeThreadStream(
+  threadId: string,
+  accountId: string,
+  messages: DbMessage[],
+  options: { refresh?: boolean } = {},
+  signal?: AbortSignal,
+): AsyncIterable<string> {
+  return requestAiStream(summaryRequest(threadId, accountId, messages, options), signal);
+}
+
 export async function summarizeThread(
   threadId: string,
   accountId: string,
   messages: DbMessage[],
   options: { refresh?: boolean } = {},
 ): Promise<string> {
-  return requestAi({
-    feature: "thread_summary",
-    systemPrompt: SUMMARIZE_PROMPT,
-    items: threadItems(messages),
-    cache: { scope: accountId, sourceId: threadId, refresh: options.refresh },
-  });
+  return requestAi(summaryRequest(threadId, accountId, messages, options));
+}
+
+export function composeFromPromptStream(instructions: string, signal?: AbortSignal): AsyncIterable<string> {
+  return requestAiStream({ feature: "ai_compose", systemPrompt: COMPOSE_PROMPT, operatorText: instructions }, signal);
 }
 
 export async function composeFromPrompt(instructions: string): Promise<string> {
   return requestAi({ feature: "ai_compose", systemPrompt: COMPOSE_PROMPT, operatorText: instructions });
 }
 
-export async function generateReply(
-  messagesText: string[],
-  instructions?: string,
-): Promise<string> {
-  return requestAi({
-    feature: "ai_reply",
+function replyRequest(messagesText: string[], instructions?: string) {
+  return {
+    feature: "ai_reply" as const,
     systemPrompt: REPLY_PROMPT,
     items: messagesText.map((body) => ({ body })),
     operatorText: instructions,
     maxChars: 4000,
-  });
+  };
 }
 
-export type TransformType = "improve" | "shorten" | "formalize";
+export function generateReplyStream(
+  messagesText: string[],
+  instructions?: string,
+  signal?: AbortSignal,
+): AsyncIterable<string> {
+  return requestAiStream(replyRequest(messagesText, instructions), signal);
+}
+
+export async function generateReply(
+  messagesText: string[],
+  instructions?: string,
+): Promise<string> {
+  return requestAi(replyRequest(messagesText, instructions));
+}
+
+export type TransformType = "improve" | "shorten" | "formalize" | "warm" | "neutral";
+
+function transformRequest(text: string, type: TransformType) {
+  const prompts: Record<TransformType, string> = {
+    improve: IMPROVE_PROMPT,
+    shorten: SHORTEN_PROMPT,
+    formalize: FORMALIZE_PROMPT,
+    warm: WARM_PROMPT,
+    neutral: NEUTRAL_PROMPT,
+  };
+  return { feature: "text_transform" as const, systemPrompt: prompts[type], items: [{ body: text }] };
+}
+
+export function transformTextStream(text: string, type: TransformType, signal?: AbortSignal): AsyncIterable<string> {
+  return requestAiStream(transformRequest(text, type), signal);
+}
 
 export async function transformText(
   text: string,
   type: TransformType,
 ): Promise<string> {
-  const prompts: Record<TransformType, string> = {
-    improve: IMPROVE_PROMPT,
-    shorten: SHORTEN_PROMPT,
-    formalize: FORMALIZE_PROMPT,
-  };
   // The operator's own draft is the public message text being transformed.
-  return requestAi({ feature: "text_transform", systemPrompt: prompts[type], items: [{ body: text }] });
+  return requestAi(transformRequest(text, type));
 }
 
 export async function generateSmartReplies(

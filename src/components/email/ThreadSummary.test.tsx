@@ -3,10 +3,21 @@ import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import type { DbMessage } from "@/services/db/messages";
 
 vi.mock("@/services/ai/gateway", () => ({ getAiReadiness: vi.fn() }));
-vi.mock("@/services/ai/aiService", () => ({ summarizeThread: vi.fn() }));
+const summarizeThread = vi.hoisted(() => vi.fn());
+vi.mock("@/services/ai/aiService", () => ({
+  summarizeThread,
+  summarizeThreadStream: async function* (
+    threadId: string,
+    accountId: string,
+    messages: unknown,
+    options?: { refresh?: boolean },
+  ) {
+    yield await summarizeThread(threadId, accountId, messages, options);
+  },
+}));
 
 import { getAiReadiness } from "@/services/ai/gateway";
-import { summarizeThread } from "@/services/ai/aiService";
+import { summarizeThread as summarizeThreadExport } from "@/services/ai/aiService";
 import { AiError } from "@/services/ai/errors";
 import { takePreviewRequest } from "@/services/ai/sendPreview";
 import { ThreadSummary } from "./ThreadSummary";
@@ -36,7 +47,7 @@ describe("ThreadSummary", () => {
     renderSummary();
 
     expect(await screen.findByText(/OpenAI is not approved/)).toBeInTheDocument();
-    expect(summarizeThread).not.toHaveBeenCalled();
+    expect(summarizeThreadExport).not.toHaveBeenCalled();
   });
 
   it("tells the operator to approve the Claude API when approval is missing", async () => {
@@ -48,7 +59,7 @@ describe("ThreadSummary", () => {
     renderSummary();
 
     expect(await screen.findByText(/approve the Claude API/)).toBeInTheDocument();
-    expect(summarizeThread).not.toHaveBeenCalled();
+    expect(summarizeThreadExport).not.toHaveBeenCalled();
   });
 
   it("renders nothing when AI is not configured", async () => {
@@ -67,7 +78,7 @@ describe("ThreadSummary", () => {
 
     expect(await screen.findByRole("button", { name: "Summarize" })).toBeInTheDocument();
     await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(summarizeThread).not.toHaveBeenCalled();
+    expect(summarizeThreadExport).not.toHaveBeenCalled();
   });
 
   it("summarizes only when the operator clicks Summarize", async () => {

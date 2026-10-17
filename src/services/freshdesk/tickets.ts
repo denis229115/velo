@@ -27,6 +27,17 @@ function seconds(iso: unknown): number {
 /** A CC-style list from the ticket; null when the field is absent. Entries that are not addresses are dropped. */
 const addressList = (v: unknown): string[] | null => (Array.isArray(v) ? uniqueValidAddresses(v) : null);
 
+/** Scalar values from Freshdesk's custom_fields object; null when the key is absent. */
+function customFieldsOf(raw: unknown): Record<string, string | number | boolean> | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const fields: Record<string, string | number | boolean> = {};
+  for (const [name, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof value === "string") fields[name] = value;
+    else if (typeof value === "number" || typeof value === "boolean") fields[name] = value;
+  }
+  return fields;
+}
+
 /** Decodes one ticket from /tickets, /tickets/:id or /search/tickets. */
 export function decodeTicket(raw: unknown, fetchedOnDemand = false): CachedTicket {
   if (!raw || typeof raw !== "object") bad("ticket");
@@ -52,6 +63,9 @@ export function decodeTicket(raw: unknown, fetchedOnDemand = false): CachedTicke
     createdAt: seconds(t.created_at),
     updatedAt: seconds(t.updated_at),
     fetchedOnDemand,
+    ticketType: typeof t.type === "string" && t.type.trim() ? t.type : null,
+    ticketTypeKnown: "type" in t,
+    customFields: "custom_fields" in t ? (customFieldsOf(t.custom_fields) ?? {}) : null,
   };
 }
 

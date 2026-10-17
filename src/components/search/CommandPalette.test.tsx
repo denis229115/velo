@@ -1,6 +1,7 @@
 import { render, screen, fireEvent, within } from "@testing-library/react";
 import { useShortcutStore } from "@/stores/shortcutStore";
 import { getDefaultKeyMap } from "@/constants/shortcuts";
+import { useLabelStore } from "@/stores/labelStore";
 import { CommandPalette } from "./CommandPalette";
 import { pretendPlatform, restoreUserAgent } from "@/test/platform";
 import { searchMessages, type SearchResult } from "@/services/db/search";
@@ -26,8 +27,10 @@ vi.mock("@/services/db/templates", () => ({ getTemplatesForAccount: vi.fn(async 
 // The provider boundary (Gmail API / IMAP) and the local database are faked; emailActions runs for real.
 vi.mock("@/services/email/providerFactory", () => ({ getEmailProvider: vi.fn() }));
 vi.mock("@/services/db/pendingOperations", () => ({ enqueuePendingOperation: vi.fn(async () => "op-1") }));
+const paletteDb = vi.hoisted(() => ({ execute: vi.fn(async () => ({ rowsAffected: 1 })), select: vi.fn(async () => []) }));
 vi.mock("@/services/db/connection", () => ({
-  getDb: vi.fn(async () => ({ execute: vi.fn(async () => undefined), select: vi.fn(async () => []) })),
+  getDb: vi.fn(async () => paletteDb),
+  withTransaction: async (fn: (db: unknown) => Promise<void>) => fn(await (await import("@/services/db/connection")).getDb()),
   withReadSnapshot: <T,>(fn: () => Promise<T>) => fn(),
 }));
 
@@ -86,7 +89,7 @@ describe("Command palette email search", () => {
 
     typeQuery("inbox");
 
-    await screen.findByText("Inbox zero tips");
+    await screen.findByRole("option", { name: /Inbox zero tips/ });
     const threads = screen.getByRole("group", { name: "Threads" });
     expect(within(threads).getAllByRole("option").map((o) => o.textContent)).toEqual([
       "Inbox zero tipsAlice",
@@ -94,7 +97,7 @@ describe("Command palette email search", () => {
       "Show all results for “inbox”",
     ]);
     const commands = screen.getByRole("group", { name: "Commands" });
-    expect(within(commands).getByText("Go to Inbox")).toBeInTheDocument();
+    expect(within(commands).getByRole("option", { name: /Go to Inbox/ })).toBeInTheDocument();
     expect(searchMessages).toHaveBeenCalledWith("inbox", "acc-1", expect.any(Number));
   });
 
@@ -104,7 +107,7 @@ describe("Command palette email search", () => {
     render(<CommandPalette isOpen onClose={onClose} />);
 
     const input = typeQuery("quarterly");
-    await screen.findByText("Quarterly numbers");
+    await screen.findByRole("option", { name: /Quarterly numbers/ });
     fireEvent.keyDown(input, { key: "ArrowDown" });
     fireEvent.keyDown(input, { key: "ArrowUp" });
     fireEvent.keyDown(input, { key: "ArrowDown" });
@@ -164,11 +167,12 @@ describe("Command palette spam action", () => {
     render(<CommandPalette isOpen onClose={() => {}} />);
     typeQuery("spam");
     fireEvent.click(screen.getByRole("option", { name }));
-    await vi.waitFor(() => expect(vi.mocked(enqueuePendingOperation).mock.calls.length + providers.gmail.spam.mock.calls.length + providers.imap.spam.mock.calls.length).toBeGreaterThan(0));
+    await vi.waitFor(() => expect(paletteDb.execute.mock.calls.length).toBeGreaterThan(0));
   }
 
   beforeEach(() => {
     route.label = "inbox";
+    paletteDb.execute.mockClear();
     providers.gmail.spam.mockClear();
     providers.imap.spam.mockClear();
     vi.mocked(enqueuePendingOperation).mockClear();
@@ -192,7 +196,8 @@ describe("Command palette spam action", () => {
 
     await runSpamCommand(/^Report Spam/);
 
-    expect(providers[kind].spam).toHaveBeenCalledWith("t1", [], true);
+    expect(providers[kind].spam).not.toHaveBeenCalled();
+    expect(paletteDb.execute).toHaveBeenCalledWith(expect.stringContaining("INSERT INTO pending_operations"), expect.arrayContaining([accountId, "spam", "t1", expect.stringContaining('"isSpam":true')]));
   });
 
   it("marks the thread as not spam when viewing the spam folder", async () => {
@@ -201,7 +206,7 @@ describe("Command palette spam action", () => {
 
     await runSpamCommand(/^Not Spam/);
 
-    expect(providers.imap.spam).toHaveBeenCalledWith("t1", [], false);
+    expect(paletteDb.execute).toHaveBeenCalledWith(expect.stringContaining("INSERT INTO pending_operations"), expect.arrayContaining(["imap-acc", "spam", "t1", expect.stringContaining('"isSpam":false')]));
   });
 
   it("queues the report when offline instead of calling the provider", async () => {
@@ -211,12 +216,7 @@ describe("Command palette spam action", () => {
     await runSpamCommand(/^Report Spam/);
 
     expect(providers.gmail.spam).not.toHaveBeenCalled();
-    expect(enqueuePendingOperation).toHaveBeenCalledWith(
-      "gmail-acc",
-      "spam",
-      "t1",
-      expect.objectContaining({ threadId: "t1", isSpam: true }),
-    );
+    expect(paletteDb.execute).toHaveBeenCalledWith(expect.stringContaining("INSERT INTO pending_operations"), expect.arrayContaining(["gmail-acc", "spam", "t1"]));
   });
 });
 
@@ -227,4 +227,29 @@ it("shows current ClickUp and Velo to-do shortcut hints after rebinding", () => 
   render(<CommandPalette isOpen onClose={() => {}} />);
   expect(screen.getByText("Create / link ClickUp task").closest('[role="option"]')).toHaveTextContent("Alt+T");
   expect(screen.getByText("Create Velo to-do from email (AI)").closest('[role="option"]')).toHaveTextContent("Shift+Y");
+});
+
+describe("palette subpages", () => {
+  it("filters move choices and queues a move instead of adding a label", async () => {
+    paletteDb.execute.mockClear();
+    vi.mocked(getSelectedThreadId).mockReturnValue("t1");
+    useAccountStore.setState({ activeAccountId: "imap-acc" });
+    useLabelStore.setState({ labels: [{ id: "Work", name: "Work" }, { id: "Family", name: "Family" }] as never });
+    render(<CommandPalette isOpen onClose={() => {}} />);
+    fireEvent.click(screen.getByRole("option", { name: /Move to/ }));
+    typeQuery("Work");
+    expect(screen.queryByRole("option", { name: "Family" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("option", { name: "Work" }));
+    await vi.waitFor(() => expect(paletteDb.execute).toHaveBeenCalledWith(expect.stringContaining("INSERT INTO pending_operations"), expect.arrayContaining(["imap-acc", "moveToFolder", "t1", expect.stringContaining('"folderPath":"Work"')])));
+    vi.mocked(getSelectedThreadId).mockReturnValue(null);
+  });
+
+  it("filters snooze presets using the subpage search", () => {
+    vi.mocked(getSelectedThreadId).mockReturnValue("t1");
+    render(<CommandPalette isOpen onClose={() => {}} />);
+    fireEvent.click(screen.getByRole("option", { name: "Snooze", exact: true }));
+    typeQuery("zzzzzzzz");
+    expect(screen.queryAllByRole("option")).toHaveLength(0);
+    vi.mocked(getSelectedThreadId).mockReturnValue(null);
+  });
 });

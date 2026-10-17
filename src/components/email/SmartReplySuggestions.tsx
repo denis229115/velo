@@ -1,9 +1,10 @@
 import { useState, useCallback, useRef, useEffect } from "react";
-import { Sparkles, RefreshCw } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import { isAiAvailable } from "@/services/ai/gateway";
 import { generateSmartReplies } from "@/services/ai/aiService";
+import { friendlyAiError } from "@/services/ai/friendlyError";
 import { AiSendNote } from "@/components/ai/AiSendPreview";
-import { useComposerStore } from "@/stores/composerStore";
+import { AiCard, AiFailure, AiSkeleton } from "@/components/ai/AiCard";
 import type { DbMessage } from "@/services/db/messages";
 
 interface SmartReplySuggestionsProps {
@@ -17,9 +18,9 @@ export function SmartReplySuggestions({ threadId, accountId, messages, noReply }
   const [replies, setReplies] = useState<string[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [available, setAvailable] = useState(false);
+  const [failure, setFailure] = useState<string | null>(null);
   const checkedRef = useRef(false);
   const loadingRef = useRef(false);
-  const openComposer = useComposerStore((s) => s.openComposer);
 
   useEffect(() => {
     if (checkedRef.current) return;
@@ -31,12 +32,14 @@ export function SmartReplySuggestions({ threadId, accountId, messages, noReply }
     if (loadingRef.current) return;
     loadingRef.current = true;
     setLoading(true);
+    setFailure(null);
     if (refresh) setReplies(null);
     try {
       const result = await generateSmartReplies(threadId, accountId, messages, refresh ? { refresh } : undefined);
-      setReplies(result);
+      setReplies(result.slice(0, 3));
     } catch (err) {
       console.error("Failed to generate smart replies:", err);
+      setFailure(friendlyAiError(err).message);
     } finally {
       loadingRef.current = false;
       setLoading(false);
@@ -46,69 +49,50 @@ export function SmartReplySuggestions({ threadId, accountId, messages, noReply }
   const handleRefresh = useCallback(() => loadReplies(true), [loadReplies]);
 
   const handleReplyClick = useCallback((replyText: string) => {
-    const lastMessage = messages[messages.length - 1];
-    if (!lastMessage) return;
-
-    const replyTo = lastMessage.reply_to ?? lastMessage.from_address;
-    openComposer({
-      mode: "reply",
-      to: replyTo ? [replyTo] : [],
-      subject: `Re: ${lastMessage.subject ?? ""}`,
-      bodyHtml: `<p>${replyText}</p>`,
-      threadId: lastMessage.thread_id,
-      inReplyToMessageId: lastMessage.id,
-    });
-  }, [messages, openComposer]);
+    // A chip fills the inline reply as a draft the operator still has to send.
+    window.dispatchEvent(new CustomEvent("velo-insert-reply-draft", { detail: { text: replyText } }));
+  }, []);
 
   if (!available || messages.length === 0 || noReply) return null;
 
   return (
-    <div className="mx-4 my-2 p-3 rounded-lg bg-accent/5 border border-accent/20">
-      <div className="flex items-center gap-2 mb-2">
-        <Sparkles size={14} className="text-accent shrink-0" />
-        <span className="text-xs font-medium text-accent flex-1">Quick Replies</span>
-        {replies && (
-          <button
-            onClick={handleRefresh}
-            className="p-0.5 text-text-tertiary hover:text-accent transition-colors"
-            title="Refresh suggestions"
-          >
-            <RefreshCw size={12} className={loading ? "animate-spin" : ""} />
+    <div className="mx-4 my-2">
+      <AiCard
+        title="Replies"
+        actions={
+          replies ? (
+            <button type="button" onClick={handleRefresh} className="p-0.5 text-text-tertiary hover:text-text-primary" title="Refresh suggestions">
+              <RefreshCw size={12} className={loading ? "animate-spin" : ""} />
+            </button>
+          ) : null
+        }
+      >
+        {!replies && !loading && !failure && (
+          <button type="button" onClick={() => loadReplies()} className="text-xs text-text-secondary hover:text-text-primary">
+            Generate replies
           </button>
         )}
-      </div>
-      {!replies && !loading && (
-        <button
-          type="button"
-          onClick={() => loadReplies()}
-          className="text-xs text-accent hover:underline"
-        >
-          Generate replies
-        </button>
-      )}
-      {loading && !replies && (
-        <div className="flex items-center gap-2 text-text-tertiary">
-          <div className="w-3 h-3 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />
-          <span className="text-xs">Generating suggestions...</span>
+        {loading && !replies && <AiSkeleton lines={1} />}
+        {failure && !loading && <AiFailure message={failure} onRetry={() => loadReplies(true)} />}
+        {replies && (
+          <div className="flex flex-wrap gap-1.5">
+            {replies.map((reply) => (
+              <button
+                key={reply}
+                type="button"
+                onClick={() => handleReplyClick(reply)}
+                className="px-3 py-1 text-xs text-text-primary bg-surface-subtle border border-separator rounded-full hover:bg-state-hover max-w-[280px] truncate"
+                title={reply}
+              >
+                {reply}
+              </button>
+            ))}
+          </div>
+        )}
+        <div className="mt-2">
+          <AiSendNote features={["smart_replies"]} onPreview={handleRefresh} />
         </div>
-      )}
-      {replies && (
-        <div className="flex flex-wrap gap-2">
-          {replies.map((reply, i) => (
-            <button
-              key={i}
-              onClick={() => handleReplyClick(reply)}
-              className="px-3 py-1.5 text-xs text-text-primary bg-bg-primary border border-border-primary rounded-full hover:bg-bg-hover hover:border-accent/40 transition-colors max-w-[280px] truncate"
-              title={reply}
-            >
-              {reply}
-            </button>
-          ))}
-        </div>
-      )}
-      <div className="mt-2">
-        <AiSendNote features={["smart_replies"]} onPreview={handleRefresh} />
-      </div>
+      </AiCard>
     </div>
   );
 }

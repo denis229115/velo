@@ -2,6 +2,7 @@ import { useShortcutAction } from "@/hooks/useShortcutAction";
 import { useEffect, useRef, useState } from "react";
 import { Lock, Paperclip } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ReadingPaneIllustration } from "@/components/ui/illustrations";
 import { Timestamp } from "@/components/ui/Timestamp";
@@ -14,6 +15,7 @@ import { EntryKindBadge } from "./TicketActivity";
 import { TicketEditError, useTicketEditor } from "./useTicketEditor";
 import { useTicketEditControls } from "./TicketEditControls";
 import { TicketHeader } from "./TicketHeader";
+import { TicketInspector } from "./TicketInspector";
 import { FreshdeskWriteReason } from "./useFreshdeskWritable";
 import { TicketComposer } from "./TicketComposer";
 import { TicketSummaryCard, TICKET_ENTRY_REVEAL_EVENT, ticketEntryAnchor } from "./TicketSummaryCard";
@@ -232,6 +234,21 @@ export function TicketReader({ ticket, ticketId }: { ticket: TicketListItem | nu
   const edit = useTicketEditControls(ticket, editor);
   const editError = editor.error && editor.error.ticketId === ticket?.id ? editor.error : null;
   const [composing, setComposing] = useState<{ ticketId: string; mode: ComposerMode; aiDraftRequest?: number } | null>(null);
+  const [inspectorOpen, setInspectorOpen] = useState(false);
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey || event.key.toLowerCase() !== "i") return;
+      const target = event.target;
+      if (target instanceof HTMLElement) {
+        const tag = target.tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || target.isContentEditable) return;
+      }
+      event.preventDefault();
+      setInspectorOpen((open) => !open);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   const composerMode = composing && composing.ticketId === ticket?.id ? composing.mode : null;
   const compose = (mode: ComposerMode) => ticket && setComposing({ ticketId: ticket.id, mode });
   useShortcutAction("action.reply", ({ ticketId }) => {
@@ -262,32 +279,41 @@ export function TicketReader({ ticket, ticketId }: { ticket: TicketListItem | nu
           subtitle={ticketId ? `Ticket #${ticketId} is not in the local copy` : "Select a ticket to read"}
         />
       ) : (
-        <>
-          <div className="flex-1 min-h-0 overflow-y-auto px-8 py-6">
-            <TicketHeader
-              ticket={ticket}
-              channel={view?.channel ?? null}
-              edit={edit}
-              onReply={() => compose("reply")}
-              onInternalNote={() => compose("note")}
-              notice={
-                (edit.blocked || editError) && (
-                  <div className="space-y-1.5">
-                    <FreshdeskWriteReason writable={edit.writable} />
-                    {editError && <TicketEditError text={editError.text} onDismiss={editor.clearError} />}
-                  </div>
-                )
-              }
-            />
-            {editor.element}
-            <TicketSummaryCard key={ticket.id} ticket={ticket} view={view} />
-            <HistoryNotice view={view} />
-            {view && view.entries.length > 0 && <History key={view.ticketId} entries={view.entries} />}
+        <div className="flex min-h-0 flex-1">
+          <div className="flex min-w-0 flex-1 flex-col">
+            <div className="flex-1 min-h-0 overflow-y-auto px-8 py-6">
+              <TicketHeader
+                ticket={ticket}
+                channel={view?.channel ?? null}
+                edit={edit}
+                compact={inspectorOpen}
+                onToggleInspector={() => setInspectorOpen((open) => !open)}
+                onReply={() => compose("reply")}
+                onInternalNote={() => compose("note")}
+                notice={
+                  (edit.blocked || editError) && (
+                    <div className="space-y-1.5">
+                      <FreshdeskWriteReason writable={edit.writable} />
+                      {editError && <TicketEditError text={editError.text} onDismiss={editor.clearError} />}
+                    </div>
+                  )
+                }
+              />
+              {editor.element}
+              <TicketSummaryCard key={ticket.id} ticket={ticket} view={view} />
+              <HistoryNotice view={view} />
+              {view && view.entries.length > 0 && <History key={view.ticketId} entries={view.entries} />}
+            </div>
+            {composerMode && (
+              <TicketComposer ticket={ticket} history={view} aiDraftRequest={composing?.aiDraftRequest ?? 0} mode={composerMode} onModeChange={compose} onClose={() => setComposing(null)} />
+            )}
           </div>
-          {composerMode && (
-            <TicketComposer ticket={ticket} history={view} aiDraftRequest={composing?.aiDraftRequest ?? 0} mode={composerMode} onModeChange={compose} onClose={() => setComposing(null)} />
+          {inspectorOpen && (
+            <ErrorBoundary name="Inspector">
+              <TicketInspector ticket={ticket} onEdit={editor.run} />
+            </ErrorBoundary>
           )}
-        </>
+        </div>
       )}
     </section>
   );

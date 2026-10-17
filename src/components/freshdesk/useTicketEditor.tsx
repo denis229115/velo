@@ -118,7 +118,7 @@ function RequiredFieldsDialog({
   };
   return (
     <Modal isOpen onClose={onCancel} title="Freshdesk needs more information" width="w-96">
-      <form role="dialog" aria-label="Freshdesk needs more information" onSubmit={submit} className="space-y-3 px-4 py-3">
+      <form onSubmit={submit} className="space-y-3 px-4 py-3">
         <p className="text-meta text-text-secondary">
           {request.action} for ticket #{request.ticket.id}: Freshdesk requires {fields.length === 1 ? "this field" : "these fields"}.
         </p>
@@ -175,7 +175,7 @@ function RequiredFieldsDialog({
 function LeftViewDialog({ leftView, onClose }: { leftView: LeftView; onClose: () => void }) {
   return (
     <Modal isOpen onClose={onClose} title="Ticket moved" width="w-96">
-      <div role="dialog" aria-label="Ticket moved" className="space-y-3 px-4 py-3">
+      <div className="space-y-3 px-4 py-3">
         <p className="text-row text-text-primary">
           Ticket #{leftView.ticketId} is now {leftView.now} and no longer matches “{leftView.viewName}”.
         </p>

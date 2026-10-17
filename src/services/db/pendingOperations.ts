@@ -66,6 +66,24 @@ export async function updateOperationStatus(
   );
 }
 
+/** Operations that must never run twice: the provider may have accepted them before the crash. */
+const NOT_REPEATABLE = ["sendMessage", "createDraft"];
+
+/** Recover ops a previous run claimed but never finished (crash or quit mid-dispatch).
+ * Repeatable ones go back to the queue. A send or new draft may already have happened,
+ * so those are parked as failed and the user decides whether to retry. */
+export async function resetExecutingOperations(): Promise<void> {
+  const db = await getDb();
+  const placeholders = NOT_REPEATABLE.map((_, i) => `$${i + 1}`).join(", ");
+  await db.execute(
+    `UPDATE pending_operations
+     SET status = 'failed', error_message = 'Interrupted while sending. It may already have gone out; check Sent before retrying.'
+     WHERE status = 'executing' AND operation_type IN (${placeholders})`,
+    NOT_REPEATABLE,
+  );
+  await db.execute(`UPDATE pending_operations SET status = 'pending' WHERE status = 'executing'`);
+}
+
 export async function deleteOperation(id: string): Promise<void> {
   const db = await getDb();
   await db.execute(`DELETE FROM pending_operations WHERE id = $1`, [id]);
@@ -156,6 +174,7 @@ export async function compactQueue(accountId?: string): Promise<number> {
   // Group by resource_id
   const byResource = new Map<string, PendingOperation[]>();
   for (const op of ops) {
+    if (JSON.parse(op.params).before) continue;
     const key = `${op.account_id}:${op.resource_id}`;
     const list = byResource.get(key) ?? [];
     list.push(op);

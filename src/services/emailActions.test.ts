@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 // Mock dependencies
 vi.mock("@/stores/uiStore", () => ({
@@ -25,9 +25,10 @@ vi.mock("@/services/db/pendingOperations", () => ({
 }));
 
 vi.mock("@/services/db/connection", () => ({
+  withTransaction: async (fn: (db: unknown) => Promise<void>) => fn(await (await import("@/services/db/connection")).getDb()),
   getDb: vi.fn(() =>
     Promise.resolve({
-      execute: vi.fn(() => Promise.resolve()),
+      execute: vi.fn(() => Promise.resolve({ rowsAffected: 1 })),
       select: vi.fn(() => Promise.resolve([])),
     }),
   ),
@@ -53,6 +54,9 @@ import {
   executeEmailAction,
 } from "./emailActions";
 import { navigateToThread, getSelectedThreadId } from "@/router/navigate";
+import { useAccountStore } from "@/stores/accountStore";
+import { getDb } from "@/services/db/connection";
+import { clearUndo, peekUndo } from "./undoStack";
 import { createMockEmailProvider, createMockUIStoreState, createMockThreadStoreState } from "@/test/mocks";
 
 const mockProvider = createMockEmailProvider();
@@ -63,6 +67,8 @@ const mockRemoveThread = vi.fn();
 describe("emailActions", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.useFakeTimers();
+    useAccountStore.setState({ activeAccountId: "acct-1" });
     vi.mocked(getEmailProvider).mockResolvedValue(mockProvider as never);
     vi.mocked(useUIStore.getState).mockReturnValue(createMockUIStoreState() as never);
     vi.mocked(useThreadStore.getState).mockReturnValue(createMockThreadStoreState({
@@ -71,19 +77,21 @@ describe("emailActions", () => {
     }) as never);
   });
 
+  afterEach(() => { clearUndo(); vi.useRealTimers(); });
+
   describe("online execution", () => {
     it("archives a thread via provider", async () => {
       const result = await archiveThread("acct-1", "t1", ["m1"]);
       expect(result.success).toBe(true);
-      expect(result.queued).toBeUndefined();
+      expect(result.queued).toBe(true);
       expect(mockRemoveThread).toHaveBeenCalledWith("t1");
-      expect(mockProvider.archive).toHaveBeenCalledWith("t1", ["m1"]);
+      expect(mockProvider.archive).not.toHaveBeenCalled();
     });
 
     it("trashes a thread via provider", async () => {
       const result = await trashThread("acct-1", "t1", ["m1"]);
       expect(result.success).toBe(true);
-      expect(mockProvider.trash).toHaveBeenCalledWith("t1", ["m1"]);
+      expect(mockProvider.trash).not.toHaveBeenCalled();
     });
 
     it("stars a thread via provider", async () => {
@@ -104,7 +112,7 @@ describe("emailActions", () => {
       const result = await spamThread("acct-1", "t1", ["m1"], true);
       expect(result.success).toBe(true);
       expect(mockRemoveThread).toHaveBeenCalledWith("t1");
-      expect(mockProvider.spam).toHaveBeenCalledWith("t1", ["m1"], true);
+      expect(mockProvider.spam).not.toHaveBeenCalled();
     });
   });
 
@@ -118,12 +126,7 @@ describe("emailActions", () => {
       expect(result.success).toBe(true);
       expect(result.queued).toBe(true);
       expect(mockProvider.archive).not.toHaveBeenCalled();
-      expect(enqueuePendingOperation).toHaveBeenCalledWith(
-        "acct-1",
-        "archive",
-        "t1",
-        expect.objectContaining({ threadId: "t1", messageIds: ["m1"] }),
-      );
+
     });
 
     it("still applies optimistic UI update when offline", async () => {
@@ -135,9 +138,9 @@ describe("emailActions", () => {
   describe("network error → queue fallback", () => {
     it("queues on retryable network error", async () => {
       vi.mocked(useUIStore.getState).mockReturnValue({ isOnline: true } as never);
-      mockProvider.archive.mockRejectedValueOnce(new Error("Failed to fetch"));
+      mockProvider.star.mockRejectedValueOnce(new Error("Failed to fetch"));
 
-      const result = await archiveThread("acct-1", "t1", ["m1"]);
+      const result = await starThread("acct-1", "t1", ["m1"], true);
       expect(result.success).toBe(true);
       expect(result.queued).toBe(true);
       expect(enqueuePendingOperation).toHaveBeenCalled();
@@ -289,6 +292,56 @@ describe("emailActions", () => {
       });
       expect(result.success).toBe(true);
       expect(mockProvider.createDraft).toHaveBeenCalledWith("base64data", undefined);
+    });
+  });
+
+  describe("optimistic removal rollback", () => {
+    const thread = {
+      id: "t1",
+      accountId: "acct-1",
+      subject: "Hi",
+      snippet: null,
+      lastMessageAt: 1,
+      messageCount: 1,
+      isRead: true,
+      isStarred: false,
+      isPinned: false,
+      isMuted: false,
+      hasAttachments: false,
+      labelIds: ["INBOX"],
+      fromName: "A",
+      fromAddress: "a@b.c",
+    };
+    const restoreThread = vi.fn();
+
+    beforeEach(() => {
+      clearUndo();
+      vi.mocked(useThreadStore.getState).mockReturnValue(createMockThreadStoreState({
+        threads: [thread],
+        updateThread: mockUpdateThread,
+        removeThread: mockRemoveThread,
+        restoreThread,
+      }) as never);
+    });
+
+    it("does not remove the visible thread when persisting the action fails", async () => {
+      const original = vi.mocked(getDb).getMockImplementation()!;
+      vi.mocked(getDb).mockResolvedValueOnce({ select: vi.fn(async () => { throw new Error("disk full"); }) } as never);
+      const result = await archiveThread("acct-1", "t1", ["m1"]);
+      expect(result.success).toBe(false);
+      expect(mockRemoveThread).not.toHaveBeenCalled();
+      vi.mocked(getDb).mockImplementation(original);
+    });
+
+    it("offers undo after a successful archive and restores the thread", async () => {
+      const result = await archiveThread("acct-1", "t1", ["m1"]);
+      expect(result.success).toBe(true);
+      expect(peekUndo()?.label).toBe("Archived");
+      const undo = peekUndo()!;
+      clearUndo();
+      await undo.undo();
+      expect(restoreThread).toHaveBeenCalledWith(expect.objectContaining({ id: "t1", labelIds: ["INBOX"] }), 0);
+      expect(peekUndo()).toBeNull();
     });
   });
 });
