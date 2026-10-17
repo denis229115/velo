@@ -231,6 +231,12 @@ async function syncAccountInternal(accountId: string): Promise<void> {
       return;
     }
 
+    // Start calendar before email sync. A hung IMAP initial must not block
+    // calendar discovery. Calendar errors stay off the email result.
+    syncCalendarForAccount(accountId).catch((err) => {
+      console.warn(`[syncManager] Calendar sync error for ${accountId}:`, err);
+    });
+
     if (account.provider === "imap") {
       await syncImapAccount(accountId);
     } else {
@@ -241,11 +247,6 @@ async function syncAccountInternal(accountId: string): Promise<void> {
     // Also emit for delta syncs that fell back to initial (recovery re-sync)
     // since those emit progress via statusCallback inside syncImapAccount.
     statusCallback?.(accountId, "done");
-
-    // Sync calendar alongside email (non-blocking — calendar errors don't affect email sync)
-    syncCalendarForAccount(accountId).catch((err) => {
-      console.warn(`[syncManager] Calendar sync error for ${accountId}:`, err);
-    });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err ?? "Unknown error");
     console.error(`[syncManager] Sync failed for account ${accountId}:`, message);

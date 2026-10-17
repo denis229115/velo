@@ -1,3 +1,4 @@
+import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 import { DAVClient, type DAVCalendar, type DAVObject } from "tsdav";
 import type {
   CalendarProvider,
@@ -36,6 +37,7 @@ export class CalDAVProvider implements CalendarProvider {
       credentials: { username, password },
       authMethod: "Basic",
       defaultAccountType: "caldav",
+      fetch: tauriFetch,
     });
 
     await this.client.login();

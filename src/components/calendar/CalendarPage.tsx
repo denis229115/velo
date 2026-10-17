@@ -137,7 +137,11 @@ export function CalendarPage() {
       setCalendarError(null);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      if (message.includes("403") || message.includes("insufficient")) {
+      const isGmailApiAccount = activeAccount?.provider === "gmail_api";
+      if (
+        isGmailApiAccount &&
+        (message.includes("403") || message.includes("insufficient"))
+      ) {
         if (reauthDoneRef.current) {
           reauthDoneRef.current = false;
           setCalendarError(
@@ -150,11 +154,13 @@ export function CalendarPage() {
         }
       } else {
         console.error("Failed to load calendar events:", err);
+        setNeedsReauth(false);
+        setCalendarError(message);
       }
     } finally {
       setLoading(false);
     }
-  }, [activeAccountId, getRange]);
+  }, [activeAccount, activeAccountId, getRange]);
 
   useEffect(() => {
     loadCalendars();

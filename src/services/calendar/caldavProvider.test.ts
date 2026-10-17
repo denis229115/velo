@@ -1,3 +1,5 @@
+import { DAVClient } from "tsdav";
+import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 import { CalDAVProvider } from "./caldavProvider";
 
 const MOCK_ICAL_DATA =
@@ -12,6 +14,10 @@ const mockFetchCalendarObjects = vi.fn();
 const mockCreateCalendarObject = vi.fn().mockResolvedValue(undefined);
 const mockUpdateCalendarObject = vi.fn().mockResolvedValue(undefined);
 const mockDeleteCalendarObject = vi.fn().mockResolvedValue(undefined);
+
+vi.mock("@tauri-apps/plugin-http", () => ({
+  fetch: vi.fn(),
+}));
 
 vi.mock("tsdav", () => {
   const MockDAVClient = vi.fn(function (this: Record<string, unknown>) {
@@ -44,6 +50,16 @@ describe("CalDAVProvider", () => {
   });
 
   describe("listCalendars", () => {
+    it("constructs DAVClient with the Tauri HTTP fetch", async () => {
+      mockFetchCalendars.mockResolvedValue([]);
+
+      await provider.listCalendars();
+
+      expect(DAVClient).toHaveBeenCalledWith(
+        expect.objectContaining({ fetch: tauriFetch }),
+      );
+    });
+
     it("maps tsdav calendars to CalendarInfo array", async () => {
       mockFetchCalendars.mockResolvedValue([
         { url: "/cal/personal/", displayName: "Personal" },
