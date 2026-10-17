@@ -16,7 +16,7 @@ export function Popover({ open, onClose, title, children, anchorRef, width = 320
   const panelRef = useRef<HTMLDivElement>(null);
   const returnTo = useRef<HTMLElement | null>(null);
   const titleId = useId();
-  const box = useAnchorBox(open, anchorRef, width);
+  const box = useAnchorBox(open, anchorRef, width, panelRef);
 
   useEffect(() => {
     if (!open) return;
@@ -57,11 +57,11 @@ export function Popover({ open, onClose, title, children, anchorRef, width = 320
       aria-modal="true"
       aria-labelledby={titleId}
       tabIndex={-1}
-      className="material-pop rounded-[var(--radius-menu)] text-text-primary outline-none"
+      className="material-pop rounded-[var(--radius-menu)] text-text-primary outline-none overflow-y-auto"
       style={
         box
-          ? { position: "fixed", top: box.top, left: box.left, width, zIndex: 70 }
-          : { position: "relative", width, zIndex: 70 }
+          ? { position: "fixed", top: box.top, left: box.left, width: box.width, maxHeight: box.maxHeight, zIndex: 70 }
+          : { position: "relative", width: `min(${width}px, calc(100vw - 16px))`, maxHeight: "calc(88vh - 8px)", zIndex: 70 }
       }
       onMouseDown={(event) => event.stopPropagation()}
     >
@@ -85,24 +85,41 @@ function useAnchorBox(
   open: boolean,
   anchorRef: RefObject<HTMLElement | null> | undefined,
   width: number,
-): { top: number; left: number } | null {
-  const [box, setBox] = useState<{ top: number; left: number } | null>(null);
+  panelRef: RefObject<HTMLDivElement | null>,
+) {
+  const [box, setBox] = useState<{ top: number; left: number; width: number; maxHeight: number } | null>(null);
   useLayoutEffect(() => {
     if (!open) return;
     const place = () => {
       const anchor = anchorRef?.current;
-      if (!anchor) {
-        setBox(null);
-        return;
-      }
+      const panel = panelRef.current;
+      if (!anchor || !panel) { setBox(null); return; }
       const rect = anchor.getBoundingClientRect();
-      const left = Math.max(8, Math.min(rect.left, window.innerWidth - width - 8));
-      const top = Math.min(rect.bottom + 6, window.innerHeight - 16);
-      setBox({ top, left });
+      const panelWidth = Math.min(width, Math.max(0, window.innerWidth - 16));
+      const left = Math.max(8, Math.min(rect.left, window.innerWidth - panelWidth - 8));
+      const below = Math.max(0, window.innerHeight - rect.bottom - 14);
+      const above = Math.max(0, rect.top - 14);
+      const height = panel.scrollHeight;
+      const flip = height > below && above > below;
+      const maxHeight = Math.min(Math.max(0, window.innerHeight - 16), flip ? above : below);
+      const top = flip ? Math.max(8, rect.top - 6 - Math.min(height, maxHeight)) : Math.max(8, rect.bottom + 6);
+      const next = { top: Math.min(top, Math.max(8, window.innerHeight - Math.min(height, maxHeight) - 8)), left, width: panelWidth, maxHeight };
+      setBox((current) => current && Object.keys(next).every((key) => current[key as keyof typeof next] === next[key as keyof typeof next]) ? current : next);
     };
     place();
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(place);
+    if (panelRef.current) observer?.observe(panelRef.current);
+    if (anchorRef?.current) observer?.observe(anchorRef.current);
+    const mutations = new MutationObserver(place);
+    if (panelRef.current) mutations.observe(panelRef.current, { childList: true, subtree: true, characterData: true });
     window.addEventListener("resize", place);
-    return () => window.removeEventListener("resize", place);
-  }, [open, anchorRef, width]);
+    window.addEventListener("scroll", place, true);
+    return () => {
+      observer?.disconnect();
+      mutations.disconnect();
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [open, anchorRef, width, panelRef]);
   return open ? box : null;
 }

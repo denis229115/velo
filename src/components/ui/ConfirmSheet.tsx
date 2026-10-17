@@ -52,7 +52,7 @@ function ConfirmSheet({ request, onDone }: { request: ConfirmRequest; onDone: ()
         role="alertdialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="material-pop relative w-[min(24rem,calc(100%-2rem))] rounded-[var(--radius-modal)] p-4"
+        className="bg-surface-overlay shadow-e3 relative w-[min(24rem,calc(100%-2rem))] rounded-[var(--radius-modal)] p-4"
       >
         <h2 id={titleId} className="text-headline font-medium text-text-primary">
           {request.title}

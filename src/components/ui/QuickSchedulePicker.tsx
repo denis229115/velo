@@ -74,11 +74,11 @@ export function QuickSchedulePicker({
           <li key={preset.label}>
             <button
               type="button"
-              className="w-full text-left px-3 py-1.5 rounded-[var(--radius-menu-item)] hover:bg-state-hover flex items-center justify-between gap-3"
+              className="w-full text-left px-3 py-1.5 rounded-[var(--radius-menu-item)] hover:bg-state-hover flex flex-wrap items-center justify-between gap-x-3 gap-y-0"
               onClick={() => commit(preset.timestamp)}
             >
-              <span className="text-row text-text-primary">{preset.label}</span>
-              <span className="text-meta text-text-tertiary shrink-0">
+              <span className="max-w-full break-words text-row text-text-primary">{preset.label}</span>
+              <span className="ml-auto max-w-full break-words text-right text-meta text-text-tertiary">
                 {preset.detail ?? formatWhen(new Date(preset.timestamp * 1000))}
                 {night(preset.timestamp) ? " · night for them" : ""}
               </span>

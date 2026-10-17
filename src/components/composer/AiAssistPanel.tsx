@@ -15,6 +15,8 @@ import { AiSendNote } from "@/components/ai/AiSendPreview";
 import { AiFailure } from "@/components/ai/AiCard";
 import { InlineDiff, StreamingCaret } from "@/components/ai/InlineDiff";
 import { Menu } from "@/components/ui/Menu";
+import { escapeHtml } from "@/utils/sanitize";
+import { captureRewriteTarget } from "./rewriteTarget";
 import { claimComposerEnter } from "@/components/ai/composerEnter";
 
 interface AiAssistPanelProps {
@@ -52,29 +54,41 @@ export function AiAssistPanel({ editor, isReplyMode, threadMessages }: AiAssistP
   const anchorRef = useRef<HTMLButtonElement>(null);
   const streamRef = useRef<TextStream | null>(null);
   const setBodyHtml = useComposerStore((s) => s.setBodyHtml);
+  const targetRef = useRef<ReturnType<typeof captureRewriteTarget> | null>(null);
+  const selectionRef = useRef<ReturnType<typeof captureRewriteTarget> | null>(null);
   const lastRun = useRef<(() => Promise<void>) | null>(null);
+
+  useEffect(() => () => {
+    streamRef.current?.abort();
+    targetRef.current?.dispose();
+    selectionRef.current?.dispose();
+  }, [editor]);
 
   useEffect(() => {
     getAiReadiness().then(setReadiness);
   }, []);
 
-  const applyToEditor = useCallback((html: string) => {
-    if (!editor) return;
-    const content = html.trim().startsWith("<") ? html : `<p>${escapeHtml(html)}</p>`;
-    editor.chain().focus().setContent(content).run();
-    setBodyHtml(editor.getHTML());
-  }, [editor, setBodyHtml]);
-
   const accept = useCallback(() => {
-    if (!diff || diff.streaming) return;
-    applyToEditor(diff.after);
+    if (!editor || !diff || diff.streaming) return;
+    const range = targetRef.current?.range();
+    if (!range) {
+      setError("The original text changed. Discard this proposal and select the text again.");
+      return;
+    }
+    const content = diff.after.trim().startsWith("<") ? diff.after : escapeHtml(diff.after);
+    targetRef.current?.dispose();
+    targetRef.current = null;
+    editor.chain().focus().insertContentAt(range, content).run();
+    setBodyHtml(editor.getHTML());
     setDiff(null);
     setPrompt("");
-  }, [diff, applyToEditor]);
+  }, [diff, editor, setBodyHtml]);
 
   const discard = useCallback(() => {
     streamRef.current?.abort();
     streamRef.current = null;
+    targetRef.current?.dispose();
+    targetRef.current = null;
     setDiff(null);
     setLoading(false);
   }, []);
@@ -106,9 +120,12 @@ export function AiAssistPanel({ editor, isReplyMode, threadMessages }: AiAssistP
     );
   }
 
-  const runStream = async (instruction: string, produce: (signal: AbortSignal) => AsyncIterable<string>) => {
+  const runStream = async (instruction: string, produce: (signal: AbortSignal) => AsyncIterable<string>, captured?: ReturnType<typeof captureRewriteTarget>) => {
     if (!editor || loading) return;
-    const before = editor.getHTML();
+    const target = captured ?? captureRewriteTarget(editor, false);
+    if (targetRef.current !== target) targetRef.current?.dispose();
+    targetRef.current = target;
+    const before = target.before;
     const controller = new AbortController();
     setLoading(true);
     setError(null);
@@ -134,8 +151,10 @@ export function AiAssistPanel({ editor, isReplyMode, threadMessages }: AiAssistP
       setCanRetry(friendly.retry);
       setDiff(null);
     } finally {
-      streamRef.current = null;
-      setLoading(false);
+      if (streamRef.current === stream) {
+        streamRef.current = null;
+        setLoading(false);
+      }
     }
   };
 
@@ -151,9 +170,13 @@ export function AiAssistPanel({ editor, isReplyMode, threadMessages }: AiAssistP
 
   const handleTransform = async (label: string, type: TransformType) => {
     if (!editor) return;
-    const html = editor.getHTML();
-    if (!html || html === "<p></p>") return;
-    const run = () => runStream(`${label}`, (signal) => transformTextStream(html, type, signal));
+    const target = selectionRef.current;
+    if (!target || !target.range()) {
+      setError("Select the text to rewrite again; the original selection changed.");
+      return;
+    }
+    const html = target.before;
+    const run = () => runStream(`${label}`, (signal) => transformTextStream(html, type, signal), target);
     lastRun.current = run;
     await run();
   };
@@ -218,7 +241,13 @@ export function AiAssistPanel({ editor, isReplyMode, threadMessages }: AiAssistP
 
       {editor && (
         <div className="mt-1">
-          <button type="button" className="text-meta text-text-tertiary hover:text-text-primary" onClick={() => setMenu(true)}>
+          <button type="button" disabled={loading} className="text-meta text-text-tertiary hover:text-text-primary disabled:opacity-50" onMouseDown={(event) => event.preventDefault()} onClick={() => {
+            if (!editor || editor.state.selection.empty) { setError("Select text to rewrite first."); return; }
+            discard();
+            selectionRef.current?.dispose();
+            selectionRef.current = captureRewriteTarget(editor, true);
+            setMenu(true);
+          }}>
             Selection
           </button>
           <Menu
@@ -247,7 +276,7 @@ export function AiAssistPanel({ editor, isReplyMode, threadMessages }: AiAssistP
             onRetry={() => void diff.retry()}
             onRefine={() => {
               setOpen(true);
-              setDiff(null);
+              discard();
             }}
             onStop={discard}
           />
@@ -261,8 +290,4 @@ export function AiAssistPanel({ editor, isReplyMode, threadMessages }: AiAssistP
       )}
     </div>
   );
-}
-
-function escapeHtml(value: string): string {
-  return value.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[char] ?? char));
 }
