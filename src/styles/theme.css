@@ -265,12 +265,17 @@ html.increase-contrast {
 /* Opaque sidebar for the current frame, stronger than native vibrancy. */
 html.reduce-transparency,
 :root.reduce-transparency.native-vibrancy,
-:root.reduce-transparency.native-vibrancy.dark {
+:root.reduce-transparency.native-vibrancy.dark,
+html.increase-contrast,
+:root.increase-contrast.native-vibrancy,
+:root.increase-contrast.native-vibrancy.dark {
   --surface-sidebar: #ececec;
 }
 
 html.reduce-transparency.dark,
-:root.dark.reduce-transparency.native-vibrancy {
+:root.dark.reduce-transparency.native-vibrancy,
+html.increase-contrast.dark,
+:root.dark.increase-contrast.native-vibrancy {
   --surface-sidebar: #202020;
 }
 
@@ -365,7 +370,10 @@ html.increase-contrast.dark {
 
 @media (prefers-contrast: more) {
   :root,
-  html.platform-mac {
+  html.platform-mac,
+  :root.native-vibrancy,
+  :root.native-vibrancy.dark {
+    --surface-sidebar: #ececec;
     --system-label: #000000;
     --system-label-secondary: #3a3a3c;
     --system-label-tertiary: #636366;
@@ -379,7 +387,9 @@ html.increase-contrast.dark {
     --glass-highlight: transparent;
   }
 
-  .dark {
+  :root.dark,
+  :root.native-vibrancy.dark {
+    --surface-sidebar: #202020;
     --system-label: #ffffff;
     --system-label-secondary: #ebebf0;
     --system-label-tertiary: #aeaeb2;
