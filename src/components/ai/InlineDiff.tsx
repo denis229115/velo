@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { AuraShimmer } from "@/components/ui/AuraGlow";
 
 interface InlineDiffProps {
   before: string;
@@ -35,7 +36,7 @@ export function InlineDiff({
           </span>
         )}
         <span className="underline decoration-[1.5px] underline-offset-2" style={{ background: "var(--system-success-soft)", textDecorationColor: "var(--system-success)" }}>
-          {stripTags(after)}
+          {streaming && after ? <AuraShimmer>{stripTags(after)}</AuraShimmer> : stripTags(after)}
         </span>
         {streaming && <StreamingCaret />}
       </p>

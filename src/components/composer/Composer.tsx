@@ -11,6 +11,8 @@ import { AddressInput } from "./AddressInput";
 import { EditorToolbar } from "./EditorToolbar";
 import { TaskReplyDraft } from "@/components/clickup/TaskReplyDraft";
 import { AiAssistPanel } from "./AiAssistPanel";
+import { useComposerAura } from "@/components/ai/composerAura";
+import { AuraGlow } from "@/components/ui/AuraGlow";
 import { AttachmentPicker } from "./AttachmentPicker";
 import { ScheduleSendDialog } from "./ScheduleSendDialog";
 import { SignatureSelector } from "./SignatureSelector";
@@ -51,6 +53,7 @@ export function Composer() {
   const fromEmail = useComposerStore((s) => s.fromEmail);
   const viewMode = useComposerStore((s) => s.viewMode);
   const signatureHtml = useComposerStore((s) => s.signatureHtml);
+  const composerAura = useComposerAura();
   const isSaving = useComposerStore((s) => s.isSaving);
   const lastSavedAt = useComposerStore((s) => s.lastSavedAt);
   // Note: bodyHtml intentionally NOT subscribed — TipTap manages its own editor state.
@@ -561,8 +564,16 @@ export function Composer() {
           item={{ kind: "email", accountId: activeAccountId, threadId }}
           editor={editor}
         />}
-        {/* Editor */}
-        <div className="flex-1 overflow-y-auto">
+        {/* Editor. The scrollport is the field so the aura mask can extend past it. */}
+        <AuraGlow
+          palette="intelligence"
+          phase={composerAura}
+          priority={32}
+          shape="composer"
+          variant="plain"
+          className="flex-1 min-h-0 flex flex-col"
+          fieldClassName="flex-1 min-h-0 overflow-y-auto"
+        >
           <EditorContent editor={editor} />
           {signatureHtml && (
             <div
@@ -570,7 +581,7 @@ export function Composer() {
               dangerouslySetInnerHTML={{ __html: sanitizeHtml(signatureHtml) }}
             />
           )}
-        </div>
+        </AuraGlow>
 
         {/* Attachments */}
         <div className="border-t border-border-secondary">

@@ -9,14 +9,16 @@ import {
   type TransformType,
 } from "@/services/ai/aiService";
 import { friendlyAiError } from "@/services/ai/friendlyError";
-import { readTextStream, type TextStream } from "@/services/ai/textStream";
 import { useComposerStore } from "@/stores/composerStore";
 import { AiSendNote } from "@/components/ai/AiSendPreview";
 import { AiFailure } from "@/components/ai/AiCard";
-import { InlineDiff, StreamingCaret } from "@/components/ai/InlineDiff";
+import { InlineDiff } from "@/components/ai/InlineDiff";
+import { reportComposerAura } from "@/components/ai/composerAura";
+import { useAiStream } from "@/components/ai/useAiStream";
 import { Menu } from "@/components/ui/Menu";
 import { escapeHtml } from "@/utils/sanitize";
 import { captureRewriteTarget } from "./rewriteTarget";
+import { AuraGlow, AuraShimmer } from "@/components/ui/AuraGlow";
 import { claimComposerEnter } from "@/components/ai/composerEnter";
 
 interface AiAssistPanelProps {
@@ -45,21 +47,28 @@ const TONES: Array<{ id: string; label: string; type: TransformType }> = [
 export function AiAssistPanel({ editor, isReplyMode, threadMessages }: AiAssistPanelProps) {
   const [prompt, setPrompt] = useState("");
   const [open, setOpen] = useState(true);
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [canRetry, setCanRetry] = useState(false);
   const [readiness, setReadiness] = useState<AiReadiness | null>(null);
   const [diff, setDiff] = useState<PendingDiff | null>(null);
   const [menu, setMenu] = useState(false);
   const anchorRef = useRef<HTMLButtonElement>(null);
-  const streamRef = useRef<TextStream | null>(null);
+  const busy = useRef(false);
   const setBodyHtml = useComposerStore((s) => s.setBodyHtml);
   const targetRef = useRef<ReturnType<typeof captureRewriteTarget> | null>(null);
   const selectionRef = useRef<ReturnType<typeof captureRewriteTarget> | null>(null);
   const lastRun = useRef<(() => Promise<void>) | null>(null);
+  const ai = useAiStream();
+  const writing = Boolean(diff?.streaming && diff.after);
+
+  useEffect(() => {
+    reportComposerAura(writing ? "working" : ai.phase === "success" ? "success" : "idle");
+  }, [writing, ai.phase]);
+
+  useEffect(() => () => reportComposerAura("idle"), []);
 
   useEffect(() => () => {
-    streamRef.current?.abort();
+    ai.stop();
     targetRef.current?.dispose();
     selectionRef.current?.dispose();
   }, [editor]);
@@ -85,13 +94,12 @@ export function AiAssistPanel({ editor, isReplyMode, threadMessages }: AiAssistP
   }, [diff, editor, setBodyHtml]);
 
   const discard = useCallback(() => {
-    streamRef.current?.abort();
-    streamRef.current = null;
+    ai.stop();
+    busy.current = false;
     targetRef.current?.dispose();
     targetRef.current = null;
     setDiff(null);
-    setLoading(false);
-  }, []);
+  }, [ai]);
 
   useEffect(() => {
     if (!diff || diff.streaming) return;
@@ -121,42 +129,36 @@ export function AiAssistPanel({ editor, isReplyMode, threadMessages }: AiAssistP
   }
 
   const runStream = async (instruction: string, produce: (signal: AbortSignal) => AsyncIterable<string>, captured?: ReturnType<typeof captureRewriteTarget>) => {
-    if (!editor || loading) return;
+    if (!editor || busy.current) return;
     const target = captured ?? captureRewriteTarget(editor, false);
     if (targetRef.current !== target) targetRef.current?.dispose();
     targetRef.current = target;
     const before = target.before;
-    const controller = new AbortController();
-    setLoading(true);
+    busy.current = true;
     setError(null);
     setCanRetry(false);
     setDiff({ before, after: "", summary: instruction, streaming: true, retry: () => { void lastRun.current?.(); } });
-    const stream: TextStream = {
-      abort() { controller.abort(); },
-      async *[Symbol.asyncIterator]() {
-        yield* produce(controller.signal);
-      },
-    };
-    streamRef.current = stream;
     try {
-      const after = await readTextStream(stream, (soFar) => {
-        if (!controller.signal.aborted) setDiff((current) => current && { ...current, after: soFar });
+      const after = await ai.run(produce, (soFar) => {
+        setDiff((current) => current && { ...current, after: soFar });
       });
-      if (controller.signal.aborted) return;
+      if (after === null) {
+        setDiff(null);
+        return;
+      }
       setDiff((current) => current && { ...current, after, streaming: false, summary: instruction });
     } catch (err) {
-      if (controller.signal.aborted) return;
       const friendly = friendlyAiError(err);
       setError(friendly.message);
       setCanRetry(friendly.retry);
       setDiff(null);
     } finally {
-      if (streamRef.current === stream) {
-        streamRef.current = null;
-        setLoading(false);
-      }
+      busy.current = false;
     }
   };
+
+  const working = ai.phase === "working";
+  const barPhase = ai.phase === "error" ? "error" : working && !writing ? "working" : "idle";
 
   const handleCompose = async () => {
     const instruction = prompt.trim();
@@ -199,44 +201,57 @@ export function AiAssistPanel({ editor, isReplyMode, threadMessages }: AiAssistP
       </div>
 
       {open && (
-        <div className="material-pop rounded-full px-3 py-1.5 flex items-center gap-2">
+        <AuraGlow
+          palette="halo"
+          shape="pill"
+          variant="field"
+          priority={10}
+          phase={barPhase}
+          fieldClassName="px-3 py-1.5 flex items-center gap-2"
+        >
           <Sparkles size={12} className="text-text-secondary shrink-0" aria-hidden />
-          <input
-            type="text"
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Escape") {
-                e.preventDefault();
-                e.stopPropagation();
-                setOpen(false);
-              } else if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                void handleCompose();
-              } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "j") {
-                e.preventDefault();
-                void handleCompose();
-              }
-            }}
-            placeholder={isReplyMode ? "Instructions for reply (optional)..." : "Describe what to write..."}
-            className="flex-1 bg-transparent text-xs text-text-primary outline-none placeholder:text-text-tertiary"
-            disabled={loading}
-          />
-          {loading && <StreamingCaret />}
+          <span className="relative flex-1 min-w-0">
+            <input
+              type="text"
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setOpen(false);
+                } else if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  void handleCompose();
+                } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "j") {
+                  e.preventDefault();
+                  void handleCompose();
+                }
+              }}
+              placeholder={isReplyMode ? "Instructions for reply (optional)..." : "Describe what to write..."}
+              className={`w-full bg-transparent text-xs outline-none placeholder:text-text-tertiary ${barPhase === "working" ? "text-transparent placeholder:text-transparent" : "text-text-primary"}`}
+              disabled={working}
+            />
+            {barPhase === "working" && (
+              <span className="pointer-events-none absolute inset-0 flex items-center">
+                <AuraShimmer>{prompt.trim() || "Writing…"}</AuraShimmer>
+              </span>
+            )}
+          </span>
           <button
             type="button"
             onClick={() => void handleCompose()}
-            disabled={loading || (!isReplyMode && !prompt.trim())}
+            disabled={working || (!isReplyMode && !prompt.trim())}
             className="px-2 py-0.5 text-xs text-text-secondary border border-separator rounded-full disabled:opacity-50"
           >
-            {loading ? "..." : isReplyMode ? "Generate Reply" : "Generate"}
+            {working ? "..." : isReplyMode ? "Generate Reply" : "Generate"}
           </button>
-        </div>
+        </AuraGlow>
       )}
 
       {editor && (
         <div className="mt-1">
-          <button type="button" disabled={loading} className="text-meta text-text-tertiary hover:text-text-primary disabled:opacity-50" onMouseDown={(event) => event.preventDefault()} onClick={() => {
+          <button type="button" disabled={working} className="text-meta text-text-tertiary hover:text-text-primary disabled:opacity-50" onMouseDown={(event) => event.preventDefault()} onClick={() => {
             if (!editor || editor.state.selection.empty) { setError("Select text to rewrite first."); return; }
             discard();
             selectionRef.current?.dispose();
@@ -260,22 +275,31 @@ export function AiAssistPanel({ editor, isReplyMode, threadMessages }: AiAssistP
       )}
 
       {diff && (
-        <div className="mt-2" data-ai-diff>
-          <InlineDiff
-            before={diff.before}
-            after={diff.after}
-            summary={diff.streaming ? prompt || diff.summary : diff.summary}
-            streaming={diff.streaming}
-            onAccept={accept}
-            onDiscard={discard}
-            onRetry={() => void diff.retry()}
-            onRefine={() => {
-              setOpen(true);
-              discard();
-            }}
-            onStop={discard}
-          />
-        </div>
+        <AuraGlow
+          palette="intelligence"
+          shape="card"
+          variant="plain"
+          priority={30}
+          phase={writing ? "working" : "idle"}
+          className="mt-2"
+        >
+          <div data-ai-diff>
+            <InlineDiff
+              before={diff.before}
+              after={diff.after}
+              summary={diff.streaming ? prompt || diff.summary : diff.summary}
+              streaming={diff.streaming}
+              onAccept={accept}
+              onDiscard={discard}
+              onRetry={() => void diff.retry()}
+              onRefine={() => {
+                setOpen(true);
+                discard();
+              }}
+              onStop={discard}
+            />
+          </div>
+        </AuraGlow>
       )}
 
       {error && (
